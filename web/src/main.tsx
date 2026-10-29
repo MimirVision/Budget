@@ -13,27 +13,27 @@ import ReportsPage from './pages/Reports';
 import SettingsPage from './pages/Settings';
 
 const NAV = [
-  { to: '/', label: 'Budget', icon: 'budget', end: true },
-  { to: '/review', label: 'Review', icon: 'inbox' },
-  { to: '/transactions', label: 'Transactions', icon: 'list' },
-  { to: '/accounts', label: 'Accounts', icon: 'bank' },
-  { to: '/reports', label: 'Reports', icon: 'chart' },
-  { to: '/settings', label: 'Settings', icon: 'settings' },
+  { to: '/', label: 'Budsjett', icon: 'budget', end: true },
+  { to: '/review', label: 'Gjennomgå', icon: 'inbox' },
+  { to: '/transactions', label: 'Transaksjoner', icon: 'list' },
+  { to: '/accounts', label: 'Kontoer', icon: 'bank' },
+  { to: '/reports', label: 'Rapporter', icon: 'chart' },
+  { to: '/settings', label: 'Innstillinger', icon: 'settings' },
 ];
 
 function Layout() {
   const { summary } = useStore();
   const open = summary?.accounts.filter((a) => !a.closed) ?? [];
   const groups = [
-    { label: 'Budget accounts', items: open.filter((a) => a.on_budget) },
-    { label: 'Tracking', items: open.filter((a) => !a.on_budget) },
+    { label: 'Budsjettkontoer', items: open.filter((a) => a.on_budget) },
+    { label: 'Oppfølging', items: open.filter((a) => !a.on_budget) },
   ].filter((g) => g.items.length);
 
   return (
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <img src="/icon.svg" alt="" /> Budget
+          <img src="/icon.svg" alt="" /> Budsjett
         </div>
         {NAV.map((n) => (
           <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
@@ -97,14 +97,14 @@ function Login({ onDone }: { onDone: () => void }) {
         }}
       >
         <div className="brand" style={{ padding: 0 }}>
-          <img src="/icon.svg" alt="" /> Budget
+          <img src="/icon.svg" alt="" /> Budsjett
         </div>
         <label className="field">
-          Household password
+          Passord for husstanden
           <input className="input" type="password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} />
         </label>
         {error && <div className="callout bad small">{error}</div>}
-        <button className="btn primary">Log in</button>
+        <button className="btn primary">Logg inn</button>
       </form>
     </div>
   );

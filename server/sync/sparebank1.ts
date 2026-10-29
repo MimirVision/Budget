@@ -27,8 +27,8 @@ async function token(db: DB, form: Record<string, string>) {
   });
   const json: any = await res.json().catch(() => ({}));
   if (!res.ok) {
-    if (form.grant_type === 'refresh_token') throw new ReauthRequired('SpareBank 1 login has expired. Reconnect with BankID.');
-    throw new Error(json.error_description ?? json.error ?? `SpareBank 1 login failed (${res.status})`);
+    if (form.grant_type === 'refresh_token') throw new ReauthRequired('SpareBank 1-innloggingen har utløpt. Koble til på nytt med BankID.');
+    throw new Error(json.error_description ?? json.error ?? `Innlogging hos SpareBank 1 feilet (${res.status})`);
   }
   return {
     access_token: json.access_token as string,
@@ -40,8 +40,8 @@ async function token(db: DB, form: Record<string, string>) {
 
 async function api(path: string, accessToken: string) {
   const res = await fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${accessToken}`, Accept: ACCEPT } });
-  if (res.status === 401) throw new ReauthRequired('SpareBank 1 login has expired. Reconnect with BankID.');
-  if (!res.ok) throw new Error(`SpareBank 1 API error ${res.status}: ${await res.text()}`);
+  if (res.status === 401) throw new ReauthRequired('SpareBank 1-innloggingen har utløpt. Koble til på nytt med BankID.');
+  if (!res.ok) throw new Error(`Feil fra SpareBank 1 (${res.status}): ${await res.text()}`);
   return res.json() as Promise<any>;
 }
 
@@ -65,15 +65,15 @@ function num(v: any): number {
 
 export const sparebank1: Provider = {
   id: 'sparebank1',
-  label: 'SpareBank 1 (direct)',
-  description: "SpareBank 1's own free API. Only works for SpareBank 1 banks, like SpareBank 1 Sør-Norge.",
+  label: 'SpareBank 1 (direkte)',
+  description: 'SpareBank 1 sitt eget gratis API. Fungerer bare for SpareBank 1-banker, som SpareBank 1 Sør-Norge.',
   settings: [
-    { key: 'sparebank1_client_id', label: 'Client ID', help: 'From developersparebank1.no → Personlig klient.' },
-    { key: 'sparebank1_client_secret', label: 'Client secret', secret: true },
+    { key: 'sparebank1_client_id', label: 'Klient-ID', help: 'Fra developersparebank1.no → Personlig klient.' },
+    { key: 'sparebank1_client_secret', label: 'Klienthemmelighet', secret: true },
     {
       key: 'sparebank1_fininst',
-      label: 'Bank ID (finInst)',
-      help: 'Your bank\'s ID from the bank list on developersparebank1.no, e.g. "fid-smn".',
+      label: 'Bank-ID (finInst)',
+      help: 'Bankens ID fra banklisten på developersparebank1.no, f.eks. «fid-smn».',
     },
   ],
 

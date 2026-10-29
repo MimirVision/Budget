@@ -121,7 +121,7 @@ export function CategorySelect({
   value,
   onChange,
   amount,
-  placeholder = 'Choose category…',
+  placeholder = 'Velg kategori…',
   className = 'select',
   extra,
 }: {
@@ -149,7 +149,7 @@ export function CategorySelect({
       }}>
       <option value="">{placeholder}</option>
       {[...groups].map(([group, cats]) => (
-        <optgroup key={group} label={cats[0].is_income ? `${group} → Ready to assign` : group}>
+        <optgroup key={group} label={cats[0].is_income ? `${group} → Klar til fordeling` : group}>
           {cats.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
@@ -186,7 +186,7 @@ export function Modal({
       <div className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true">
         <div className="modal-head">
           <h2>{title}</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Close">
+          <button className="icon-btn" onClick={onClose} aria-label="Lukk">
             <Icon name="close" />
           </button>
         </div>

@@ -80,8 +80,8 @@ const source: Record<number, string> = { [sb1]: 'sparebank1', [revolut]: 'enable
 for (const [acc, list] of Object.entries(rows)) ingest(db, Number(acc), withImportHashes(list.sort((a, b) => a.date.localeCompare(b.date))), source[Number(acc)]);
 
 // Opening balances and a mortgage to track.
-run(db, `INSERT INTO transactions(account_id, date, amount, payee, category_id, reviewed) VALUES (?, ?, 4500000, 'Starting balance', ?, 1)`, sb1, `${start}-01`, cat('Other income'));
-run(db, `INSERT INTO transactions(account_id, date, amount, payee, reviewed) VALUES (?, ?, -285000000, 'Starting balance', 1)`, mortgage, `${start}-01`);
+run(db, `INSERT INTO transactions(account_id, date, amount, payee, category_id, reviewed) VALUES (?, ?, 4500000, 'Startsaldo', ?, 1)`, sb1, `${start}-01`, cat('Annen inntekt'));
+run(db, `INSERT INTO transactions(account_id, date, amount, payee, reviewed) VALUES (?, ?, -285000000, 'Startsaldo', 1)`, mortgage, `${start}-01`);
 for (let m = 0; m <= 6; m++) {
   const date = `${addMonths(start, m)}-01`;
   if (date <= today) run(db, `INSERT INTO transactions(account_id, date, amount, payee, reviewed) VALUES (?, ?, 1020000, 'Avdrag', 1)`, mortgage, date);
@@ -96,23 +96,23 @@ for (const t of all<any>(db, 'SELECT * FROM transactions WHERE reviewed = 0 AND 
   else run(db, 'UPDATE transactions SET category_id = suggested_category_id, reviewed = 1 WHERE id = ?', t.id);
 }
 // Things the merchant list doesn't know.
-run(db, "UPDATE transactions SET category_id = ? WHERE payee LIKE '%Boliglån%' AND category_id IS NULL", cat('Mortgage'));
-run(db, "UPDATE transactions SET category_id = ? WHERE payee LIKE 'Grimstad Kommune%' AND category_id IS NULL", cat('Municipal fees'));
-run(db, "UPDATE transactions SET category_id = ? WHERE payee LIKE 'Elkjøp%'", cat('Household & Pharmacy'));
+run(db, "UPDATE transactions SET category_id = ? WHERE payee LIKE '%Boliglån%' AND category_id IS NULL", cat('Boliglån'));
+run(db, "UPDATE transactions SET category_id = ? WHERE payee LIKE 'Grimstad Kommune%' AND category_id IS NULL", cat('Kommunale avgifter'));
+run(db, "UPDATE transactions SET category_id = ? WHERE payee LIKE 'Elkjøp%'", cat('Hus og apotek'));
 
 // Targets and past budgets.
-run(db, "UPDATE categories SET target_type = 'monthly', target_amount = 1480000 WHERE name = 'Mortgage'");
-run(db, "UPDATE categories SET target_type = 'monthly', target_amount = 600000 WHERE name = 'Groceries'");
-run(db, "UPDATE categories SET target_type = 'monthly', target_amount = 200000 WHERE name = 'Electricity'");
-run(db, "UPDATE categories SET target_type = 'by_date', target_amount = 3000000, target_date = ? WHERE name = 'Vacation'", addMonths(currentMonth(), 8));
-run(db, "UPDATE categories SET target_type = 'balance', target_amount = 5000000 WHERE name = 'Emergency fund'");
+run(db, "UPDATE categories SET target_type = 'monthly', target_amount = 1480000 WHERE name = 'Boliglån'");
+run(db, "UPDATE categories SET target_type = 'monthly', target_amount = 600000 WHERE name = 'Dagligvarer'");
+run(db, "UPDATE categories SET target_type = 'monthly', target_amount = 200000 WHERE name = 'Strøm'");
+run(db, "UPDATE categories SET target_type = 'by_date', target_amount = 3000000, target_date = ? WHERE name = 'Ferie'", addMonths(currentMonth(), 8));
+run(db, "UPDATE categories SET target_type = 'balance', target_amount = 5000000 WHERE name = 'Buffer'");
 for (let m = 0; m <= 6; m++) {
   const month = addMonths(start, m);
   autoAssign(db, month, 'last_month_spent');
   autoAssign(db, month, 'targets');
   if (m === 6) break; // this month's leftovers are yours to assign
-  setAssigned(db, month, cat('Emergency fund'), 3_000_000);
-  setAssigned(db, month, cat('Christmas & Gifts'), 150_000);
+  setAssigned(db, month, cat('Buffer'), 3_000_000);
+  setAssigned(db, month, cat('Jul og gaver'), 150_000);
 }
 
 console.log(`Demo data written to ${path.join(dir, 'budget.db')}`);

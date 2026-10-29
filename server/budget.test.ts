@@ -29,33 +29,33 @@ beforeEach(() => {
 describe('budget', () => {
   it('income goes to Ready to assign and assigning takes it out', () => {
     const sb1 = account('SpareBank 1');
-    addTx(sb1, '2026-09-25', 4_000_000, 'Salary');
+    addTx(sb1, '2026-09-25', 4_000_000, 'Lønn');
     expect(readyToAssign(db)).toBe(4_000_000);
-    setAssigned(db, '2026-10', cat('Groceries'), 800_000);
+    setAssigned(db, '2026-10', cat('Dagligvarer'), 800_000);
     expect(readyToAssign(db)).toBe(3_200_000);
   });
 
   it('rolls leftovers and overspending into the next month', () => {
     const sb1 = account('SpareBank 1');
-    setAssigned(db, '2026-09', cat('Groceries'), 500_000);
-    addTx(sb1, '2026-09-10', -300_000, 'Groceries');
-    expect(row('2026-09', 'Groceries').available).toBe(200_000);
-    expect(row('2026-10', 'Groceries').available).toBe(200_000);
-    addTx(sb1, '2026-10-05', -350_000, 'Groceries');
-    expect(row('2026-10', 'Groceries').available).toBe(-150_000);
+    setAssigned(db, '2026-09', cat('Dagligvarer'), 500_000);
+    addTx(sb1, '2026-09-10', -300_000, 'Dagligvarer');
+    expect(row('2026-09', 'Dagligvarer').available).toBe(200_000);
+    expect(row('2026-10', 'Dagligvarer').available).toBe(200_000);
+    addTx(sb1, '2026-10-05', -350_000, 'Dagligvarer');
+    expect(row('2026-10', 'Dagligvarer').available).toBe(-150_000);
   });
 
   it('credit card spending is spending, and paying the card is just a transfer', () => {
     const sb1 = account('SpareBank 1');
     const dnb = account('DNB Mastercard', 'credit');
-    addTx(sb1, '2026-10-01', 1_000_000, 'Salary');
-    setAssigned(db, '2026-10', cat('Groceries'), 400_000);
-    addTx(dnb, '2026-10-03', -250_000, 'Groceries');
+    addTx(sb1, '2026-10-01', 1_000_000, 'Lønn');
+    setAssigned(db, '2026-10', cat('Dagligvarer'), 400_000);
+    addTx(dnb, '2026-10-03', -250_000, 'Dagligvarer');
     const out = addTx(sb1, '2026-10-20', -250_000, null);
     const into = addTx(dnb, '2026-10-21', 250_000, null);
     linkTransfer(db, out, into);
     const b = getBudget(db, '2026-10');
-    expect(row('2026-10', 'Groceries').available).toBe(150_000);
+    expect(row('2026-10', 'Dagligvarer').available).toBe(150_000);
     expect(b.readyToAssign).toBe(600_000);
     expect(b.uncategorized.count).toBe(0);
     // Money in accounts = money in categories + ready to assign.
@@ -64,29 +64,29 @@ describe('budget', () => {
   });
 
   it('targets tell you how much is needed', () => {
-    run(db, "UPDATE categories SET target_type = 'by_date', target_amount = 1200000, target_date = '2027-03' WHERE id = ?", cat('Vacation'));
-    expect(row('2026-10', 'Vacation').needed).toBe(200_000); // 12 000 over 6 months
-    run(db, "UPDATE categories SET target_type = 'monthly', target_amount = 150000 WHERE id = ?", cat('Electricity'));
-    setAssigned(db, '2026-10', cat('Electricity'), 50_000);
-    expect(row('2026-10', 'Electricity').needed).toBe(100_000);
+    run(db, "UPDATE categories SET target_type = 'by_date', target_amount = 1200000, target_date = '2027-03' WHERE id = ?", cat('Ferie'));
+    expect(row('2026-10', 'Ferie').needed).toBe(200_000); // 12 000 over 6 months
+    run(db, "UPDATE categories SET target_type = 'monthly', target_amount = 150000 WHERE id = ?", cat('Strøm'));
+    setAssigned(db, '2026-10', cat('Strøm'), 50_000);
+    expect(row('2026-10', 'Strøm').needed).toBe(100_000);
   });
 
   it('auto-assign funds targets without going below zero', () => {
     const sb1 = account('SpareBank 1');
-    addTx(sb1, '2026-10-01', 250_000, 'Salary');
-    run(db, "UPDATE categories SET target_type = 'monthly', target_amount = 200000 WHERE id IN (?, ?)", cat('Mortgage'), cat('Electricity'));
+    addTx(sb1, '2026-10-01', 250_000, 'Lønn');
+    run(db, "UPDATE categories SET target_type = 'monthly', target_amount = 200000 WHERE id IN (?, ?)", cat('Boliglån'), cat('Strøm'));
     autoAssign(db, '2026-10', 'targets');
-    expect(row('2026-10', 'Mortgage').assigned).toBe(200_000);
-    expect(row('2026-10', 'Electricity').assigned).toBe(50_000);
+    expect(row('2026-10', 'Boliglån').assigned).toBe(200_000);
+    expect(row('2026-10', 'Strøm').assigned).toBe(50_000);
     expect(readyToAssign(db)).toBe(0);
   });
 
   it('split transactions count in each category', () => {
     const sb1 = account('SpareBank 1');
     const id = addTx(sb1, '2026-10-02', -100_000, null);
-    run(db, 'INSERT INTO splits(transaction_id, category_id, amount) VALUES (?, ?, ?), (?, ?, ?)', id, cat('Groceries'), -70_000, id, cat('Household & Pharmacy'), -30_000);
-    expect(row('2026-10', 'Groceries').activity).toBe(-70_000);
-    expect(row('2026-10', 'Household & Pharmacy').activity).toBe(-30_000);
+    run(db, 'INSERT INTO splits(transaction_id, category_id, amount) VALUES (?, ?, ?), (?, ?, ?)', id, cat('Dagligvarer'), -70_000, id, cat('Hus og apotek'), -30_000);
+    expect(row('2026-10', 'Dagligvarer').activity).toBe(-70_000);
+    expect(row('2026-10', 'Hus og apotek').activity).toBe(-30_000);
   });
 });
 
@@ -101,7 +101,7 @@ describe('ingest', () => {
     const first = ingest(db, sb1, rows, 'csv');
     expect(first.added).toBe(3);
     const rema = get<any>(db, "SELECT * FROM transactions WHERE payee = 'Rema 1000'");
-    expect(rema.suggested_category_id).toBe(cat('Groceries'));
+    expect(rema.suggested_category_id).toBe(cat('Dagligvarer'));
     expect(rema.reviewed).toBe(0);
     const again = ingest(db, sb1, rows, 'csv');
     expect(again).toMatchObject({ added: 0, duplicates: 3 });
@@ -109,9 +109,9 @@ describe('ingest', () => {
 
   it('learns from what you picked last time', () => {
     const sb1 = account('SpareBank 1');
-    addTx(sb1, '2026-09-01', -20_000, 'Hobbies & Sport', 'Klatresenteret');
+    addTx(sb1, '2026-09-01', -20_000, 'Hobby og sport', 'Klatresenteret');
     ingest(db, sb1, [{ date: '2026-10-01', amount: -20_000, description: 'KLATRESENTERET', externalId: 'a' }], 'sparebank1');
-    expect(get<any>(db, "SELECT * FROM transactions WHERE external_id = 'a'").suggested_category_id).toBe(cat('Hobbies & Sport'));
+    expect(get<any>(db, "SELECT * FROM transactions WHERE external_id = 'a'").suggested_category_id).toBe(cat('Hobby og sport'));
   });
 
   it('spots transfers between your own accounts', () => {
@@ -126,7 +126,7 @@ describe('ingest', () => {
 
   it('matches a manually entered transaction when the bank catches up', () => {
     const rev = account('Revolut');
-    addTx(rev, '2026-10-01', -15_000, 'Eating out', 'Lunch');
+    addTx(rev, '2026-10-01', -15_000, 'Spise ute', 'Lunch');
     const r = ingest(db, rev, [{ date: '2026-10-02', amount: -15_000, description: 'Lunsjbaren', externalId: 'x' }], 'enablebanking');
     expect(r).toMatchObject({ added: 0, matched: 1 });
     expect(all(db, 'SELECT * FROM transactions WHERE account_id = ?', rev)).toHaveLength(1);

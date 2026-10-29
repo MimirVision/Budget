@@ -135,7 +135,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 401 && path !== '/auth/login') window.dispatchEvent(new Event('budget:logout'));
-    throw new ApiError(json.error ?? `Request failed (${res.status})`, res.status);
+    throw new ApiError(json.error ?? `Forespørselen feilet (${res.status})`, res.status);
   }
   return json as T;
 }

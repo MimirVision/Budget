@@ -30,14 +30,14 @@ interface Group {
   categories: Array<{ id: number; name: string; hidden: number }>;
 }
 
-const TABS = ['Categories', 'Rules', 'Bank sync'] as const;
+const TABS = ['Kategorier', 'Regler', 'Banksynkronisering'] as const;
 
 export default function SettingsPage() {
-  const [tab, setTab] = useState<(typeof TABS)[number]>('Categories');
+  const [tab, setTab] = useState<(typeof TABS)[number]>('Kategorier');
   return (
     <>
       <div className="page-head">
-        <h1>Settings</h1>
+        <h1>Innstillinger</h1>
         <div className="seg">
           {TABS.map((t) => (
             <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
@@ -46,9 +46,9 @@ export default function SettingsPage() {
           ))}
         </div>
       </div>
-      {tab === 'Categories' && <Categories />}
-      {tab === 'Rules' && <Rules />}
-      {tab === 'Bank sync' && <BankSync />}
+      {tab === 'Kategorier' && <Categories />}
+      {tab === 'Regler' && <Rules />}
+      {tab === 'Banksynkronisering' && <BankSync />}
     </>
   );
 }
@@ -77,30 +77,30 @@ function Categories() {
   return (
     <div className="stack">
       <p className="muted" style={{ margin: 0 }}>
-        Rename by clicking a name. Hiding keeps the history but takes the category out of your way. Income categories feed “Ready to
-        assign”.
+        Klikk på et navn for å endre det. Skjulte kategorier beholder historikken, men er ute av veien. Inntektskategorier går til
+        «Klar til fordeling».
       </p>
       {groups.map((g) => (
         <div key={g.id} className="card">
           <div className="list-item" style={{ background: 'var(--surface-2)', borderRadius: '12px 12px 0 0' }}>
             <InlineName value={g.name} onSave={(name) => patchGroup(g.id, { name })} bold />
-            {g.is_income ? <span className="chip brand">Income</span> : null}
+            {g.is_income ? <span className="chip brand">Inntekt</span> : null}
             <span className="spacer" />
             {!g.is_income && (
               <>
-                <button className="icon-btn" onClick={() => patchGroup(g.id, { move: 'up' })} aria-label="Move group up">
+                <button className="icon-btn" onClick={() => patchGroup(g.id, { move: 'up' })} aria-label="Flytt gruppen opp">
                   <Icon name="up" size={16} />
                 </button>
-                <button className="icon-btn" onClick={() => patchGroup(g.id, { move: 'down' })} aria-label="Move group down">
+                <button className="icon-btn" onClick={() => patchGroup(g.id, { move: 'down' })} aria-label="Flytt gruppen ned">
                   <Icon name="down" size={16} />
                 </button>
-                <button className="icon-btn" onClick={() => patchGroup(g.id, { hidden: !g.hidden })} aria-label={g.hidden ? 'Show group' : 'Hide group'}>
+                <button className="icon-btn" onClick={() => patchGroup(g.id, { hidden: !g.hidden })} aria-label={g.hidden ? 'Vis gruppen' : 'Skjul gruppen'}>
                   <Icon name={g.hidden ? 'eyeOff' : 'eye'} size={16} />
                 </button>
                 {g.categories.length === 0 && (
                   <button
                     className="icon-btn"
-                    aria-label="Delete group"
+                    aria-label="Slett gruppen"
                     onClick={async () => {
                       await api.del(`/category-groups/${g.id}`);
                       after();
@@ -120,7 +120,7 @@ function Categories() {
                 className="select"
                 style={{ width: 'auto', minHeight: 30, padding: '2px 6px', fontSize: 13 }}
                 value={g.id}
-                aria-label="Move to group"
+                aria-label="Flytt til gruppe"
                 onChange={(e) => patchCat(c.id, { group_id: Number(e.target.value) })}
               >
                 {groups.map((x) => (
@@ -129,28 +129,28 @@ function Categories() {
                   </option>
                 ))}
               </select>
-              <button className="icon-btn" onClick={() => patchCat(c.id, { move: 'up' })} aria-label="Move up">
+              <button className="icon-btn" onClick={() => patchCat(c.id, { move: 'up' })} aria-label="Flytt opp">
                 <Icon name="up" size={16} />
               </button>
-              <button className="icon-btn" onClick={() => patchCat(c.id, { move: 'down' })} aria-label="Move down">
+              <button className="icon-btn" onClick={() => patchCat(c.id, { move: 'down' })} aria-label="Flytt ned">
                 <Icon name="down" size={16} />
               </button>
-              <button className="icon-btn" onClick={() => patchCat(c.id, { hidden: !c.hidden })} aria-label={c.hidden ? 'Show' : 'Hide'}>
+              <button className="icon-btn" onClick={() => patchCat(c.id, { hidden: !c.hidden })} aria-label={c.hidden ? 'Vis' : 'Skjul'}>
                 <Icon name={c.hidden ? 'eyeOff' : 'eye'} size={16} />
               </button>
               <button
                 className="icon-btn"
-                aria-label="Delete category"
+                aria-label="Slett kategorien"
                 onClick={async () => {
                   const others = groups.flatMap((x) => x.categories).filter((x) => x.id !== c.id && !x.hidden);
                   const target = prompt(
-                    `Delete “${c.name}”? Type the name of a category to move its transactions and money to (leave empty to make them uncategorized):\n\n${others.map((o) => o.name).join(', ')}`,
+                    `Slette «${c.name}»? Skriv navnet på kategorien som skal få transaksjonene og pengene (la feltet stå tomt for å gjøre dem ukategoriserte):\n\n${others.map((o) => o.name).join(', ')}`,
                   );
                   if (target === null) return;
                   const into = others.find((o) => o.name.toLowerCase() === target.trim().toLowerCase());
-                  if (target.trim() && !into) return toast(`No category called “${target}”`, { error: true });
+                  if (target.trim() && !into) return toast(`Fant ingen kategori som heter «${target}»`, { error: true });
                   await api.del(`/categories/${c.id}${into ? `?reassign=${into.id}` : ''}`);
-                  toast(into ? `Deleted. Everything moved to ${into.name}.` : 'Deleted');
+                  toast(into ? `Slettet. Alt er flyttet til ${into.name}.` : 'Slettet');
                   after();
                 }}
               >
@@ -171,9 +171,9 @@ function Categories() {
           after();
         }}
       >
-        <input className="input" style={{ maxWidth: 280 }} placeholder="New group name" value={newGroup} onChange={(e) => setNewGroup(e.target.value)} />
+        <input className="input" style={{ maxWidth: 280 }} placeholder="Navn på ny gruppe" value={newGroup} onChange={(e) => setNewGroup(e.target.value)} />
         <button className="btn">
-          <Icon name="plus" size={16} /> Add group
+          <Icon name="plus" size={16} /> Legg til gruppe
         </button>
       </form>
     </div>
@@ -209,8 +209,8 @@ function AddCategory({ groupId, onAdded }: { groupId: number; onAdded: () => voi
         onAdded();
       }}
     >
-      <input className="input" style={{ maxWidth: 280, minHeight: 32 }} placeholder="+ Add category" value={name} onChange={(e) => setName(e.target.value)} />
-      {name && <button className="btn sm primary">Add</button>}
+      <input className="input" style={{ maxWidth: 280, minHeight: 32 }} placeholder="+ Legg til kategori" value={name} onChange={(e) => setName(e.target.value)} />
+      {name && <button className="btn sm primary">Legg til</button>}
     </form>
   );
 }
@@ -231,8 +231,8 @@ function Rules() {
   return (
     <div className="stack">
       <p className="muted" style={{ margin: 0 }}>
-        Rules run on every new transaction, whether it came from a bank sync, a file or manual entry. Ticking “Always…” when reviewing
-        creates one for you. Even without rules, the app learns from what you picked last time.
+        Regler brukes på hver nye transaksjon, enten den kommer fra banken, en fil eller manuell føring. Haker du av for «Alltid…» under
+        gjennomgang, lages en regel for deg. Selv uten regler lærer appen av det du valgte sist.
       </p>
       <form
         className="card card-pad stack"
@@ -243,61 +243,61 @@ function Rules() {
             setPattern('');
             setRenameTo('');
             setCategoryId(null);
-            toast('Rule added and applied to transactions waiting for review');
+            toast('Regelen er lagt til og brukt på transaksjoner som venter på gjennomgang');
             await Promise.all([load(), refresh()]);
           } catch (err: any) {
             toast(err.message, { error: true });
           }
         }}
       >
-        <h3 style={{ margin: 0 }}>New rule</h3>
+        <h3 style={{ margin: 0 }}>Ny regel</h3>
         <div className="row" style={{ alignItems: 'flex-end' }}>
           <label className="field" style={{ flex: '0 1 150px' }}>
-            When text
+            Når teksten
             <select className="select" value={matchType} onChange={(e) => setMatchType(e.target.value as Rule['match_type'])}>
-              <option value="contains">contains</option>
-              <option value="starts">starts with</option>
-              <option value="equals">is exactly</option>
+              <option value="contains">inneholder</option>
+              <option value="starts">starter med</option>
+              <option value="equals">er nøyaktig</option>
             </select>
           </label>
           <label className="field" style={{ flex: '1 1 180px' }}>
             &nbsp;
-            <input className="input" value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder="e.g. klatresenter" />
+            <input className="input" value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder="f.eks. klatresenter" />
           </label>
           <label className="field" style={{ flex: '1 1 200px' }}>
-            Put it in
-            <CategorySelect categories={summary?.categories ?? []} value={categoryId} onChange={setCategoryId} placeholder="(don't change)" />
+            Legg den i
+            <CategorySelect categories={summary?.categories ?? []} value={categoryId} onChange={setCategoryId} placeholder="(ikke endre)" />
           </label>
           <label className="field" style={{ flex: '1 1 160px' }}>
-            Rename payee to
-            <input className="input" value={renameTo} onChange={(e) => setRenameTo(e.target.value)} placeholder="(optional)" />
+            Gi mottakeren navnet
+            <input className="input" value={renameTo} onChange={(e) => setRenameTo(e.target.value)} placeholder="(valgfritt)" />
           </label>
           <button className="btn primary" disabled={!pattern.trim() || (!categoryId && !renameTo.trim())}>
-            Add rule
+            Legg til regel
           </button>
         </div>
       </form>
       <div className="card">
         {rules.length === 0 ? (
-          <div className="empty">No rules yet.</div>
+          <div className="empty">Ingen regler ennå.</div>
         ) : (
           <div className="list">
             {rules.map((r) => (
               <div key={r.id} className="list-item">
                 <div className="grow">
-                  Text {r.match_type === 'contains' ? 'contains' : r.match_type === 'starts' ? 'starts with' : 'is'} <strong>“{r.pattern}”</strong>
+                  Teksten {r.match_type === 'contains' ? 'inneholder' : r.match_type === 'starts' ? 'starter med' : 'er'} <strong>«{r.pattern}»</strong>
                   {r.category_name && (
                     <>
                       {' '}
                       → <span className="chip brand">{r.category_name}</span>
                     </>
                   )}
-                  {r.rename_to && <> · rename to “{r.rename_to}”</>}
-                  <div className="small faint">Used {r.hits} times</div>
+                  {r.rename_to && <> · gi navnet «{r.rename_to}»</>}
+                  <div className="small faint">Brukt {r.hits} ganger</div>
                 </div>
                 <button
                   className="icon-btn"
-                  aria-label="Delete rule"
+                  aria-label="Slett regelen"
                   onClick={async () => {
                     await api.del(`/rules/${r.id}`);
                     load();
@@ -326,40 +326,40 @@ function BankSync() {
       <div className="callout info small">
         <Icon name="bank" size={18} />
         <div>
-          Norwegian banks share your transactions through open banking (PSD2), but only via a licensed provider. Set up one (or both) of
-          these once. Then connecting a bank is just BankID. Your keys stay in your own database and are never shown again after
-          saving.
+          Norske banker deler transaksjonene dine gjennom åpen bank (PSD2), men bare via en godkjent tilbyder. Sett opp én av disse (eller
+          begge) én gang. Deretter er det bare BankID for å koble til en bank. Nøklene lagres i din egen database og vises aldri igjen
+          etter at de er lagret.
         </div>
       </div>
       {data.providers.map((p) => (
         <ProviderCard key={p.id} p={p} onSaved={load} />
       ))}
       <div className="card card-pad small">
-        <h3>Recommended setup for your banks</h3>
+        <h3>Anbefalt oppsett for bankene deres</h3>
         <table className="table">
           <tbody>
             <tr>
               <td>SpareBank 1 Sør-Norge</td>
-              <td>Enable Banking, or SpareBank 1 direct (free, made for personal use)</td>
+              <td>Enable Banking, eller SpareBank 1 direkte (gratis, laget for privat bruk)</td>
             </tr>
             <tr>
-              <td>DNB credit card</td>
+              <td>DNB kredittkort</td>
               <td>Enable Banking</td>
             </tr>
             <tr>
               <td>Revolut</td>
-              <td>Enable Banking (or CSV export from the app)</td>
+              <td>Enable Banking (eller CSV-eksport fra appen)</td>
             </tr>
             <tr>
-              <td>TF Bank credit card</td>
-              <td>Enable Banking if your card shows up in the list, otherwise CSV import or manual entry</td>
+              <td>TF Bank kredittkort</td>
+              <td>Enable Banking hvis kortet står i listen, ellers CSV-import eller manuell føring</td>
             </tr>
           </tbody>
         </table>
         <p className="muted" style={{ marginBottom: 0 }}>
-          Banks require you to re-confirm with BankID about every 90–180 days. The app warns you a week before. Syncing runs automatically
-          every 4 hours while the server is running.
-          {!data.passwordEnabled && ' Tip: set APP_PASSWORD in .env before putting this on the internet.'}
+          Bankene krever at du bekrefter med BankID på nytt omtrent hver 90.–180. dag. Appen varsler deg en uke før. Synkroniseringen
+          kjører automatisk hver fjerde time så lenge serveren kjører.
+          {!data.passwordEnabled && ' Tips: sett APP_PASSWORD i .env før appen gjøres tilgjengelig på internett.'}
         </p>
       </div>
     </div>
@@ -370,30 +370,30 @@ const SETUP_STEPS: Record<string, (callback: string) => React.ReactNode> = {
   enablebanking: (callback) => (
     <ol className="small" style={{ margin: 0, paddingLeft: 18 }}>
       <li>
-        Sign up at <a href="https://enablebanking.com/sign-in/" target="_blank" rel="noreferrer">enablebanking.com</a> (free for linking your
-        own accounts).
+        Registrer deg på <a href="https://enablebanking.com/sign-in/" target="_blank" rel="noreferrer">enablebanking.com</a> (gratis for å koble
+        til egne kontoer).
       </li>
       <li>
-        In the Control Panel → <em>Applications</em> → <em>Register new application</em>. Choose environment <strong>Production</strong>,
-        and let it generate a private key in your browser. Save the .pem file.
+        Gå til kontrollpanelet → <em>Applications</em> → <em>Register new application</em>. Velg miljøet <strong>Production</strong>,
+        og la den lage en privat nøkkel i nettleseren. Lagre .pem-filen.
       </li>
       <li>
-        Add this as the redirect URL: <code style={{ userSelect: 'all' }}>{callback}</code>
+        Legg inn denne som redirect-URL: <code style={{ userSelect: 'all' }}>{callback}</code>
       </li>
-      <li>Activate the application by linking your own accounts (restricted mode). No company or contract needed.</li>
-      <li>Paste the application ID and the contents of the .pem file below.</li>
+      <li>Aktiver applikasjonen ved å koble til egne kontoer (begrenset modus). Du trenger verken firma eller avtale.</li>
+      <li>Lim inn applikasjons-ID-en og innholdet i .pem-filen under.</li>
     </ol>
   ),
   sparebank1: (callback) => (
     <ol className="small" style={{ margin: 0, paddingLeft: 18 }}>
       <li>
-        Log in at <a href="https://developersparebank1.no" target="_blank" rel="noreferrer">developersparebank1.no</a> with BankID and open{' '}
+        Logg inn på <a href="https://developersparebank1.no" target="_blank" rel="noreferrer">developersparebank1.no</a> med BankID og åpne{' '}
         <em>Personlig klient</em>.
       </li>
       <li>
-        Create a client with redirect URL <code style={{ userSelect: 'all' }}>{callback}</code>
+        Lag en klient med redirect-URL <code style={{ userSelect: 'all' }}>{callback}</code>
       </li>
-      <li>Copy the client ID and secret, and find your bank's ID (finInst) in the bank list on the same page.</li>
+      <li>Kopier klient-ID og hemmelighet, og finn bankens ID (finInst) i banklisten på samme side.</li>
     </ol>
   ),
 };
@@ -410,7 +410,7 @@ function ProviderCard({ p, onSaved }: { p: ProviderSettings; onSaved: () => void
       body[s.key] = values[s.key];
     }
     await api.put('/settings', body);
-    toast(`${p.label} saved`);
+    toast(`${p.label} er lagret`);
     onSaved();
     setOpen(false);
   };
@@ -419,12 +419,12 @@ function ProviderCard({ p, onSaved }: { p: ProviderSettings; onSaved: () => void
       <div className="row">
         <div className="spacer">
           <h3 style={{ margin: 0 }}>
-            {p.label} {p.configured ? <span className="pill good small">Ready</span> : <span className="pill zero small">Not set up</span>}
+            {p.label} {p.configured ? <span className="pill good small">Klar</span> : <span className="pill zero small">Ikke satt opp</span>}
           </h3>
           <div className="small muted">{p.description}</div>
         </div>
         <button className="btn sm" onClick={() => setOpen((v) => !v)}>
-          {open ? 'Close' : p.configured ? 'Change keys' : 'Set up'}
+          {open ? 'Lukk' : p.configured ? 'Bytt nøkler' : 'Sett opp'}
         </button>
       </div>
       {open && (
@@ -439,7 +439,7 @@ function ProviderCard({ p, onSaved }: { p: ProviderSettings; onSaved: () => void
                   className="input"
                   rows={4}
                   style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12 }}
-                  placeholder={s.isSet ? '•••••• saved. Paste a new one to replace it' : '-----BEGIN PRIVATE KEY-----'}
+                  placeholder={s.isSet ? '•••••• lagret. Lim inn en ny for å bytte' : '-----BEGIN PRIVATE KEY-----'}
                   value={values[s.key]}
                   onChange={(e) => setValues({ ...values, [s.key]: e.target.value })}
                 />
@@ -447,7 +447,7 @@ function ProviderCard({ p, onSaved }: { p: ProviderSettings; onSaved: () => void
                 <input
                   className="input"
                   type={s.secret ? 'password' : 'text'}
-                  placeholder={s.secret && s.isSet ? '•••••• saved' : ''}
+                  placeholder={s.secret && s.isSet ? '•••••• lagret' : ''}
                   value={values[s.key]}
                   onChange={(e) => setValues({ ...values, [s.key]: e.target.value })}
                 />
@@ -456,7 +456,7 @@ function ProviderCard({ p, onSaved }: { p: ProviderSettings; onSaved: () => void
           ))}
           <div className="row" style={{ justifyContent: 'flex-end' }}>
             <button className="btn primary" onClick={save}>
-              Save
+              Lagre
             </button>
           </div>
         </>

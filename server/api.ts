@@ -76,7 +76,7 @@ export function createApi(db: DB) {
   api.onError((err: any, c) => {
     const status = err.status ?? 500;
     if (status === 500) console.error(err);
-    return c.json({ error: err.message ?? 'Something went wrong' }, status);
+    return c.json({ error: err.message ?? 'Noe gikk galt' }, status);
   });
 
   // ---------- Overview ----------
@@ -113,13 +113,13 @@ export function createApi(db: DB) {
   // ---------- Budget ----------
   api.get('/budget/:month', (c) => {
     const month = c.req.param('month');
-    if (!MONTH.test(month)) badRequest('Month must look like 2026-10');
+    if (!MONTH.test(month)) badRequest('Måned må se slik ut: 2026-10');
     return c.json(getBudget(db, month));
   });
 
   api.put('/budget/:month/:categoryId', async (c) => {
     const { amount } = await c.req.json();
-    if (!Number.isFinite(amount)) badRequest('Amount must be a number');
+    if (!Number.isFinite(amount)) badRequest('Beløpet må være et tall');
     setAssigned(db, c.req.param('month'), Number(c.req.param('categoryId')), amount);
     return c.json(getBudget(db, c.req.param('month')));
   });
@@ -132,7 +132,7 @@ export function createApi(db: DB) {
 
   api.post('/budget/:month/move', async (c) => {
     const { from, to, amount } = await c.req.json<{ from: number | null; to: number | null; amount: number }>();
-    if (!(amount > 0)) badRequest('Amount must be positive');
+    if (!(amount > 0)) badRequest('Beløpet må være større enn null');
     moveMoney(db, c.req.param('month'), from, to, amount);
     return c.json(getBudget(db, c.req.param('month')));
   });
@@ -149,7 +149,7 @@ export function createApi(db: DB) {
 
   api.post('/category-groups', async (c) => {
     const { name } = await c.req.json();
-    if (!name?.trim()) badRequest('Give the group a name');
+    if (!name?.trim()) badRequest('Gi gruppen et navn');
     const id = run(db, 'INSERT INTO category_groups(name, sort) VALUES (?, (SELECT COALESCE(MAX(sort), 0) + 1 FROM category_groups))', name.trim())
       .lastInsertRowid;
     return c.json({ id: Number(id) });
@@ -166,14 +166,14 @@ export function createApi(db: DB) {
 
   api.delete('/category-groups/:id', (c) => {
     const id = Number(c.req.param('id'));
-    if (get(db, 'SELECT 1 FROM categories WHERE group_id = ?', id)) badRequest('Move or delete the categories in this group first');
+    if (get(db, 'SELECT 1 FROM categories WHERE group_id = ?', id)) badRequest('Flytt eller slett kategoriene i gruppen først');
     run(db, 'DELETE FROM category_groups WHERE id = ?', id);
     return c.json({ ok: true });
   });
 
   api.post('/categories', async (c) => {
     const { name, group_id } = await c.req.json();
-    if (!name?.trim()) badRequest('Give the category a name');
+    if (!name?.trim()) badRequest('Gi kategorien et navn');
     const id = run(
       db,
       'INSERT INTO categories(group_id, name, sort) VALUES (?, ?, (SELECT COALESCE(MAX(sort), 0) + 1 FROM categories WHERE group_id = ?))',
@@ -193,7 +193,7 @@ export function createApi(db: DB) {
       let value = body[f];
       if (f === 'hidden') value = value ? 1 : 0;
       if (f === 'name') value = String(value).trim();
-      if (f === 'target_type' && !['monthly', 'by_date', 'balance', null].includes(value)) badRequest('Unknown target type');
+      if (f === 'target_type' && !['monthly', 'by_date', 'balance', null].includes(value)) badRequest('Ukjent måltype');
       run(db, `UPDATE categories SET ${f} = ? WHERE id = ?`, value, id);
     }
     if (body.move) moveSort(db, 'categories', id, body.move, 'group_id = (SELECT group_id FROM categories WHERE id = ?)', id);
@@ -224,7 +224,7 @@ export function createApi(db: DB) {
   // ---------- Accounts ----------
   api.post('/accounts', async (c) => {
     const { name, kind = 'checking', on_budget = true, balance = 0, institution = null } = await c.req.json();
-    if (!name?.trim()) badRequest('Give the account a name');
+    if (!name?.trim()) badRequest('Gi kontoen et navn');
     const id = tx(db, () => {
       const id = Number(
         run(
@@ -239,12 +239,12 @@ export function createApi(db: DB) {
       if (balance) {
         const incomeCat = get<{ id: number }>(
           db,
-          "SELECT c.id FROM categories c JOIN category_groups g ON g.id = c.group_id WHERE g.is_income = 1 ORDER BY c.name = 'Other income' DESC, c.sort LIMIT 1",
+          "SELECT c.id FROM categories c JOIN category_groups g ON g.id = c.group_id WHERE g.is_income = 1 ORDER BY c.name = 'Annen inntekt' DESC, c.sort LIMIT 1",
         );
         run(
           db,
           `INSERT INTO transactions(account_id, date, amount, payee, raw_description, category_id, reviewed, source)
-           VALUES (?, ?, ?, 'Starting balance', 'Starting balance', ?, 1, 'manual')`,
+           VALUES (?, ?, ?, 'Startsaldo', 'Startsaldo', ?, 1, 'manual')`,
           id,
           todayISO(),
           Math.round(balance),
@@ -273,7 +273,7 @@ export function createApi(db: DB) {
         run(
           db,
           `INSERT INTO transactions(account_id, date, amount, payee, raw_description, reviewed, source)
-           VALUES (?, ?, ?, 'Balance adjustment', 'Balance adjustment', 0, 'manual')`,
+           VALUES (?, ?, ?, 'Saldojustering', 'Saldojustering', 0, 'manual')`,
           id,
           todayISO(),
           diff,
@@ -327,7 +327,7 @@ export function createApi(db: DB) {
 
   api.post('/transactions', async (c) => {
     const b = await c.req.json();
-    if (!b.account_id || !Number.isFinite(b.amount) || !b.date) badRequest('Account, date and amount are required');
+    if (!b.account_id || !Number.isFinite(b.amount) || !b.date) badRequest('Konto, dato og beløp må fylles ut');
     const payee = (b.payee ?? '').trim();
     const id = Number(
       run(
@@ -351,7 +351,7 @@ export function createApi(db: DB) {
     const id = Number(c.req.param('id'));
     const b = await c.req.json();
     const before = get<any>(db, 'SELECT * FROM transactions WHERE id = ?', id);
-    if (!before) badRequest('Transaction not found');
+    if (!before) badRequest('Fant ikke transaksjonen');
     tx(db, () => {
       for (const f of ['date', 'amount', 'payee', 'memo', 'account_id'] as const) {
         if (b[f] !== undefined) run(db, `UPDATE transactions SET ${f} = ? WHERE id = ?`, b[f], id);
@@ -370,7 +370,7 @@ export function createApi(db: DB) {
         if (b.splits.length > 0) {
           const amount = b.amount ?? before.amount;
           const sum = b.splits.reduce((s: number, x: any) => s + Math.round(x.amount), 0);
-          if (sum !== amount) badRequest('The split amounts must add up to the transaction amount');
+          if (sum !== amount) badRequest('Delbeløpene må til sammen bli transaksjonsbeløpet');
           for (const s of b.splits) {
             run(db, 'INSERT INTO splits(transaction_id, category_id, amount, memo) VALUES (?, ?, ?, ?)', id, s.category_id ?? null, Math.round(s.amount), s.memo ?? '');
           }
@@ -444,7 +444,7 @@ export function createApi(db: DB) {
 
   api.post('/rules', async (c) => {
     const b = await c.req.json();
-    if (!b.pattern?.trim()) badRequest('Tell me what text to look for');
+    if (!b.pattern?.trim()) badRequest('Skriv hvilken tekst regelen skal se etter');
     const id = run(
       db,
       'INSERT INTO rules(match_type, pattern, category_id, rename_to, account_id) VALUES (?, ?, ?, ?, ?)',
@@ -467,7 +467,7 @@ export function createApi(db: DB) {
   api.post('/import/preview', async (c) => {
     const { accountId, text, mapping } = await c.req.json<{ accountId: number; text: string; mapping?: Partial<CsvMapping> }>();
     const account = get<any>(db, 'SELECT * FROM accounts WHERE id = ?', accountId);
-    if (!account) badRequest('Pick an account to import into');
+    if (!account) badRequest('Velg kontoen du vil importere til');
     const p = previewCsv(text, account.kind, mapping);
     const hashed = withImportHashes(p.rows);
     const dupes = hashed.filter((r) => get(db, 'SELECT 1 FROM transactions WHERE account_id = ? AND import_hash = ?', accountId, r.importHash)).length;
@@ -492,7 +492,7 @@ export function createApi(db: DB) {
   api.post('/import/commit', async (c) => {
     const { accountId, text, mapping } = await c.req.json<{ accountId: number; text: string; mapping: Partial<CsvMapping> }>();
     const account = get<any>(db, 'SELECT * FROM accounts WHERE id = ?', accountId);
-    if (!account) badRequest('Pick an account to import into');
+    if (!account) badRequest('Velg kontoen du vil importere til');
     const p = previewCsv(text, account.kind, mapping);
     const result = ingest(db, accountId, withImportHashes(p.rows), 'csv');
     return c.json(result);
@@ -534,7 +534,7 @@ export function createApi(db: DB) {
     const base = process.env.PUBLIC_URL ?? '';
     const { code, state, error, error_description } = c.req.query();
     if (error || !code || !state) {
-      return c.redirect(`${base}/accounts?bankError=${encodeURIComponent(error_description ?? error ?? 'The bank login was cancelled')}`);
+      return c.redirect(`${base}/accounts?bankError=${encodeURIComponent(error_description ?? error ?? 'Bankinnloggingen ble avbrutt')}`);
     }
     try {
       const pub = process.env.PUBLIC_URL ?? `${new URL(c.req.url).origin}`;

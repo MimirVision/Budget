@@ -19,18 +19,18 @@ interface Connection {
 }
 
 const KIND_LABEL: Record<string, string> = {
-  checking: 'Checking',
-  savings: 'Savings',
-  credit: 'Credit card',
-  cash: 'Cash',
-  loan: 'Loan / mortgage',
+  checking: 'Brukskonto',
+  savings: 'Sparekonto',
+  credit: 'Kredittkort',
+  cash: 'Kontanter',
+  loan: 'Lån / boliglån',
 };
 
 function describeResult(r: IngestResult) {
-  const parts = [`${r.added} new`];
-  if (r.duplicates) parts.push(`${r.duplicates} already there`);
-  if (r.matched) parts.push(`${r.matched} matched to ones you typed in`);
-  if (r.transfers) parts.push(`${r.transfers} transfer${r.transfers === 1 ? '' : 's'} spotted`);
+  const parts = [`${r.added} nye`];
+  if (r.duplicates) parts.push(`${r.duplicates} fantes fra før`);
+  if (r.matched) parts.push(`${r.matched} koblet til manuelle føringer`);
+  if (r.transfers) parts.push(`${r.transfers} ${r.transfers === 1 ? 'overføring' : 'overføringer'} funnet`);
   return parts.join(' · ');
 }
 
@@ -56,7 +56,7 @@ export default function AccountsPage() {
   const syncedId = params.get('synced');
   useEffect(() => {
     if (syncedId) {
-      toast('Bank connected and synced. New transactions are waiting in Review.', { action: { label: 'Review', run: () => navigate('/review') } });
+      toast('Banken er koblet til og synkronisert. Nye transaksjoner venter under Gjennomgå.', { action: { label: 'Gjennomgå', run: () => navigate('/review') } });
       setParams({});
       refresh();
     }
@@ -71,12 +71,12 @@ export default function AccountsPage() {
         const r = await api.post<Array<{ name: string; added?: number; error?: string }>>('/connections/sync-all');
         const added = r.reduce((s, x) => s + (x.added ?? 0), 0);
         const failed = r.filter((x) => x.error);
-        toast(failed.length ? `${failed.map((f) => `${f.name}: ${f.error}`).join('; ')}` : `Synced. ${added} new transaction${added === 1 ? '' : 's'}.`, {
+        toast(failed.length ? `${failed.map((f) => `${f.name}: ${f.error}`).join('; ')}` : `Synkronisert. ${added} ${added === 1 ? 'ny transaksjon' : 'nye transaksjoner'}.`, {
           error: failed.length > 0,
         });
       } else {
         const r = await api.post<IngestResult>(`/connections/${id}/sync`);
-        toast(`Synced: ${describeResult(r)}`, r.errors?.length ? { error: true } : undefined);
+        toast(`Synkronisert: ${describeResult(r)}`, r.errors?.length ? { error: true } : undefined);
       }
     } catch (e: any) {
       toast(e.message, { error: true });
@@ -106,19 +106,19 @@ export default function AccountsPage() {
     <>
       <div className="page-head">
         <div>
-          <h1>Accounts</h1>
+          <h1>Kontoer</h1>
           <div className="sub">
-            In your budget <Money value={budgetTotal} /> · Net worth <Money value={netWorth} />
+            I budsjettet <Money value={budgetTotal} /> · Formue <Money value={netWorth} />
           </div>
         </div>
         <div className="row">
           {connections.some((c) => c.status === 'active') && (
             <button className="btn" onClick={() => sync('all')} disabled={syncing !== null}>
-              <Icon name="sync" size={16} /> {syncing === 'all' ? 'Syncing…' : 'Sync all'}
+              <Icon name="sync" size={16} /> {syncing === 'all' ? 'Synkroniserer…' : 'Synkroniser alle'}
             </button>
           )}
           <button className="btn primary" onClick={() => setAdding(true)}>
-            <Icon name="plus" size={16} /> Add account
+            <Icon name="plus" size={16} /> Legg til konto
           </button>
         </div>
       </div>
@@ -126,8 +126,8 @@ export default function AccountsPage() {
       {bankError && (
         <div className="callout bad small" style={{ marginBottom: 14 }}>
           <Icon name="alert" size={18} />
-          <div style={{ flex: 1 }}>Bank connection didn't finish: {bankError}</div>
-          <button className="icon-btn" onClick={() => setParams({})} aria-label="Dismiss">
+          <div style={{ flex: 1 }}>Bankkoblingen ble ikke fullført: {bankError}</div>
+          <button className="icon-btn" onClick={() => setParams({})} aria-label="Lukk">
             <Icon name="close" size={16} />
           </button>
         </div>
@@ -136,18 +136,18 @@ export default function AccountsPage() {
       {open.length === 0 && (
         <div className="card empty" style={{ marginBottom: 16 }}>
           <div className="emoji">🏦</div>
-          <h2 style={{ color: 'var(--text)' }}>Add your first account</h2>
-          <p>Connect with BankID, import a CSV file from your online bank, or type in the balance. You can mix and match per account.</p>
+          <h2 style={{ color: 'var(--text)' }}>Legg til din første konto</h2>
+          <p>Koble til med BankID, importer en CSV-fil fra nettbanken, eller skriv inn saldoen. Hver konto kan bruke sin egen metode.</p>
           <button className="btn primary" onClick={() => setAdding(true)}>
-            Add account
+            Legg til konto
           </button>
         </div>
       )}
 
       {[
-        { title: 'Budget accounts', sub: 'Money you spend from: checking, Revolut, credit cards', items: open.filter((a) => a.on_budget) },
-        { title: 'Tracking accounts', sub: 'Mortgage, savings and investments you watch but don\'t budget from', items: open.filter((a) => !a.on_budget) },
-        { title: 'Closed', sub: '', items: closed },
+        { title: 'Budsjettkontoer', sub: 'Pengene dere bruker av: brukskonto, Revolut, kredittkort', items: open.filter((a) => a.on_budget) },
+        { title: 'Oppfølgingskontoer', sub: 'Boliglån, sparing og investeringer dere følger med på, men ikke budsjetterer fra', items: open.filter((a) => !a.on_budget) },
+        { title: 'Avsluttet', sub: '', items: closed },
       ]
         .filter((g) => g.items.length)
         .map((g) => (
@@ -169,17 +169,17 @@ export default function AccountsPage() {
                         {' · '}
                         {conn ? (
                           <span style={{ color: conn.status === 'active' ? undefined : 'var(--bad)' }}>
-                            {conn.status === 'active' ? `Synced ${timeAgo(conn.last_sync_at)}` : conn.status === 'expired' ? 'Connection expired' : 'Sync problem'}
+                            {conn.status === 'active' ? `Synkronisert ${timeAgo(conn.last_sync_at)}` : conn.status === 'expired' ? 'Koblingen har utløpt' : 'Problem med synkronisering'}
                           </span>
                         ) : a.last_date ? (
-                          `Updated to ${dayLabel(a.last_date)}`
+                          `Oppdatert til ${dayLabel(a.last_date)}`
                         ) : (
-                          'No transactions yet'
+                          'Ingen transaksjoner ennå'
                         )}
                         {a.unreviewed > 0 && (
                           <>
                             {' · '}
-                            <Link to="/review">{a.unreviewed} to review</Link>
+                            <Link to="/review">{a.unreviewed} å gå gjennom</Link>
                           </>
                         )}
                       </div>
@@ -189,26 +189,26 @@ export default function AccountsPage() {
                         <Money value={a.balance} />
                       </div>
                       {a.bank_balance !== null && a.bank_balance !== a.balance && (
-                        <div className="small" style={{ color: 'var(--warn)' }} title="The bank reports a different balance. Use Edit → Fix balance to adjust.">
-                          Bank: {kr(a.bank_balance)}
+                        <div className="small" style={{ color: 'var(--warn)' }} title="Banken oppgir en annen saldo. Bruk Endre → Rett saldo for å justere.">
+                          Banken: {kr(a.bank_balance)}
                         </div>
                       )}
                     </div>
                     <div className="row" style={{ gap: 4 }}>
                       {conn && conn.status === 'active' && (
                         <button className="btn sm" onClick={() => sync(conn.id)} disabled={syncing !== null}>
-                          <Icon name="sync" size={14} /> {syncing === conn.id ? 'Syncing…' : 'Sync'}
+                          <Icon name="sync" size={14} /> {syncing === conn.id ? 'Synkroniserer…' : 'Synkroniser'}
                         </button>
                       )}
                       {conn && conn.status !== 'active' && (
                         <button className="btn sm primary" onClick={() => reconnect(conn)}>
-                          Reconnect
+                          Koble til på nytt
                         </button>
                       )}
                       <button className="btn sm" onClick={() => setImportInto(a)}>
-                        <Icon name="upload" size={14} /> Import
+                        <Icon name="upload" size={14} /> Importer
                       </button>
-                      <button className="icon-btn" onClick={() => setEditing(a)} aria-label={`Edit ${a.name}`}>
+                      <button className="icon-btn" onClick={() => setEditing(a)} aria-label={`Endre ${a.name}`}>
                         <Icon name="edit" size={16} />
                       </button>
                     </div>
@@ -221,7 +221,7 @@ export default function AccountsPage() {
 
       {connections.length > 0 && (
         <section>
-          <h2 style={{ fontSize: 16, margin: '0 0 8px' }}>Bank connections</h2>
+          <h2 style={{ fontSize: 16, margin: '0 0 8px' }}>Bankkoblinger</h2>
           <div className="card list">
             {connections.map((c) => {
               const daysLeft = c.expires_at ? Math.round((Date.parse(c.expires_at) - Date.now()) / 86_400_000) : null;
@@ -232,36 +232,36 @@ export default function AccountsPage() {
                       {c.name} <span className="chip">{c.providerLabel}</span>
                     </div>
                     <div className="small muted">
-                      {c.status === 'active' && `Last sync ${timeAgo(c.last_sync_at)}`}
-                      {c.status === 'linking' && 'Choose which accounts to sync'}
-                      {c.status === 'expired' && 'Expired. Log in with BankID again.'}
-                      {c.status === 'error' && `Error: ${c.last_error}`}
+                      {c.status === 'active' && `Sist synkronisert ${timeAgo(c.last_sync_at)}`}
+                      {c.status === 'linking' && 'Velg hvilke kontoer som skal synkroniseres'}
+                      {c.status === 'expired' && 'Utløpt. Logg inn med BankID igjen.'}
+                      {c.status === 'error' && `Feil: ${c.last_error}`}
                       {daysLeft !== null && c.status === 'active' && (
                         <span style={{ color: daysLeft < 8 ? 'var(--warn)' : undefined }}>
-                          {' · '}BankID renewal in {Math.max(0, daysLeft)} days
+                          {' · '}BankID-fornyelse om {Math.max(0, daysLeft)} dager
                         </span>
                       )}
                       {' · '}
-                      {c.accounts.filter((a) => a.account_id).map((a) => a.account_name).join(', ') || 'no accounts linked'}
+                      {c.accounts.filter((a) => a.account_id).map((a) => a.account_name).join(', ') || 'ingen kontoer koblet'}
                     </div>
                   </div>
                   <div className="row" style={{ gap: 4 }}>
                     {c.status === 'linking' && (
                       <button className="btn sm primary" onClick={() => setParams({ link: String(c.id) })}>
-                        Choose accounts
+                        Velg kontoer
                       </button>
                     )}
                     {(c.status !== 'active' || (daysLeft !== null && daysLeft < 14)) && (
                       <button className="btn sm" onClick={() => reconnect(c)}>
-                        {c.status === 'active' ? 'Renew now' : 'Reconnect'}
+                        {c.status === 'active' ? 'Forny nå' : 'Koble til på nytt'}
                       </button>
                     )}
                     <button
                       className="icon-btn"
-                      aria-label="Remove connection"
-                      title="Remove connection (keeps accounts and transactions)"
+                      aria-label="Fjern koblingen"
+                      title="Fjern koblingen (kontoer og transaksjoner beholdes)"
                       onClick={async () => {
-                        if (!confirm(`Stop syncing ${c.name}? Your accounts and transactions stay.`)) return;
+                        if (!confirm(`Slutte å synkronisere ${c.name}? Kontoene og transaksjonene beholdes.`)) return;
                         await api.del(`/connections/${c.id}`);
                         await Promise.all([loadConnections(), refresh()]);
                       }}
@@ -306,7 +306,7 @@ export default function AccountsPage() {
           onClose={() => setParams({})}
           onDone={async (r) => {
             setParams({});
-            toast(`Connected! ${describeResult(r)}`, { action: { label: 'Review', run: () => navigate('/review') } });
+            toast(`Tilkoblet! ${describeResult(r)}`, { action: { label: 'Gjennomgå', run: () => navigate('/review') } });
             await Promise.all([loadConnections(), refresh()]);
           }}
         />
@@ -329,24 +329,24 @@ function AddAccount({
 }) {
   const [method, setMethod] = useState<Method | null>(null);
   return (
-    <Modal title="Add account" onClose={onClose} wide>
+    <Modal title="Legg til konto" onClose={onClose} wide>
       {!method && (
         <>
           <p className="muted" style={{ margin: 0 }}>
-            How should transactions get in? You can change this later, and every account can use a different way.
+            Hvordan skal transaksjonene komme inn? Du kan endre dette senere, og hver konto kan bruke sin egen metode.
           </p>
           <div className="option-grid">
             <button className="option" onClick={() => setMethod('bank')}>
-              <strong>🔄 Connect with BankID</strong>
-              <span className="small muted">Automatic sync every few hours. Best for SpareBank 1, DNB and Revolut.</span>
+              <strong>🔄 Koble til med BankID</strong>
+              <span className="small muted">Automatisk synkronisering hver fjerde time. Best for SpareBank 1, DNB og Revolut.</span>
             </button>
             <button className="option" onClick={() => setMethod('file')}>
-              <strong>📄 Import a file</strong>
-              <span className="small muted">Download a CSV from your online bank and drop it here. Good for TF Bank.</span>
+              <strong>📄 Importer en fil</strong>
+              <span className="small muted">Last ned en CSV-fil fra nettbanken og slipp den her. Fint for TF Bank.</span>
             </button>
             <button className="option" onClick={() => setMethod('manual')}>
-              <strong>✍️ Enter manually</strong>
-              <span className="small muted">Just the balance. Add transactions by hand, like cash.</span>
+              <strong>✍️ Før manuelt</strong>
+              <span className="small muted">Bare saldoen. Legg inn transaksjoner for hånd, for eksempel kontanter.</span>
             </button>
           </div>
         </>
@@ -403,13 +403,13 @@ function ConnectBank({ onBack }: { onBack: () => void }) {
   return (
     <>
       <button className="btn ghost sm" style={{ alignSelf: 'flex-start' }} onClick={onBack}>
-        <Icon name="left" size={14} /> Back
+        <Icon name="left" size={14} /> Tilbake
       </button>
       <div className="option-grid">
         {providers.map((x) => (
           <button key={x.id} className={`option ${provider === x.id ? 'on' : ''}`} onClick={() => setProvider(x.id)}>
             <strong>
-              {x.label} {x.configured ? '' : <span className="chip">needs setup</span>}
+              {x.label} {x.configured ? '' : <span className="chip">må settes opp</span>}
             </strong>
             <span className="small muted">{x.description}</span>
           </button>
@@ -419,16 +419,16 @@ function ConnectBank({ onBack }: { onBack: () => void }) {
         <div className="callout warn small">
           <Icon name="alert" size={18} />
           <div>
-            {p.label} needs API keys before it can connect. It's a one-time setup that takes about 5 minutes.{' '}
-            <Link to="/settings">Open Settings</Link> for step-by-step instructions.
+            {p.label} trenger API-nøkler før den kan koble til. Det er et engangsoppsett som tar rundt 5 minutter.{' '}
+            <Link to="/settings">Åpne Innstillinger</Link> for steg-for-steg-instruksjoner.
           </div>
         </div>
       )}
       {p?.configured && provider === 'enablebanking' && (
         <>
-          <input className="input" placeholder="Search for your bank (e.g. DNB, SpareBank 1, Revolut)" value={filter} onChange={(e) => setFilter(e.target.value)} />
+          <input className="input" placeholder="Søk etter banken (f.eks. DNB, SpareBank 1, Revolut)" value={filter} onChange={(e) => setFilter(e.target.value)} />
           <div className="card list" style={{ maxHeight: 260, overflowY: 'auto' }}>
-            {!banks && !error && <div className="list-item muted">Loading banks…</div>}
+            {!banks && !error && <div className="list-item muted">Henter banker…</div>}
             {shown.map((b) => (
               <button
                 key={b.id}
@@ -447,9 +447,9 @@ function ConnectBank({ onBack }: { onBack: () => void }) {
       {error && <div className="callout bad small">{error}</div>}
       {p?.configured && (
         <div className="row">
-          <span className="small muted spacer">You'll log in with BankID at your bank, then come straight back here.</span>
+          <span className="small muted spacer">Du logger inn med BankID hos banken, og kommer rett tilbake hit.</span>
           <button className="btn primary" disabled={busy || (provider === 'enablebanking' && !bank)} onClick={go}>
-            {busy ? 'Opening bank…' : 'Continue to BankID'}
+            {busy ? 'Åpner banken…' : 'Fortsett til BankID'}
           </button>
         </div>
       )}
@@ -484,11 +484,11 @@ function ManualAccount({ forImport, onBack, onCreated }: { forImport: boolean; o
   return (
     <>
       <button className="btn ghost sm" style={{ alignSelf: 'flex-start' }} onClick={onBack}>
-        <Icon name="left" size={14} /> Back
+        <Icon name="left" size={14} /> Tilbake
       </button>
       <label className="field">
-        Name
-        <input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. TF Bank Mastercard" />
+        Navn
+        <input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="f.eks. TF Bank Mastercard" />
       </label>
       <label className="field">
         Type
@@ -509,22 +509,22 @@ function ManualAccount({ forImport, onBack, onCreated }: { forImport: boolean; o
       </label>
       {!forImport && (
         <label className="field">
-          {isDebt ? 'How much do you owe right now?' : 'Current balance'}
+          {isDebt ? 'Hvor mye skylder du nå?' : 'Saldo nå'}
           <MoneyInput value={balance} onCommit={setBalance} />
         </label>
       )}
       <label className="check">
         <input type="checkbox" checked={onBudget} onChange={(e) => setOnBudget(e.target.checked)} />
         <span>
-          Use in budget
+          Bruk i budsjettet
           <div className="small muted">
-            Turn off for mortgage, BSU or investments: they'll count in net worth, not in what you can spend.
+            Slå av for boliglån, BSU eller investeringer: de teller i formuen, ikke i det dere kan bruke.
           </div>
         </span>
       </label>
       <div className="row" style={{ justifyContent: 'flex-end' }}>
         <button className="btn primary" disabled={!name.trim()} onClick={create}>
-          {forImport ? 'Next: choose file' : 'Add account'}
+          {forImport ? 'Neste: velg fil' : 'Legg til konto'}
         </button>
       </div>
     </>
@@ -617,7 +617,7 @@ function ImportWizard({ account, onClose, onDone }: { account: Account; onClose:
         {optional && <option value="">—</option>}
         {preview!.headers.map((h, i) => (
           <option key={i} value={i}>
-            {h || `Column ${i + 1}`}
+            {h || `Kolonne ${i + 1}`}
           </option>
         ))}
       </select>
@@ -625,24 +625,24 @@ function ImportWizard({ account, onClose, onDone }: { account: Account; onClose:
   );
 
   return (
-    <Modal title={`Import into ${account.name}`} onClose={onClose} wide>
+    <Modal title={`Importer til ${account.name}`} onClose={onClose} wide>
       {result ? (
         <>
           <div className="callout good">
             <Icon name="check" size={20} />
             <div>
-              <strong>Imported!</strong>
+              <strong>Importert!</strong>
               <div className="small">{describeResult(result)}</div>
-              {result.categorized > 0 && <div className="small">{result.categorized} got a category suggestion automatically.</div>}
+              {result.categorized > 0 && <div className="small">{result.categorized} fikk kategoriforslag automatisk.</div>}
             </div>
           </div>
           <div className="row" style={{ justifyContent: 'flex-end' }}>
             <button className="btn" onClick={onClose}>
-              Done
+              Ferdig
             </button>
             {result.added > 0 && (
               <button className="btn primary" onClick={() => navigate('/review')}>
-                Review {result.added} transactions
+                Gå gjennom {result.added} transaksjoner
               </button>
             )}
           </div>
@@ -664,47 +664,47 @@ function ImportWizard({ account, onClose, onDone }: { account: Account; onClose:
             }}
           >
             <Icon name="upload" size={28} />
-            <div style={{ fontWeight: 600, marginTop: 6 }}>Drop a CSV file here, or click to choose</div>
-            <div className="small">Works with SpareBank 1, DNB, Revolut, TF Bank and most other banks</div>
+            <div style={{ fontWeight: 600, marginTop: 6 }}>Slipp en CSV-fil her, eller klikk for å velge</div>
+            <div className="small">Fungerer med SpareBank 1, DNB, Revolut, TF Bank og de fleste andre banker</div>
             <input type="file" accept=".csv,.txt,text/csv" hidden onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} />
           </label>
           <details className="small muted">
-            <summary>Where do I find the file?</summary>
+            <summary>Hvor finner jeg filen?</summary>
             <ul>
               <li>
-                <strong>SpareBank 1:</strong> Nettbank → the account → Transactions → “Eksporter” → CSV.
+                <strong>SpareBank 1:</strong> Nettbanken → kontoen → Transaksjoner → «Eksporter» → CSV.
               </li>
               <li>
-                <strong>DNB:</strong> Nettbank → the account → “Last ned” / Export → CSV (Excel).
+                <strong>DNB:</strong> Nettbanken → kontoen → «Last ned» → CSV (Excel).
               </li>
               <li>
-                <strong>Revolut:</strong> App → the account → ⋯ → Statement → Excel/CSV.
+                <strong>Revolut:</strong> Appen → kontoen → ⋯ → Kontoutskrift → Excel/CSV.
               </li>
               <li>
-                <strong>TF Bank:</strong> Min side → the card → Transactions → Export. If only PDF is offered, add a few transactions
-                manually or paste them into a spreadsheet and save as CSV.
+                <strong>TF Bank:</strong> Min side → kortet → Transaksjoner → Eksporter. Får du bare PDF, legg inn transaksjonene
+                manuelt, eller lim dem inn i et regneark og lagre som CSV.
               </li>
             </ul>
-            Importing the same file twice is safe: duplicates are skipped automatically.
+            Det er trygt å importere samme fil to ganger: duplikater hoppes over automatisk.
           </details>
         </>
       ) : preview ? (
         <>
           <div className="row">
-            <span className="chip brand">{preview.format === 'Generic' ? 'Detected columns' : `Recognised: ${preview.format}`}</span>
+            <span className="chip brand">{preview.format === 'Generell' ? 'Fant kolonnene' : `Gjenkjent: ${preview.format}`}</span>
             <span className="small muted">{fileName}</span>
           </div>
           <div className="small">
-            <strong>{preview.count}</strong> transactions
+            <strong>{preview.count}</strong> transaksjoner
             {preview.from && (
               <>
                 {' '}
-                from {dayLabel(preview.from)} to {dayLabel(preview.to!)}
+                fra {dayLabel(preview.from)} til {dayLabel(preview.to!)}
               </>
             )}{' '}
-            · in <Money value={preview.inflow} /> · out <Money value={preview.outflow} />
-            {preview.alreadyImported > 0 && <span className="muted"> · {preview.alreadyImported} already imported (will be skipped)</span>}
-            {preview.skipped > 0 && <span className="muted"> · {preview.skipped} rows skipped (pending/reverted or unreadable)</span>}
+            · inn <Money value={preview.inflow} /> · ut <Money value={preview.outflow} />
+            {preview.alreadyImported > 0 && <span className="muted"> · {preview.alreadyImported} er importert fra før (hoppes over)</span>}
+            {preview.skipped > 0 && <span className="muted"> · {preview.skipped} rader hoppet over (ventende, reversert eller uleselig)</span>}
           </div>
           {preview.warnings.map((w) => (
             <div key={w} className="callout warn small">
@@ -716,9 +716,9 @@ function ImportWizard({ account, onClose, onDone }: { account: Account; onClose:
             <table className="table">
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Payee (cleaned up)</th>
-                  <th className="right">Amount</th>
+                  <th>Dato</th>
+                  <th>Mottaker (ryddet)</th>
+                  <th className="right">Beløp</th>
                 </tr>
               </thead>
               <tbody>
@@ -742,22 +742,22 @@ function ImportWizard({ account, onClose, onDone }: { account: Account; onClose:
           <div className="row">
             <label className="check small">
               <input type="checkbox" checked={!!mapping?.invert} onChange={(e) => updateMapping({ invert: e.target.checked })} />
-              Flip signs (purchases should be negative)
+              Snu fortegn (kjøp skal være negative)
             </label>
             <span className="spacer" />
             <button className="btn ghost sm" onClick={() => setShowCols((v) => !v)}>
-              {showCols ? 'Hide columns' : 'Something looks wrong? Adjust columns'}
+              {showCols ? 'Skjul kolonner' : 'Ser noe feil ut? Juster kolonnene'}
             </button>
           </div>
           {showCols && (
             <div className="row" style={{ alignItems: 'flex-end' }}>
-              {colSelect('date', 'Date', false)}
-              {colSelect('description', 'Description', false)}
-              {colSelect('amount', 'Amount (+/−)')}
-              {colSelect('inflow', 'Money in')}
-              {colSelect('outflow', 'Money out')}
+              {colSelect('date', 'Dato', false)}
+              {colSelect('description', 'Beskrivelse', false)}
+              {colSelect('amount', 'Beløp (+/−)')}
+              {colSelect('inflow', 'Inn')}
+              {colSelect('outflow', 'Ut')}
               <label className="field" style={{ flex: '1 1 150px' }}>
-                Date format
+                Datoformat
                 <select className="select" value={mapping.dateFormat} onChange={(e) => updateMapping({ dateFormat: e.target.value })}>
                   <option value="dmy">31.12.2026</option>
                   <option value="ymd">2026-12-31</option>
@@ -774,15 +774,15 @@ function ImportWizard({ account, onClose, onDone }: { account: Account; onClose:
                 setPreview(null);
               }}
             >
-              Choose another file
+              Velg en annen fil
             </button>
             <button className="btn primary" disabled={busy || preview.count === 0} onClick={commit}>
-              {busy ? 'Importing…' : `Import ${preview.count - preview.alreadyImported} transactions`}
+              {busy ? 'Importerer…' : `Importer ${preview.count - preview.alreadyImported} transaksjoner`}
             </button>
           </div>
         </>
       ) : (
-        <div className="muted">Reading file…</div>
+        <div className="muted">Leser filen…</div>
       )}
     </Modal>
   );
@@ -844,18 +844,18 @@ function LinkAccounts({
 
   return (
     <Modal
-      title={`Choose accounts from ${connection.name}`}
+      title={`Velg kontoer fra ${connection.name}`}
       onClose={onClose}
       wide
       footer={
         <button className="btn primary" disabled={busy} onClick={save}>
-          {busy ? 'Syncing… (first sync can take a minute)' : 'Save and sync'}
+          {busy ? 'Synkroniserer… (første gang kan ta et minutt)' : 'Lagre og synkroniser'}
         </button>
       }
     >
       <p className="muted small" style={{ margin: 0 }}>
-        We found these accounts. Pick which ones to sync, and whether to create a new account or link to one you already added (e.g. from
-        a CSV import; duplicates are skipped).
+        Vi fant disse kontoene. Velg hvilke som skal synkroniseres, og om det skal lages en ny konto eller kobles til en du allerede har
+        lagt til (f.eks. fra en CSV-import; duplikater hoppes over).
       </p>
       {discovered.map((d) => {
         const c = choices[d.remote_id];
@@ -866,13 +866,13 @@ function LinkAccounts({
               {d.info?.balance !== undefined && <Money value={d.info.balance} />}
             </div>
             <select className="select" value={c.choice} onChange={(e) => set(d.remote_id, { choice: e.target.value })}>
-              <option value="new">Create a new account</option>
+              <option value="new">Lag en ny konto</option>
               {accounts.map((a) => (
                 <option key={a.id} value={a.id}>
-                  Link to “{a.name}”
+                  Koble til «{a.name}»
                 </option>
               ))}
-              <option value="skip">Don't sync this one</option>
+              <option value="skip">Ikke synkroniser denne</option>
             </select>
             {c.choice === 'new' && (
               <div className="row">
@@ -886,7 +886,7 @@ function LinkAccounts({
                 </select>
                 <label className="check small">
                   <input type="checkbox" checked={c.onBudget} onChange={(e) => set(d.remote_id, { onBudget: e.target.checked })} />
-                  In budget
+                  I budsjettet
                 </label>
               </div>
             )}
@@ -912,13 +912,13 @@ function EditAccount({ account, onClose, onSaved }: { account: Account; onClose:
       on_budget: onBudget,
       ...(reconcile !== null ? { reconcileTo: reconcile } : {}),
     });
-    if (reconcile !== null && reconcile !== account.balance) toast(`Added a ${kr(reconcile - account.balance)} adjustment. Review it to give it a category.`);
+    if (reconcile !== null && reconcile !== account.balance) toast(`La til en justering på ${kr(reconcile - account.balance)}. Gå gjennom den for å gi den en kategori.`);
     onSaved();
   };
 
   return (
     <Modal
-      title={`Edit ${account.name}`}
+      title={`Endre ${account.name}`}
       onClose={onClose}
       footer={
         <>
@@ -926,12 +926,12 @@ function EditAccount({ account, onClose, onSaved }: { account: Account; onClose:
             className="btn ghost danger"
             style={{ marginRight: 'auto' }}
             onClick={async () => {
-              if (!confirm(`Delete ${account.name} and all its transactions? This can't be undone. (Tip: "Close" keeps the history.)`)) return;
+              if (!confirm(`Slette ${account.name} og alle transaksjonene? Dette kan ikke angres. (Tips: «Avslutt konto» beholder historikken.)`)) return;
               await api.del(`/accounts/${account.id}`);
               onSaved();
             }}
           >
-            Delete
+            Slett
           </button>
           <button
             className="btn ghost"
@@ -940,16 +940,16 @@ function EditAccount({ account, onClose, onSaved }: { account: Account; onClose:
               onSaved();
             }}
           >
-            {account.closed ? 'Reopen' : 'Close account'}
+            {account.closed ? 'Gjenåpne' : 'Avslutt konto'}
           </button>
           <button className="btn primary" onClick={save}>
-            Save
+            Lagre
           </button>
         </>
       }
     >
       <label className="field">
-        Name
+        Navn
         <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
       </label>
       <label className="field">
@@ -963,13 +963,13 @@ function EditAccount({ account, onClose, onSaved }: { account: Account; onClose:
         </select>
       </label>
       <label className="check">
-        <input type="checkbox" checked={onBudget} onChange={(e) => setOnBudget(e.target.checked)} /> Use in budget
+        <input type="checkbox" checked={onBudget} onChange={(e) => setOnBudget(e.target.checked)} /> Bruk i budsjettet
       </label>
       <label className="field">
-        Fix balance
+        Rett saldo
         <span className="help">
-          Balance here is {kr(account.balance)}
-          {account.bank_balance !== null ? `, the bank says ${kr(account.bank_balance)}` : ''}. Type the real balance to add an adjustment.
+          Saldoen her er {kr(account.balance)}
+          {account.bank_balance !== null ? `, banken sier ${kr(account.bank_balance)}` : ''}. Skriv inn riktig saldo for å legge til en justering.
         </span>
         <MoneyInput value={reconcile ?? account.bank_balance ?? account.balance} onCommit={setReconcile} />
       </label>

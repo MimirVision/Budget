@@ -13,7 +13,7 @@ export const providers: Record<string, Provider> = {
 
 export function getProvider(id: string): Provider {
   const p = providers[id];
-  if (!p) throw new Error(`Unknown bank provider: ${id}`);
+  if (!p) throw new Error(`Ukjent bankleverandør: ${id}`);
   return p;
 }
 
@@ -25,7 +25,7 @@ export async function startConnection(
   opts: { providerId: string; bankId?: string; publicUrl: string; reconnectId?: number },
 ): Promise<string> {
   const provider = getProvider(opts.providerId);
-  if (!provider.isConfigured(db)) throw new Error(`${provider.label} is not set up yet. Add your API keys in Settings first.`);
+  if (!provider.isConfigured(db)) throw new Error(`${provider.label} er ikke satt opp ennå. Legg inn API-nøklene under Innstillinger først.`);
   const state = crypto.randomBytes(16).toString('hex');
   const result = await provider.start(db, {
     bankId: opts.bankId,
@@ -46,7 +46,7 @@ export async function startConnection(
 /** Called when the bank redirects back after BankID. Returns the connection that now needs account linking. */
 export async function completeConnection(db: DB, providerId: string, code: string, state: string, publicUrl: string) {
   const pending = get<{ provider: string; data: string }>(db, 'SELECT * FROM pending_auth WHERE state = ?', state);
-  if (!pending || pending.provider !== providerId) throw new Error('This bank login link has expired. Please start again.');
+  if (!pending || pending.provider !== providerId) throw new Error('Denne bankinnloggingen har utløpt. Start på nytt.');
   run(db, 'DELETE FROM pending_auth WHERE state = ?', state);
   const pendingData = JSON.parse(pending.data);
   const provider = getProvider(providerId);
@@ -137,7 +137,7 @@ export function linkAccounts(db: DB, connectionId: number, choices: LinkChoice[]
 
 export async function syncConnection(db: DB, connectionId: number): Promise<IngestResult & { errors: string[] }> {
   const conn = get<any>(db, 'SELECT * FROM connections WHERE id = ?', connectionId);
-  if (!conn) throw new Error('Connection not found');
+  if (!conn) throw new Error('Fant ikke bankkoblingen');
   const provider = getProvider(conn.provider);
   const total: IngestResult & { errors: string[] } = { added: 0, duplicates: 0, matched: 0, categorized: 0, transfers: 0, ids: [], errors: [] };
   let data = JSON.parse(conn.data);
@@ -196,12 +196,12 @@ export function seedOpeningBalance(db: DB, accountId: number, bankBalance: numbe
   const acc = get<{ on_budget: number }>(db, 'SELECT on_budget FROM accounts WHERE id = ?', accountId)!;
   const incomeCat = get<{ id: number }>(
     db,
-    "SELECT c.id FROM categories c JOIN category_groups g ON g.id = c.group_id WHERE g.is_income = 1 ORDER BY c.name = 'Other income' DESC, c.sort LIMIT 1",
+    "SELECT c.id FROM categories c JOIN category_groups g ON g.id = c.group_id WHERE g.is_income = 1 ORDER BY c.name = 'Annen inntekt' DESC, c.sort LIMIT 1",
   );
   run(
     db,
     `INSERT INTO transactions(account_id, date, amount, payee, raw_description, category_id, reviewed, source)
-     VALUES (?, ?, ?, 'Starting balance', 'Starting balance', ?, 1, 'manual')`,
+     VALUES (?, ?, ?, 'Startsaldo', 'Startsaldo', ?, 1, 'manual')`,
     accountId,
     addDays(sum.first ?? todayISO(), -1),
     diff,

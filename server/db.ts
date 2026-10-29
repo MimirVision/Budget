@@ -167,14 +167,14 @@ export function setSetting(db: DB, key: string, value: string | null) {
 
 /** A sensible Norwegian household starting point. Everything can be renamed, hidden or deleted. */
 export const DEFAULT_CATEGORIES: Array<{ group: string; income?: boolean; items: string[] }> = [
-  { group: 'Income', income: true, items: ['Salary', 'Other income'] },
+  { group: 'Inntekt', income: true, items: ['Lønn', 'Annen inntekt'] },
   {
-    group: 'Bills',
-    items: ['Mortgage', 'Electricity', 'Insurance', 'Internet & Phone', 'Municipal fees', 'Subscriptions', 'Childcare'],
+    group: 'Faste utgifter',
+    items: ['Boliglån', 'Strøm', 'Forsikring', 'Internett og mobil', 'Kommunale avgifter', 'Abonnementer', 'Barnehage og SFO'],
   },
-  { group: 'Everyday', items: ['Groceries', 'Eating out', 'Transport & Fuel', 'Household & Pharmacy', 'Clothing', 'Kids'] },
-  { group: 'Savings goals', items: ['Emergency fund', 'Vacation', 'Christmas & Gifts', 'Car maintenance', 'Home maintenance'] },
-  { group: 'Fun', items: ['Fun money', 'Hobbies & Sport', 'Health & Beauty'] },
+  { group: 'Hverdag', items: ['Dagligvarer', 'Spise ute', 'Transport og drivstoff', 'Hus og apotek', 'Klær', 'Barn'] },
+  { group: 'Sparemål', items: ['Buffer', 'Ferie', 'Jul og gaver', 'Bilvedlikehold', 'Vedlikehold bolig'] },
+  { group: 'Kos', items: ['Lommepenger', 'Hobby og sport', 'Helse og velvære'] },
 ];
 
 function seedDefaults(db: DB) {

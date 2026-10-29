@@ -28,7 +28,7 @@ app.post('/api/auth/login', async (c) => {
   if (!password) return c.json({ ok: true });
   const a = Buffer.from(String(given ?? ''));
   const b = Buffer.from(password);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return c.json({ error: 'Wrong password' }, 401);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return c.json({ error: 'Feil passord' }, 401);
   setCookie(c, 'budget_session', sessionToken, {
     httpOnly: true,
     sameSite: 'Lax',
@@ -44,7 +44,7 @@ app.get('/api/auth/status', (c) =>
 );
 
 app.use('/api/*', async (c, next) => {
-  if (password && getCookie(c, 'budget_session') !== sessionToken) return c.json({ error: 'Please log in' }, 401);
+  if (password && getCookie(c, 'budget_session') !== sessionToken) return c.json({ error: 'Du må logge inn' }, 401);
   await next();
 });
 
@@ -57,6 +57,6 @@ if (fs.existsSync('dist/index.html')) {
 }
 
 const port = Number(process.env.PORT ?? 8787);
-serve({ fetch: app.fetch, port }, () => console.log(`Budget is running on http://localhost:${port}`));
+serve({ fetch: app.fetch, port }, () => console.log(`Budsjett kjører på http://localhost:${port}`));
 
 if (process.env.SYNC_DISABLED !== '1') startScheduler(db, Number(process.env.SYNC_EVERY_HOURS ?? 4));

@@ -56,7 +56,7 @@ export default function TransactionsPage() {
   const setCategory = async (t: Transaction, categoryId: number | null) => {
     await api.patch(`/transactions/${t.id}`, { category_id: categoryId });
     await Promise.all([load(), refresh()]);
-    toast('Category updated');
+    toast('Kategori oppdatert');
   };
 
   if (!summary) return null;
@@ -68,37 +68,37 @@ export default function TransactionsPage() {
     <>
       <div className="page-head">
         <div>
-          <h1>{acc ? acc.name : 'Transactions'}</h1>
+          <h1>{acc ? acc.name : 'Transaksjoner'}</h1>
           <div className="sub">
             {acc ? (
               <>
-                Balance <Money value={acc.balance} />
+                Saldo <Money value={acc.balance} />
                 {acc.bank_balance !== null && acc.bank_balance !== acc.balance && (
                   <span style={{ color: 'var(--warn)' }}>
                     {' '}
-                    · bank says <Money value={acc.bank_balance} />
+                    · banken sier <Money value={acc.bank_balance} />
                   </span>
                 )}
               </>
             ) : (
-              `${total} transaction${total === 1 ? '' : 's'}`
+              `${total} ${total === 1 ? 'transaksjon' : 'transaksjoner'}`
             )}
           </div>
         </div>
         <button className="btn primary" onClick={() => setEditing('new')}>
-          <Icon name="plus" size={16} /> Add transaction
+          <Icon name="plus" size={16} /> Ny transaksjon
         </button>
       </div>
 
       <div className="row" style={{ marginBottom: 14 }}>
         <div style={{ position: 'relative', flex: '1 1 220px' }}>
-          <input className="input" placeholder="Search payee, text or amount" value={search} onChange={(e) => setSearch(e.target.value)} style={{ paddingLeft: 34 }} />
+          <input className="input" placeholder="Søk i mottaker, tekst eller beløp" value={search} onChange={(e) => setSearch(e.target.value)} style={{ paddingLeft: 34 }} />
           <span style={{ position: 'absolute', left: 10, top: 9, color: 'var(--faint)' }}>
             <Icon name="search" size={18} />
           </span>
         </div>
         <select className="select" style={{ flex: '0 1 200px' }} value={account} onChange={(e) => setFilter('account', e.target.value)}>
-          <option value="">All accounts</option>
+          <option value="">Alle kontoer</option>
           {summary.accounts.map((a) => (
             <option key={a.id} value={a.id}>
               {a.name}
@@ -110,11 +110,11 @@ export default function TransactionsPage() {
             categories={summary.categories}
             value={category === 'none' ? 'none' : cat?.id ?? null}
             onChange={(id) => setFilter('category', id ? String(id) : '')}
-            placeholder="All categories"
-            extra={<option value="none">Uncategorized</option>}
+            placeholder="Alle kategorier"
+            extra={<option value="none">Uten kategori</option>}
           />
         </div>
-        <input className="input" type="month" style={{ flex: '0 1 170px' }} value={month} onChange={(e) => setFilter('month', e.target.value)} aria-label="Month" />
+        <input className="input" type="month" style={{ flex: '0 1 170px' }} value={month} onChange={(e) => setFilter('month', e.target.value)} aria-label="Måned" />
         {filtered && (
           <button
             className="btn ghost sm"
@@ -123,28 +123,28 @@ export default function TransactionsPage() {
               setParams({});
             }}
           >
-            Clear filters
+            Fjern filtre
           </button>
         )}
       </div>
-      {category === 'none' && <div className="callout info small" style={{ marginBottom: 12 }}>Showing transactions with no category.</div>}
+      {category === 'none' && <div className="callout info small" style={{ marginBottom: 12 }}>Viser transaksjoner uten kategori.</div>}
       {month && <div className="small muted" style={{ marginBottom: 8 }}>{monthLabel(month)}</div>}
 
       <div className="card table-wrap">
         {rows.length === 0 ? (
           <div className="empty">
             <div className="emoji">🧾</div>
-            {filtered ? 'Nothing matches those filters.' : 'No transactions yet. Connect a bank or import a CSV on the Accounts page.'}
+            {filtered ? 'Ingenting passer med filtrene.' : 'Ingen transaksjoner ennå. Koble til en bank eller importer en CSV-fil under Kontoer.'}
           </div>
         ) : (
           <table className="table tx-table">
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Payee</th>
-                <th className="hide-sm">Account</th>
-                <th className="hide-sm">Category</th>
-                <th className="right">Amount</th>
+                <th>Dato</th>
+                <th>Mottaker</th>
+                <th className="hide-sm">Konto</th>
+                <th className="hide-sm">Kategori</th>
+                <th className="right">Beløp</th>
               </tr>
             </thead>
             <tbody>
@@ -156,14 +156,14 @@ export default function TransactionsPage() {
                   <td style={{ maxWidth: 280 }}>
                     <div className="ellipsis" style={{ fontWeight: 500 }}>
                       {t.payee || t.raw_description}
-                      {!t.reviewed && <span className="chip brand" style={{ marginLeft: 6 }}>new</span>}
+                      {!t.reviewed && <span className="chip brand" style={{ marginLeft: 6 }}>ny</span>}
                     </div>
                     <div className="small muted ellipsis show-sm">
                       {t.transfer_id
-                        ? `Transfer ${t.amount < 0 ? 'to' : 'from'} ${t.transfer_account_name}`
+                        ? `Overføring ${t.amount < 0 ? 'til' : 'fra'} ${t.transfer_account_name}`
                         : t.splits.length
-                          ? `Split (${t.splits.length})`
-                          : t.category_name ?? (t.suggested_category_name ? `${t.suggested_category_name}?` : 'Uncategorized')}
+                          ? `Delt (${t.splits.length})`
+                          : t.category_name ?? (t.suggested_category_name ? `${t.suggested_category_name}?` : 'Uten kategori')}
                       {' · '}
                       {t.account_name}
                     </div>
@@ -173,11 +173,11 @@ export default function TransactionsPage() {
                   <td className="hide-sm" onClick={(e) => e.stopPropagation()} style={{ minWidth: 170 }}>
                     {t.transfer_id ? (
                       <span className="chip" onClick={() => setEditing(t)} style={{ cursor: 'pointer' }}>
-                        <Icon name="swap" size={12} /> {t.amount < 0 ? 'To' : 'From'} {t.transfer_account_name}
+                        <Icon name="swap" size={12} /> {t.amount < 0 ? 'Til' : 'Fra'} {t.transfer_account_name}
                       </span>
                     ) : t.splits.length ? (
                       <span className="chip" onClick={() => setEditing(t)} style={{ cursor: 'pointer' }}>
-                        <Icon name="split" size={12} /> Split ({t.splits.length})
+                        <Icon name="split" size={12} /> Delt ({t.splits.length})
                       </span>
                     ) : (
                       <CategorySelect
@@ -186,7 +186,7 @@ export default function TransactionsPage() {
                         value={t.category_id}
                         amount={t.amount}
                         onChange={(id) => setCategory(t, id)}
-                        placeholder={t.suggested_category_name ? `${t.suggested_category_name}?` : 'Uncategorized'}
+                        placeholder={t.suggested_category_name ? `${t.suggested_category_name}?` : 'Uten kategori'}
                       />
                     )}
                   </td>
@@ -202,7 +202,7 @@ export default function TransactionsPage() {
       {rows.length < total && (
         <div style={{ textAlign: 'center', marginTop: 14 }}>
           <button className="btn" onClick={() => load(rows.length)}>
-            Show more ({total - rows.length} left)
+            Vis flere ({total - rows.length} igjen)
           </button>
         </div>
       )}

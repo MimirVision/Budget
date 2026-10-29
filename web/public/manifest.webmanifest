@@ -1,6 +1,6 @@
 {
-  "name": "Budget",
-  "short_name": "Budget",
+  "name": "Budsjett",
+  "short_name": "Budsjett",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f7f7f5",

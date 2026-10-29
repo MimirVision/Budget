@@ -59,11 +59,11 @@ export function TransactionEditor({
         body.remember = remember;
         if (txn?.transfer_id) body.transfer_account_id = null;
       } else if (mode === 'split') {
-        if (splitLeft !== 0) throw new Error(`The splits are ${kr(Math.abs(splitLeft))} ${splitLeft > 0 ? 'short' : 'over'}`);
+        if (splitLeft !== 0) throw new Error(`Delbeløpene er ${kr(Math.abs(splitLeft))} ${splitLeft > 0 ? 'for lite' : 'for mye'}`);
         body.splits = splits.filter((s) => s.amount).map((s) => ({ ...s, amount: direction === 'out' ? -s.amount : s.amount }));
         if (txn?.transfer_id) body.transfer_account_id = null;
       } else {
-        if (!transferAccount) throw new Error('Pick the other account');
+        if (!transferAccount) throw new Error('Velg den andre kontoen');
         if (txn?.suggested_transfer_id && transferAccount === txn.suggested_transfer_account_id) body.transfer_id = txn.suggested_transfer_id;
         else if (transferAccount !== txn?.transfer_account_id) body.transfer_account_id = transferAccount;
       }
@@ -86,7 +86,7 @@ export function TransactionEditor({
   };
 
   const remove = async () => {
-    if (!txn || !confirm('Delete this transaction?')) return;
+    if (!txn || !confirm('Slette denne transaksjonen?')) return;
     await api.del(`/transactions/${txn.id}`);
     await refresh();
     onSaved();
@@ -94,49 +94,49 @@ export function TransactionEditor({
 
   return (
     <Modal
-      title={isNew ? 'Add transaction' : 'Edit transaction'}
+      title={isNew ? 'Ny transaksjon' : 'Endre transaksjon'}
       onClose={onClose}
       footer={
         <>
           {!isNew && (
             <button className="btn ghost danger" style={{ marginRight: 'auto' }} onClick={remove}>
-              <Icon name="trash" size={16} /> Delete
+              <Icon name="trash" size={16} /> Slett
             </button>
           )}
           <button className="btn ghost" onClick={onClose}>
-            Cancel
+            Avbryt
           </button>
           <button className="btn primary" disabled={saving || !amount} onClick={save}>
-            {isNew ? 'Add' : 'Save'}
+            {isNew ? 'Legg til' : 'Lagre'}
           </button>
         </>
       }
     >
       <div className="seg">
         <button className={direction === 'out' ? 'on' : ''} onClick={() => setDirection('out')}>
-          Money out
+          Penger ut
         </button>
         <button className={direction === 'in' ? 'on' : ''} onClick={() => setDirection('in')}>
-          Money in
+          Penger inn
         </button>
       </div>
       <div className="row" style={{ alignItems: 'flex-end' }}>
         <label className="field" style={{ flex: 1, minWidth: 140 }}>
-          Amount
+          Beløp
           <MoneyInput value={amount} onCommit={setAmount} autoFocus={isNew} />
         </label>
         <label className="field" style={{ flex: 1, minWidth: 140 }}>
-          Date
+          Dato
           <input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </label>
       </div>
       <div className="row" style={{ alignItems: 'flex-end' }}>
         <label className="field" style={{ flex: 1, minWidth: 160 }}>
-          Payee
-          <input className="input" value={payee} onChange={(e) => setPayee(e.target.value)} placeholder="e.g. Rema 1000" />
+          Mottaker
+          <input className="input" value={payee} onChange={(e) => setPayee(e.target.value)} placeholder="f.eks. Rema 1000" />
         </label>
         <label className="field" style={{ flex: 1, minWidth: 160 }}>
-          Account
+          Konto
           <select className="select" value={accountId} onChange={(e) => setAccountId(Number(e.target.value))}>
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>
@@ -147,18 +147,18 @@ export function TransactionEditor({
         </label>
       </div>
       {txn?.raw_description && txn.raw_description !== txn.payee && (
-        <div className="small faint">Bank text: {txn.raw_description}</div>
+        <div className="small faint">Banktekst: {txn.raw_description}</div>
       )}
 
       <div className="seg">
         <button className={mode === 'category' ? 'on' : ''} onClick={() => setMode('category')}>
-          Category
+          Kategori
         </button>
         <button className={mode === 'split' ? 'on' : ''} onClick={() => setMode('split')}>
-          <Icon name="split" size={14} /> Split
+          <Icon name="split" size={14} /> Del opp
         </button>
         <button className={mode === 'transfer' ? 'on' : ''} onClick={() => setMode('transfer')}>
-          <Icon name="swap" size={14} /> Transfer
+          <Icon name="swap" size={14} /> Overføring
         </button>
       </div>
 
@@ -168,7 +168,7 @@ export function TransactionEditor({
           {payee.trim() && categoryId && (
             <label className="check small">
               <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-              Always use this category for “{payee.trim()}”
+              Bruk alltid denne kategorien for «{payee.trim()}»
             </label>
           )}
         </>
@@ -187,18 +187,18 @@ export function TransactionEditor({
               <div style={{ width: 130, flex: 'none' }}>
                 <MoneyInput value={s.amount} onCommit={(v) => setSplits(splits.map((x, j) => (j === i ? { ...x, amount: v } : x)))} />
               </div>
-              <button className="icon-btn" aria-label="Remove split" onClick={() => setSplits(splits.filter((_, j) => j !== i))}>
+              <button className="icon-btn" aria-label="Fjern del" onClick={() => setSplits(splits.filter((_, j) => j !== i))}>
                 <Icon name="close" size={16} />
               </button>
             </div>
           ))}
           <div className="row">
             <button className="btn sm" onClick={() => setSplits([...splits, { category_id: null, amount: Math.max(0, splitLeft), memo: '' }])}>
-              <Icon name="plus" size={14} /> Add split
+              <Icon name="plus" size={14} /> Legg til del
             </button>
             <span className="spacer" />
             <span className={`small ${splitLeft === 0 ? 'muted' : ''}`} style={{ color: splitLeft !== 0 ? 'var(--warn)' : undefined }}>
-              {splitLeft === 0 ? 'All assigned ✓' : `${kr(Math.abs(splitLeft))} ${splitLeft > 0 ? 'left to split' : 'too much'}`}
+              {splitLeft === 0 ? 'Alt er fordelt ✓' : `${kr(Math.abs(splitLeft))} ${splitLeft > 0 ? 'igjen å fordele' : 'for mye'}`}
             </span>
           </div>
         </div>
@@ -207,9 +207,9 @@ export function TransactionEditor({
       {mode === 'transfer' && (
         <>
           <label className="field">
-            {direction === 'out' ? 'Money went to' : 'Money came from'}
+            {direction === 'out' ? 'Pengene gikk til' : 'Pengene kom fra'}
             <select className="select" value={transferAccount ?? ''} onChange={(e) => setTransferAccount(e.target.value ? Number(e.target.value) : null)}>
-              <option value="">Choose account…</option>
+              <option value="">Velg konto…</option>
               {accounts
                 .filter((a) => a.id !== accountId)
                 .map((a) => (
@@ -220,15 +220,15 @@ export function TransactionEditor({
             </select>
           </label>
           <div className="small muted">
-            Transfers between your own accounts (paying the credit card, topping up Revolut, moving to savings) aren't spending, so they
-            don't touch your budget.
+            Overføringer mellom egne kontoer (betale kredittkortet, fylle på Revolut, flytte til sparing) er ikke forbruk, så de
+            påvirker ikke budsjettet.
           </div>
         </>
       )}
 
       <label className="field">
-        Note
-        <input className="input" value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="Optional" />
+        Notat
+        <input className="input" value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="Valgfritt" />
       </label>
     </Modal>
   );

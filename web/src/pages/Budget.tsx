@@ -6,6 +6,8 @@ import { useStore } from '../store';
 import { Availability, Icon, Modal, Money, MoneyInput, useToast } from '../components/ui';
 import { addMonths, currentMonth } from '../../../shared/months';
 
+const CADENCE: Record<Recurring['cadence'], string> = { weekly: 'ukentlig', monthly: 'månedlig', quarterly: 'kvartalsvis', yearly: 'årlig' };
+
 export default function BudgetPage() {
   const [params, setParams] = useSearchParams();
   const month = params.get('month') ?? currentMonth();
@@ -38,8 +40,8 @@ export default function BudgetPage() {
     setAutoOpen(false);
     refresh();
     if (mode !== 'reset' && r.assigned === 0) {
-      toast(before && before.readyToAssign <= 0 ? 'Nothing left to assign. Ready to assign is empty.' : 'Nothing needed: those categories are already covered.');
-    } else if (mode !== 'reset') toast(`${label}: assigned ${kr(r.assigned)}`);
+      toast(before && before.readyToAssign <= 0 ? 'Ingenting igjen å fordele. Klar til fordeling er tom.' : 'Ingenting mangler, kategoriene er allerede dekket.');
+    } else if (mode !== 'reset') toast(`${label}: fordelte ${kr(r.assigned)}`);
   };
 
   const all = useMemo(() => budget?.groups.flatMap((g) => g.categories) ?? [], [budget]);
@@ -54,22 +56,22 @@ export default function BudgetPage() {
     <>
       <div className="page-head">
         <div className="month-nav">
-          <button className="icon-btn" onClick={() => setMonth(addMonths(month, -1))} aria-label="Previous month">
+          <button className="icon-btn" onClick={() => setMonth(addMonths(month, -1))} aria-label="Forrige måned">
             <Icon name="left" />
           </button>
           <h1>{monthLabel(month)}</h1>
-          <button className="icon-btn" onClick={() => setMonth(addMonths(month, 1))} aria-label="Next month">
+          <button className="icon-btn" onClick={() => setMonth(addMonths(month, 1))} aria-label="Neste måned">
             <Icon name="right" />
           </button>
           {month !== currentMonth() && (
             <button className="btn sm ghost" onClick={() => setMonth(currentMonth())}>
-              Today
+              I dag
             </button>
           )}
         </div>
         <div className="row">
           <label className="check small muted">
-            <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> Show hidden
+            <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> Vis skjulte
           </label>
         </div>
       </div>
@@ -81,34 +83,34 @@ export default function BudgetPage() {
         <div>
           <div className="amount num">{kr(rta)}</div>
           <div className="label">
-            {rta > 0 ? 'Ready to assign' : rta < 0 ? 'Assigned more than you have' : 'Every krone has a job'}
+            {rta > 0 ? 'Klar til fordeling' : rta < 0 ? 'Fordelt mer enn du har' : 'Hver krone har en jobb'}
           </div>
         </div>
         <div className="small" style={{ flex: 1, minWidth: 200 }}>
-          {rta > 0 && 'Give this money a job by typing amounts in the Assigned column, or let auto-assign do it.'}
-          {rta < 0 && 'Take some money back from a category (lower its Assigned) until this is zero.'}
-          {rta === 0 && hasAccounts && 'Nice! When the next paycheck arrives it will show up here.'}
-          {month > currentMonth() && rta > 0 && ' Got paid early, like on the 20th? Assigning it to next month is exactly right.'}
+          {rta > 0 && 'Gi pengene en jobb ved å skrive beløp i Fordelt-kolonnen, eller la autofordeling gjøre det.'}
+          {rta < 0 && 'Ta tilbake penger fra en kategori (senk Fordelt) til dette er null.'}
+          {rta === 0 && hasAccounts && 'Bra! Når neste lønn kommer, dukker den opp her.'}
+          {month > currentMonth() && rta > 0 && ' Fikk du lønn tidlig, som den 20.? Da er det helt riktig å fordele den til neste måned.'}
         </div>
         <div style={{ position: 'relative' }}>
           <button className="btn primary" onClick={() => setAutoOpen((v) => !v)}>
-            <Icon name="magic" size={16} /> Auto-assign
+            <Icon name="magic" size={16} /> Autofordel
           </button>
           {autoOpen && (
             <div className="card" style={{ position: 'absolute', right: 0, top: 44, zIndex: 10, width: 280, padding: 6 }}>
               <AutoItem
-                title="Fund my targets"
-                sub={totalNeeded > 0 ? `${kr(totalNeeded)} needed this month` : 'All targets are funded'}
-                onClick={() => auto('targets', 'Targets funded')}
+                title="Fyll opp målene mine"
+                sub={totalNeeded > 0 ? `${kr(totalNeeded)} mangler denne måneden` : 'Alle mål er dekket'}
+                onClick={() => auto('targets', 'Mål fylt opp')}
               />
-              <AutoItem title="Same as last month" sub="Copy last month's assigned amounts" onClick={() => auto('last_month_assigned', 'Copied last month')} />
-              <AutoItem title="Last month's spending" sub="Assign what you actually spent" onClick={() => auto('last_month_spent', 'Assigned last month’s spending')} />
-              <AutoItem title="3-month average spending" sub="Smooths out lumpy months" onClick={() => auto('average_spent', 'Assigned average spending')} />
+              <AutoItem title="Samme som forrige måned" sub="Kopier fordelingen fra forrige måned" onClick={() => auto('last_month_assigned', 'Kopierte forrige måned')} />
+              <AutoItem title="Forbruket forrige måned" sub="Fordel det du faktisk brukte" onClick={() => auto('last_month_spent', 'Fordelte forrige måneds forbruk')} />
+              <AutoItem title="Snittforbruk siste 3 måneder" sub="Jevner ut ujevne måneder" onClick={() => auto('average_spent', 'Fordelte snittforbruk')} />
               <AutoItem
-                title="Reset this month"
-                sub="Set every Assigned to zero"
+                title="Nullstill denne måneden"
+                sub="Sett all fordeling til null"
                 danger
-                onClick={() => confirm('Set every category to 0 assigned for this month?') && auto('reset', 'Reset')}
+                onClick={() => confirm('Sette alle kategorier til 0 fordelt denne måneden?') && auto('reset', 'Nullstilt')}
               />
             </div>
           )}
@@ -120,10 +122,10 @@ export default function BudgetPage() {
           <table className="budget-table">
             <thead>
               <tr>
-                <th>Category</th>
-                <th>Assigned</th>
-                <th className="hide-sm">Spent</th>
-                <th>Available</th>
+                <th>Kategori</th>
+                <th>Fordelt</th>
+                <th className="hide-sm">Brukt</th>
+                <th>Tilgjengelig</th>
               </tr>
             </thead>
             <tbody>
@@ -223,7 +225,7 @@ function GroupRows({
         <td>
           <span className="row" style={{ gap: 4 }}>
             {name}
-            <button className="icon-btn" style={{ width: 24, height: 24 }} onClick={() => setAdding(true)} aria-label={`Add category to ${name}`} title="Add category">
+            <button className="icon-btn" style={{ width: 24, height: 24 }} onClick={() => setAdding(true)} aria-label={`Legg til kategori i ${name}`} title="Legg til kategori">
               <Icon name="plus" size={14} />
             </button>
           </span>
@@ -247,10 +249,10 @@ function GroupRows({
                 refresh();
               }}
             >
-              <input className="input" style={{ maxWidth: 260 }} autoFocus placeholder="New category name" value={newName} onChange={(e) => setNewName(e.target.value)} />
-              <button className="btn primary sm">Add</button>
+              <input className="input" style={{ maxWidth: 260 }} autoFocus placeholder="Navn på ny kategori" value={newName} onChange={(e) => setNewName(e.target.value)} />
+              <button className="btn primary sm">Legg til</button>
               <button type="button" className="btn ghost sm" onClick={() => setAdding(false)}>
-                Cancel
+                Avbryt
               </button>
             </form>
           </td>
@@ -265,10 +267,10 @@ function GroupRows({
 
 function targetText(c: CategoryRow): { text: string; tone?: 'warn' | 'good' } | null {
   if (!c.target_type || !c.target_amount) return null;
-  if (c.needed > 0) return { text: `${kr(c.needed)} more needed`, tone: 'warn' };
-  if (c.target_type === 'monthly') return { text: `${kr(c.target_amount)}/month ✓`, tone: 'good' };
-  if (c.target_type === 'balance') return { text: `Keep ${kr(c.target_amount)} ✓`, tone: 'good' };
-  return { text: `${kr(c.target_amount)} by ${monthLabel(c.target_date!)} ✓`, tone: 'good' };
+  if (c.needed > 0) return { text: `${kr(c.needed)} mangler`, tone: 'warn' };
+  if (c.target_type === 'monthly') return { text: `${kr(c.target_amount)}/mnd ✓`, tone: 'good' };
+  if (c.target_type === 'balance') return { text: `Hold ${kr(c.target_amount)} ✓`, tone: 'good' };
+  return { text: `${kr(c.target_amount)} innen ${monthLabel(c.target_date!).toLowerCase()} ✓`, tone: 'good' };
 }
 
 function CategoryLine({
@@ -297,16 +299,16 @@ function CategoryLine({
           {c.name}
         </div>
         {target && <div className="cat-sub" style={{ color: target.tone === 'warn' ? 'var(--warn)' : undefined }}>{target.text}</div>}
-        {!target && fast && <div className="cat-sub" style={{ color: 'var(--warn)' }}>Spending faster than usual for this point in the month</div>}
+        {!target && fast && <div className="cat-sub" style={{ color: 'var(--warn)' }}>Brukes raskere enn vanlig så langt i måneden</div>}
         {showBar && (
-          <div className="bar" title={`${Math.round(ratio * 100)}% used`}>
+          <div className="bar" title={`${Math.round(ratio * 100)} % brukt`}>
             <div className={`fill ${c.available < 0 ? 'bad' : fast ? 'warn' : ''}`} style={{ width: `${ratio * 100}%` }} />
             {pace > 0 && pace < 1 && <div className="pace" style={{ left: `${pace * 100}%` }} />}
           </div>
         )}
       </td>
       <td onClick={(e) => e.stopPropagation()}>
-        <MoneyInput className="assign-input" value={c.assigned} onCommit={onAssign} ariaLabel={`Assigned to ${c.name}`} />
+        <MoneyInput className="assign-input" value={c.assigned} onCommit={onAssign} ariaLabel={`Fordelt til ${c.name}`} />
       </td>
       <td className="num hide-sm muted">{c.activity ? kr(c.activity) : '–'}</td>
       <td>
@@ -339,12 +341,12 @@ function CategoryPanel({
   const [editingTarget, setEditingTarget] = useState(false);
 
   const quick = [
-    cat.needed > 0 && { label: 'Fund target', value: cat.assigned + cat.needed },
-    cat.lastMonthAssigned > 0 && { label: 'Assigned last month', value: cat.lastMonthAssigned },
-    cat.lastMonthActivity < 0 && { label: 'Spent last month', value: -cat.lastMonthActivity },
-    cat.avgActivity < 0 && { label: 'Average spent', value: -cat.avgActivity },
-    cat.available < 0 && { label: 'Cover overspending', value: cat.assigned - cat.available },
-    cat.assigned !== 0 && { label: 'Clear', value: 0 },
+    cat.needed > 0 && { label: 'Fyll opp målet', value: cat.assigned + cat.needed },
+    cat.lastMonthAssigned > 0 && { label: 'Fordelt forrige måned', value: cat.lastMonthAssigned },
+    cat.lastMonthActivity < 0 && { label: 'Brukt forrige måned', value: -cat.lastMonthActivity },
+    cat.avgActivity < 0 && { label: 'Snittforbruk', value: -cat.avgActivity },
+    cat.available < 0 && { label: 'Dekk overforbruket', value: cat.assigned - cat.available },
+    cat.assigned !== 0 && { label: 'Nullstill', value: 0 },
   ].filter(Boolean) as Array<{ label: string; value: number }>;
 
   return (
@@ -359,28 +361,28 @@ function CategoryPanel({
         <div className={`big num`} style={{ color: cat.available < 0 ? 'var(--bad)' : cat.available > 0 ? 'var(--good)' : undefined }}>
           {kr(cat.available)}
         </div>
-        <div className="muted small">available</div>
+        <div className="muted small">tilgjengelig</div>
       </div>
       {cat.available < 0 && (
         <div className="callout bad small">
-          Overspent by {kr(-cat.available)}. Move money here from another category, or assign more.
+          Overforbruk på {kr(-cat.available)}. Flytt penger hit fra en annen kategori, eller fordel mer.
         </div>
       )}
       <div>
         <div className="kv">
-          <span className="muted">Left over from last month</span>
+          <span className="muted">Overført fra forrige måned</span>
           <Money value={cat.available - cat.assigned - cat.activity} />
         </div>
         <div className="kv">
-          <span className="muted">Assigned this month</span>
+          <span className="muted">Fordelt denne måneden</span>
           <Money value={cat.assigned} />
         </div>
         <div className="kv">
-          <span className="muted">Spent this month</span>
+          <span className="muted">Brukt denne måneden</span>
           <Money value={cat.activity} />
         </div>
         <div className="kv">
-          <span className="muted">Average spent (3 mo)</span>
+          <span className="muted">Snittforbruk (3 mnd)</span>
           <Money value={-cat.avgActivity} />
         </div>
       </div>
@@ -388,7 +390,7 @@ function CategoryPanel({
       {quick.length > 0 && (
         <div>
           <div className="small muted" style={{ marginBottom: 6, fontWeight: 600 }}>
-            Quick assign
+            Hurtigfordeling
           </div>
           <div className="quick">
             {quick.map((q) => (
@@ -403,13 +405,13 @@ function CategoryPanel({
 
       <div className="row">
         <button className="btn sm" onClick={() => setMoving(true)}>
-          <Icon name="swap" size={16} /> Move money
+          <Icon name="swap" size={16} /> Flytt penger
         </button>
         <button className="btn sm" onClick={() => setEditingTarget(true)}>
-          <Icon name="calendar" size={16} /> {cat.target_type ? 'Edit target' : 'Set a target'}
+          <Icon name="calendar" size={16} /> {cat.target_type ? 'Endre mål' : 'Sett et mål'}
         </button>
         <button className="btn sm ghost" onClick={() => navigate(`/transactions?category=${cat.id}&month=${month}`)}>
-          Transactions
+          Transaksjoner
         </button>
       </div>
 
@@ -470,16 +472,16 @@ function MoveMoney({
   const [other, setOther] = useState<string>('rta');
   const [amount, setAmount] = useState(Math.max(0, cat.available < 0 ? -cat.available : cat.needed));
   const sources = all.filter((c) => c.id !== cat.id && !c.hidden);
-  const otherName = other === 'rta' ? 'Ready to assign' : sources.find((c) => String(c.id) === other)?.name;
+  const otherName = other === 'rta' ? 'Klar til fordeling' : sources.find((c) => String(c.id) === other)?.name;
 
   return (
     <Modal
-      title="Move money"
+      title="Flytt penger"
       onClose={onClose}
       footer={
         <>
           <button className="btn ghost" onClick={onClose}>
-            Cancel
+            Avbryt
           </button>
           <button
             className="btn primary"
@@ -488,33 +490,33 @@ function MoveMoney({
               const o = other === 'rta' ? null : Number(other);
               const body = direction === 'in' ? { from: o, to: cat.id, amount } : { from: cat.id, to: o, amount };
               await api.post(`/budget/${month}/move`, body);
-              onDone(direction === 'in' ? `Moved ${kr(amount)} from ${otherName} to ${cat.name}` : `Moved ${kr(amount)} from ${cat.name} to ${otherName}`);
+              onDone(direction === 'in' ? `Flyttet ${kr(amount)} fra ${otherName} til ${cat.name}` : `Flyttet ${kr(amount)} fra ${cat.name} til ${otherName}`);
             }}
           >
-            Move {kr(amount)}
+            Flytt {kr(amount)}
           </button>
         </>
       }
     >
       <div className="seg">
         <button className={direction === 'in' ? 'on' : ''} onClick={() => setDirection('in')}>
-          Into {cat.name}
+          Inn i {cat.name}
         </button>
         <button className={direction === 'out' ? 'on' : ''} onClick={() => setDirection('out')}>
-          Out of {cat.name}
+          Ut av {cat.name}
         </button>
       </div>
       <label className="field">
-        Amount
+        Beløp
         <MoneyInput value={amount} onCommit={setAmount} autoFocus />
       </label>
       <label className="field">
-        {direction === 'in' ? 'Take it from' : 'Give it to'}
+        {direction === 'in' ? 'Ta pengene fra' : 'Gi pengene til'}
         <select className="select" value={other} onChange={(e) => setOther(e.target.value)}>
-          <option value="rta">Ready to assign ({kr(rta)})</option>
+          <option value="rta">Klar til fordeling ({kr(rta)})</option>
           {sources.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.name} ({kr(c.available)} available)
+              {c.name} ({kr(c.available)} tilgjengelig)
             </option>
           ))}
         </select>
@@ -534,26 +536,26 @@ function TargetEditor({ cat, onClose, onSaved }: { cat: CategoryRow; onClose: ()
     onSaved();
   };
   const options: Array<{ id: NonNullable<CategoryRow['target_type']>; title: string; sub: string }> = [
-    { id: 'monthly', title: 'Every month', sub: 'Bills and regular spending: power, groceries, Netflix' },
-    { id: 'by_date', title: 'Save by a date', sub: 'Vacation, Christmas, car insurance due in March' },
-    { id: 'balance', title: 'Keep a balance', sub: 'Emergency fund, buffer for the car' },
+    { id: 'monthly', title: 'Hver måned', sub: 'Regninger og fast forbruk: strøm, mat, Netflix' },
+    { id: 'by_date', title: 'Spar til en dato', sub: 'Ferie, jul, bilforsikring som forfaller i mars' },
+    { id: 'balance', title: 'Hold en saldo', sub: 'Buffer, reserve til bilen' },
   ];
   return (
     <Modal
-      title={`Target for ${cat.name}`}
+      title={`Mål for ${cat.name}`}
       onClose={onClose}
       footer={
         <>
           {cat.target_type && (
             <button className="btn ghost danger" onClick={() => save(true)} style={{ marginRight: 'auto' }}>
-              Remove target
+              Fjern mål
             </button>
           )}
           <button className="btn ghost" onClick={onClose}>
-            Cancel
+            Avbryt
           </button>
           <button className="btn primary" disabled={amount <= 0} onClick={() => save()}>
-            Save target
+            Lagre mål
           </button>
         </>
       }
@@ -567,12 +569,12 @@ function TargetEditor({ cat, onClose, onSaved }: { cat: CategoryRow; onClose: ()
         ))}
       </div>
       <label className="field">
-        {type === 'monthly' ? 'Amount each month' : type === 'by_date' ? 'Total amount needed' : 'Balance to keep'}
+        {type === 'monthly' ? 'Beløp hver måned' : type === 'by_date' ? 'Totalt beløp du trenger' : 'Saldo som skal holdes'}
         <MoneyInput value={amount} onCommit={setAmount} autoFocus />
       </label>
       {type === 'by_date' && (
         <label className="field">
-          By (month)
+          Innen (måned)
           <input className="input" type="month" value={date} onChange={(e) => setDate(e.target.value)} />
         </label>
       )}
@@ -583,25 +585,25 @@ function TargetEditor({ cat, onClose, onSaved }: { cat: CategoryRow; onClose: ()
 function MonthSummary({ budget }: { budget: BudgetMonth }) {
   return (
     <div className="card card-pad">
-      <h3>This month</h3>
+      <h3>Denne måneden</h3>
       <div className="kv">
-        <span className="muted">Income</span>
+        <span className="muted">Inntekt</span>
         <Money value={budget.income} />
       </div>
       <div className="kv">
-        <span className="muted">Assigned</span>
+        <span className="muted">Fordelt</span>
         <Money value={budget.assigned} />
       </div>
       <div className="kv">
-        <span className="muted">Spent</span>
+        <span className="muted">Brukt</span>
         <Money value={budget.activity} />
       </div>
       <div className="kv">
-        <span className="muted">Available in categories</span>
+        <span className="muted">Tilgjengelig i kategorier</span>
         <Money value={budget.available} />
       </div>
       <p className="small faint" style={{ marginBottom: 0 }}>
-        Tip: click a category to see its details, move money or set a target.
+        Tips: klikk på en kategori for å se detaljer, flytte penger eller sette et mål.
       </p>
     </div>
   );
@@ -614,8 +616,8 @@ function Upcoming({ items }: { items: Recurring[] }) {
   return (
     <div className="card" style={{ overflow: 'hidden' }}>
       <div className="card-pad" style={{ paddingBottom: 8 }}>
-        <h3 style={{ marginBottom: 2 }}>Upcoming bills</h3>
-        <div className="small muted">Found automatically from your history · <Money value={total} /></div>
+        <h3 style={{ marginBottom: 2 }}>Kommende regninger</h3>
+        <div className="small muted">Funnet automatisk i historikken · <Money value={total} /></div>
       </div>
       <div className="list">
         {soon.map((r) => (
@@ -625,7 +627,7 @@ function Upcoming({ items }: { items: Recurring[] }) {
                 {r.payee}
               </div>
               <div className="small faint">
-                {relativeDay(r.nextDate)} · {r.cadence}
+                {relativeDay(r.nextDate)} · {CADENCE[r.cadence]}
                 {r.categoryName ? ` · ${r.categoryName}` : ''}
               </div>
             </div>
@@ -642,18 +644,18 @@ function Attention({ budget }: { budget: BudgetMonth }) {
   const items: Array<{ tone: string; text: React.ReactNode }> = [];
   for (const c of summary?.attention ?? []) {
     if (c.status === 'expired')
-      items.push({ tone: 'bad', text: <>Your {c.name} connection has expired. <Link to="/accounts">Reconnect with BankID</Link> to keep syncing.</> });
-    else if (c.status === 'error') items.push({ tone: 'warn', text: <>Syncing {c.name} failed: {c.last_error}. <Link to="/accounts">Check it</Link></> });
-    else if (c.status === 'linking') items.push({ tone: 'info', text: <>Finish setting up {c.name}: <Link to={`/accounts?link=${c.id}`}>choose which accounts to sync</Link>.</> });
+      items.push({ tone: 'bad', text: <>Koblingen til {c.name} har utløpt. <Link to="/accounts">Koble til på nytt med BankID</Link> for å fortsette synkroniseringen.</> });
+    else if (c.status === 'error') items.push({ tone: 'warn', text: <>Synkronisering av {c.name} feilet: {c.last_error}. <Link to="/accounts">Sjekk den</Link></> });
+    else if (c.status === 'linking') items.push({ tone: 'info', text: <>Fullfør oppsettet av {c.name}: <Link to={`/accounts?link=${c.id}`}>velg hvilke kontoer som skal synkroniseres</Link>.</> });
     else if (c.expires_at)
-      items.push({ tone: 'warn', text: <>Your {c.name} connection expires {relativeDay(c.expires_at.slice(0, 10)).toLowerCase()}. <Link to="/accounts">Renew it</Link> so syncing doesn't stop.</> });
+      items.push({ tone: 'warn', text: <>Koblingen til {c.name} utløper {relativeDay(c.expires_at.slice(0, 10)).toLowerCase()}. <Link to="/accounts">Forny den</Link> så synkroniseringen ikke stopper.</> });
   }
   if (budget.unreviewed > 0)
     items.push({
       tone: 'info',
       text: (
         <>
-          <strong>{budget.unreviewed}</strong> new transaction{budget.unreviewed === 1 ? '' : 's'} to review. <Link to="/review">Review now</Link>. It only takes a minute.
+          <strong>{budget.unreviewed}</strong> {budget.unreviewed === 1 ? 'ny transaksjon' : 'nye transaksjoner'} å gå gjennom. <Link to="/review">Gå gjennom nå</Link>. Det tar bare et minutt.
         </>
       ),
     });
@@ -673,36 +675,36 @@ function Attention({ budget }: { budget: BudgetMonth }) {
 function Welcome() {
   return (
     <div className="card card-pad" style={{ marginBottom: 16 }}>
-      <h2 style={{ fontSize: 20 }}>Welcome! Let's get you set up 👋</h2>
+      <h2 style={{ fontSize: 20 }}>Velkommen! La oss komme i gang 👋</h2>
       <p className="muted" style={{ marginTop: 0 }}>
-        This works like YNAB: every krone you have gets a job. It takes about five minutes.
+        Dette fungerer som YNAB: hver krone du har får en jobb. Oppsettet tar rundt fem minutter.
       </p>
       <div className="steps">
         <div className="step card">
           <div className="step-num">1</div>
           <div>
-            <strong>Add your accounts</strong>
+            <strong>Legg til kontoene dine</strong>
             <div className="small muted">
-              Connect your banks with BankID for automatic sync, import a CSV from your online bank, or just type in the balance. Any mix works.
+              Koble til bankene med BankID for automatisk synkronisering, importer en CSV-fil fra nettbanken, eller skriv inn saldoen. Du kan blande som du vil.
             </div>
             <Link to="/accounts" className="btn primary sm" style={{ marginTop: 8 }}>
-              Add accounts
+              Legg til kontoer
             </Link>
           </div>
         </div>
         <div className="step card">
           <div className="step-num">2</div>
           <div>
-            <strong>Review your transactions</strong>
-            <div className="small muted">Most get a category automatically. You confirm with one tap, and it learns as you go.</div>
+            <strong>Gå gjennom transaksjonene</strong>
+            <div className="small muted">De fleste får kategori automatisk. Du bekrefter med ett trykk, og appen lærer underveis.</div>
           </div>
         </div>
         <div className="step card">
           <div className="step-num">3</div>
           <div>
-            <strong>Give every krone a job</strong>
+            <strong>Gi hver krone en jobb</strong>
             <div className="small muted">
-              Assign your money to categories (bills first, then everyday spending, then goals) until Ready to assign is 0.
+              Fordel pengene på kategorier (regninger først, så hverdagsforbruk, så sparemål) til Klar til fordeling er 0.
             </div>
           </div>
         </div>

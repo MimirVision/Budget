@@ -155,7 +155,7 @@ export function detectMapping(rows: string[][], delimiter: string): { mapping: C
   let headerRow = rows.findIndex((r, i) => i < 10 && r.some((c) => HEADER_HINTS.date.test(c.trim())));
   const headers = headerRow >= 0 ? rows[headerRow] : [];
   const lower = headers.map((h) => h.toLowerCase());
-  let format = 'Generic';
+  let format = 'Generell';
 
   let mapping: CsvMapping = {
     delimiter,
@@ -257,14 +257,14 @@ export function previewCsv(text: string, accountKind: string, override?: Partial
     if (accountKind === 'credit' && parsed.rows.length >= 3 && positives / parsed.rows.length > 0.7) {
       mapping = { ...mapping, invert: true };
       parsed = applyMapping(rows, mapping);
-      warnings.push('Purchases looked like positive numbers, so signs were flipped. Untick "Flip signs" if that is wrong.');
+      warnings.push('Kjøp så ut som positive tall, så fortegnet ble snudd. Fjern haken for «Snu fortegn» hvis det er feil.');
     }
   }
-  if (parsed.rows.length === 0) warnings.push('No transactions could be read. Check the column choices below.');
+  if (parsed.rows.length === 0) warnings.push('Fant ingen transaksjoner å lese. Sjekk kolonnevalgene under.');
 
   return {
     format: detected.format,
-    headers: mapping.headerRow >= 0 ? rows[mapping.headerRow] : (rows[0] ?? []).map((_, i) => `Column ${i + 1}`),
+    headers: mapping.headerRow >= 0 ? rows[mapping.headerRow] : (rows[0] ?? []).map((_, i) => `Kolonne ${i + 1}`),
     sample: rows.slice(mapping.headerRow + 1, mapping.headerRow + 6),
     mapping,
     rows: parsed.rows,

@@ -89,7 +89,7 @@ export function suggestCategory(
     const id = merchant?.category && categoryByName(db, merchant.category);
     if (id) return { categoryId: id, source: 'merchant' };
   } else if (/\b(lønn|lonn|lønning|salary|payroll|feriepenger)\b/i.test(raw)) {
-    const id = categoryByName(db, 'Salary');
+    const id = categoryByName(db, 'Lønn');
     if (id) return { categoryId: id, source: 'merchant' };
   }
   return undefined;
@@ -124,8 +124,8 @@ export function findTransferCandidate(db: DB, txnId: number): number | undefined
 export function linkTransfer(db: DB, aId: number, bId: number) {
   const a = get<any>(db, 'SELECT t.*, a.on_budget FROM transactions t JOIN accounts a ON a.id = t.account_id WHERE t.id = ?', aId);
   const b = get<any>(db, 'SELECT t.*, a.on_budget FROM transactions t JOIN accounts a ON a.id = t.account_id WHERE t.id = ?', bId);
-  if (!a || !b) throw new Error('Transaction not found');
-  if (a.account_id === b.account_id) throw new Error('A transfer needs two different accounts');
+  if (!a || !b) throw new Error('Fant ikke transaksjonen');
+  if (a.account_id === b.account_id) throw new Error('En overføring trenger to forskjellige kontoer');
   tx(db, () => {
     for (const [self, other] of [
       [a, b],
@@ -162,7 +162,7 @@ export function unlinkTransfer(db: DB, id: number) {
 /** Marks a transaction as a transfer to an account where the other half hasn't shown up yet. */
 export function transferToAccount(db: DB, txnId: number, accountId: number): number {
   const t = get<any>(db, 'SELECT * FROM transactions WHERE id = ?', txnId);
-  if (!t) throw new Error('Transaction not found');
+  if (!t) throw new Error('Fant ikke transaksjonen');
   const existing = get<{ id: number }>(
     db,
     `SELECT id FROM transactions WHERE account_id = ? AND amount = ? AND transfer_id IS NULL AND date BETWEEN ? AND ?
@@ -184,7 +184,7 @@ export function transferToAccount(db: DB, txnId: number, accountId: number): num
         accountId,
         t.date,
         -t.amount,
-        `Transfer: ${from.name}`,
+        `Overføring: ${from.name}`,
         t.raw_description,
       ).lastInsertRowid,
     );

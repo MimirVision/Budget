@@ -27,32 +27,34 @@ export function toInput(ore: number): string {
   return (ore / 100).toFixed(2).replace(/\.00$/, '').replace('.', ',');
 }
 
-const monthFmt = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' });
-const shortMonthFmt = new Intl.DateTimeFormat('en-GB', { month: 'short' });
-const dayFmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
+const monthFmt = new Intl.DateTimeFormat('nb-NO', { month: 'long', year: 'numeric' });
+const shortMonthFmt = new Intl.DateTimeFormat('nb-NO', { month: 'short' });
+const dayFmt = new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'short' });
 
-export const monthLabel = (m: string) => monthFmt.format(new Date(`${m}-15T12:00:00`));
-export const shortMonth = (m: string) => shortMonthFmt.format(new Date(`${m}-15T12:00:00`));
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+export const monthLabel = (m: string) => capitalize(monthFmt.format(new Date(`${m}-15T12:00:00`)));
+export const shortMonth = (m: string) => shortMonthFmt.format(new Date(`${m}-15T12:00:00`)).replace('.', '');
 export const dayLabel = (d: string) => dayFmt.format(new Date(`${d}T12:00:00`));
 
 export function relativeDay(d: string): string {
   const today = new Date();
   const date = new Date(`${d}T12:00:00`);
   const diff = Math.round((date.getTime() - new Date(today.toDateString()).getTime() - 12 * 3600_000) / 86_400_000);
-  if (diff === 0) return 'Today';
-  if (diff === -1) return 'Yesterday';
-  if (diff === 1) return 'Tomorrow';
-  if (diff > 1 && diff < 7) return `In ${diff} days`;
+  if (diff === 0) return 'I dag';
+  if (diff === -1) return 'I går';
+  if (diff === 1) return 'I morgen';
+  if (diff > 1 && diff < 7) return `Om ${diff} dager`;
   return dayLabel(d);
 }
 
 export function timeAgo(iso: string | null): string {
-  if (!iso) return 'never';
+  if (!iso) return 'aldri';
   const t = Date.parse(iso.includes('T') ? iso : `${iso.replace(' ', 'T')}Z`);
   const mins = Math.round((Date.now() - t) / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins} min ago`;
+  if (mins < 1) return 'akkurat nå';
+  if (mins < 60) return `for ${mins} min siden`;
   const h = Math.round(mins / 60);
-  if (h < 24) return `${h} h ago`;
-  return `${Math.round(h / 24)} days ago`;
+  if (h < 24) return `for ${h} t siden`;
+  return `for ${Math.round(h / 24)} dager siden`;
 }

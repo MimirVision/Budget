@@ -7,9 +7,9 @@ import { CategorySelect, Icon, Money, useToast } from '../components/ui';
 import { TransactionEditor } from '../components/TransactionEditor';
 
 const SOURCE_LABEL: Record<string, string> = {
-  rule: 'your rule',
-  history: 'like last time',
-  merchant: 'known store',
+  rule: 'din regel',
+  history: 'som sist',
+  merchant: 'kjent mottaker',
 };
 
 /** The inbox: every new transaction, from any source, shows up here once with a suggested category. */
@@ -32,7 +32,7 @@ export default function ReviewPage() {
   };
 
   const undo = (id: number) => ({
-    label: 'Undo',
+    label: 'Angre',
     run: async () => {
       await api.patch(`/transactions/${id}`, { reviewed: false });
       await after();
@@ -44,14 +44,14 @@ export default function ReviewPage() {
     setItems((list) => list?.filter((x) => x.id !== t.id) ?? null);
     await api.patch(`/transactions/${t.id}`, categoryId ? { category_id: categoryId, remember } : { reviewed: true });
     const cat = summary?.categories.find((c) => c.id === categoryId);
-    toast(cat ? `${t.payee} → ${cat.name}${remember ? ' (remembered)' : ''}` : `${t.payee} approved`, { action: undo(t.id) });
+    toast(cat ? `${t.payee} → ${cat.name}${remember ? ' (huskes)' : ''}` : `${t.payee} godkjent`, { action: undo(t.id) });
     await after();
   };
 
   const confirmTransfer = async (t: Transaction) => {
     setItems((list) => list?.filter((x) => x.id !== t.id && x.id !== t.suggested_transfer_id) ?? null);
     await api.patch(`/transactions/${t.id}`, { transfer_id: t.suggested_transfer_id });
-    toast(`Marked as transfer ${t.amount < 0 ? 'to' : 'from'} ${t.suggested_transfer_account_name}`);
+    toast(`Markert som overføring ${t.amount < 0 ? 'til' : 'fra'} ${t.suggested_transfer_account_name}`);
     await after();
   };
 
@@ -62,7 +62,7 @@ export default function ReviewPage() {
 
   const approveAll = async () => {
     const r = await api.post<{ approved: number }>('/transactions/approve');
-    toast(`Approved ${r.approved} transaction${r.approved === 1 ? '' : 's'}`);
+    toast(`Godkjente ${r.approved} ${r.approved === 1 ? 'transaksjon' : 'transaksjoner'}`);
     await after();
   };
 
@@ -73,14 +73,14 @@ export default function ReviewPage() {
     <>
       <div className="page-head">
         <div>
-          <h1>Review</h1>
+          <h1>Gjennomgå</h1>
           <div className="sub">
-            {items.length ? `${items.length} new transaction${items.length === 1 ? '' : 's'} from your banks and imports` : 'All caught up'}
+            {items.length ? `${items.length} ${items.length === 1 ? 'ny transaksjon' : 'nye transaksjoner'} fra bankene og importer` : 'Alt er gjennomgått'}
           </div>
         </div>
         {withSuggestion > 0 && (
           <button className="btn primary" onClick={approveAll}>
-            <Icon name="check" size={16} /> Approve {withSuggestion} suggestion{withSuggestion === 1 ? '' : 's'}
+            <Icon name="check" size={16} /> Godkjenn {withSuggestion} {withSuggestion === 1 ? 'forslag' : 'forslag'}
           </button>
         )}
       </div>
@@ -88,14 +88,14 @@ export default function ReviewPage() {
       {items.length === 0 ? (
         <div className="card empty">
           <div className="emoji">🎉</div>
-          <h2 style={{ color: 'var(--text)' }}>Inbox zero</h2>
-          <p>New transactions show up here when your banks sync or you import a file.</p>
+          <h2 style={{ color: 'var(--text)' }}>Alt er gjennomgått</h2>
+          <p>Nye transaksjoner dukker opp her når bankene synkroniseres eller du importerer en fil.</p>
           <div className="row" style={{ justifyContent: 'center' }}>
             <Link to="/" className="btn">
-              Back to budget
+              Tilbake til budsjettet
             </Link>
             <Link to="/accounts" className="btn ghost">
-              Sync or import
+              Synkroniser eller importer
             </Link>
           </div>
         </div>
@@ -150,13 +150,13 @@ function ReviewCard({
   return (
     <div className="card review-card">
       <div style={{ minWidth: 0 }}>
-        <div className="payee ellipsis">{t.payee || t.raw_description || 'Unknown'}</div>
+        <div className="payee ellipsis">{t.payee || t.raw_description || 'Ukjent'}</div>
         <div className="small muted">
           {dayLabel(t.date)} · {t.account_name}
           {t.suggested_category_name && !changed && (
             <>
               {' · '}
-              <span className="chip brand">✨ {t.suggestion_source === 'merchant' && t.amount > 0 ? 'looks like salary' : SOURCE_LABEL[t.suggestion_source ?? ''] ?? 'suggested'}</span>
+              <span className="chip brand">✨ {t.suggestion_source === 'merchant' && t.amount > 0 ? 'ser ut som lønn' : SOURCE_LABEL[t.suggestion_source ?? ''] ?? 'forslag'}</span>
             </>
           )}
         </div>
@@ -175,30 +175,30 @@ function ReviewCard({
           <div className="callout info small" style={{ flex: 1, padding: '8px 12px' }}>
             <Icon name="swap" size={18} />
             <div>
-              Looks like {kr(Math.abs(t.amount))} moved {t.amount < 0 ? 'to' : 'from'} <strong>{t.suggested_transfer_account_name}</strong>
-              {t.suggested_transfer_date ? ` (${dayLabel(t.suggested_transfer_date)})` : ''}. Transfers aren't spending.
+              Ser ut som {kr(Math.abs(t.amount))} ble flyttet {t.amount < 0 ? 'til' : 'fra'} <strong>{t.suggested_transfer_account_name}</strong>
+              {t.suggested_transfer_date ? ` (${dayLabel(t.suggested_transfer_date)})` : ''}. Overføringer er ikke forbruk.
             </div>
           </div>
           <button className="btn primary" onClick={() => onTransfer(t)}>
-            Yes, transfer
+            Ja, overføring
           </button>
           <button className="btn ghost" onClick={() => onRejectTransfer(t)}>
-            No
+            Nei
           </button>
         </div>
       ) : (
         <div className="actions">
           <CategorySelect categories={summary?.categories ?? []} value={categoryId} onChange={setCategoryId} amount={t.amount} />
           <button className="btn primary" disabled={!categoryId} onClick={() => onApprove(t, categoryId, remember)}>
-            <Icon name="check" size={16} /> Approve
+            <Icon name="check" size={16} /> Godkjenn
           </button>
-          <button className="btn ghost sm" onClick={onEdit} title="Split, transfer or edit">
-            <Icon name="edit" size={14} /> More
+          <button className="btn ghost sm" onClick={onEdit} title="Del opp, overfør eller endre">
+            <Icon name="edit" size={14} /> Mer
           </button>
           {categoryId && t.payee && (changed || !t.suggested_category_id) && (
             <label className="check small muted" style={{ flexBasis: '100%' }}>
               <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-              Always put “{t.payee}” here
+              Legg alltid «{t.payee}» her
             </label>
           )}
         </div>

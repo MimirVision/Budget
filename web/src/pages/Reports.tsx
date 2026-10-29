@@ -61,53 +61,53 @@ export default function ReportsPage() {
   return (
     <>
       <div className="page-head">
-        <h1>Reports</h1>
+        <h1>Rapporter</h1>
       </div>
 
       <div className="stat-tiles">
         <div className="card stat">
-          <div className="small muted">Net worth</div>
+          <div className="small muted">Formue</div>
           <div className="v num">{nw ? kr(nw.netWorth) : '–'}</div>
           {nw && nwYearAgo && (
             <div className="small muted">
-              {nw.netWorth >= nwYearAgo.netWorth ? '▲' : '▼'} {kr(Math.abs(nw.netWorth - nwYearAgo.netWorth))} since {shortMonth(nwYearAgo.month)}
+              {nw.netWorth >= nwYearAgo.netWorth ? '▲' : '▼'} {kr(Math.abs(nw.netWorth - nwYearAgo.netWorth))} siden {shortMonth(nwYearAgo.month)}
             </div>
           )}
         </div>
         <div className="card stat">
-          <div className="small muted">Avg. monthly income</div>
+          <div className="small muted">Snittinntekt per måned</div>
           <div className="v num">{kr(Math.round(avgIncome / 100) * 100)}</div>
-          <div className="small muted">last 3 full months</div>
+          <div className="small muted">siste 3 hele måneder</div>
         </div>
         <div className="card stat">
-          <div className="small muted">Avg. monthly spending</div>
+          <div className="small muted">Snittforbruk per måned</div>
           <div className="v num">{kr(Math.round(avgSpend / 100) * 100)}</div>
-          <div className="small muted">last 3 full months</div>
+          <div className="small muted">siste 3 hele måneder</div>
         </div>
         <div className="card stat">
-          <div className="small muted">Savings rate</div>
+          <div className="small muted">Sparerate</div>
           <div className="v num">{savingsRate === null ? '–' : `${Math.round(savingsRate * 100)} %`}</div>
-          <div className="small muted">of income kept</div>
+          <div className="small muted">av inntekten spart</div>
         </div>
       </div>
 
       <div className="stack" style={{ gap: 16 }}>
         <ChartCard
-          title="Where the money went"
+          title="Hvor pengene gikk"
           sub={
             <span className="row" style={{ gap: 4 }}>
-              <button className="icon-btn" onClick={() => setMonth(addMonths(month, -1))} aria-label="Previous month">
+              <button className="icon-btn" onClick={() => setMonth(addMonths(month, -1))} aria-label="Forrige måned">
                 <Icon name="left" size={16} />
               </button>
               {monthLabel(month)}
-              <button className="icon-btn" onClick={() => setMonth(addMonths(month, 1))} aria-label="Next month" disabled={month >= currentMonth()}>
+              <button className="icon-btn" onClick={() => setMonth(addMonths(month, 1))} aria-label="Neste måned" disabled={month >= currentMonth()}>
                 <Icon name="right" size={16} />
               </button>
             </span>
           }
           table={
             <SimpleTable
-              head={['Category', 'Spent', 'Usual (3-mo avg)']}
+              head={['Kategori', 'Brukt', 'Vanlig (snitt 3 mnd)']}
               rows={spending.map((r) => [r.name, kr(r.spent), kr(r.usual)])}
             />
           }
@@ -116,15 +116,15 @@ export default function ReportsPage() {
         </ChartCard>
 
         <ChartCard
-          title="Income vs. spending"
-          sub="Last 12 months · transfers between your own accounts are left out"
+          title="Inntekt og forbruk"
+          sub="Siste 12 måneder · overføringer mellom egne kontoer er holdt utenfor"
           legend={[
-            { label: 'Income', color: 'var(--series-1)' },
-            { label: 'Spending', color: 'var(--series-2)' },
+            { label: 'Inntekt', color: 'var(--series-1)' },
+            { label: 'Forbruk', color: 'var(--series-2)' },
           ]}
           table={
             <SimpleTable
-              head={['Month', 'Income', 'Spending', 'Saved']}
+              head={['Måned', 'Inntekt', 'Forbruk', 'Spart']}
               rows={flow.map((r) => [monthLabel(r.month), kr(r.income), kr(r.spending), kr(r.income - r.spending)])}
             />
           }
@@ -133,11 +133,11 @@ export default function ReportsPage() {
         </ChartCard>
 
         <ChartCard
-          title="Net worth"
-          sub="All accounts, including tracking accounts like mortgage and savings"
+          title="Formue"
+          sub="Alle kontoer, også oppfølgingskontoer som boliglån og sparing"
           table={
             <SimpleTable
-              head={['Month', 'Assets', 'Debts', 'Net worth']}
+              head={['Måned', 'Eiendeler', 'Gjeld', 'Formue']}
               rows={worth.map((r) => [monthLabel(r.month), kr(r.assets), kr(-r.debts), kr(r.netWorth)])}
             />
           }
@@ -171,7 +171,7 @@ function ChartCard({
           {sub && <div className="small muted">{sub}</div>}
         </div>
         <button className="btn ghost sm" onClick={() => setAsTable((v) => !v)}>
-          {asTable ? 'Show chart' : 'Show table'}
+          {asTable ? 'Vis diagram' : 'Vis tabell'}
         </button>
       </div>
       {legend && !asTable && (
@@ -222,13 +222,13 @@ function SimpleTable({ head, rows }: { head: string[]; rows: string[][] }) {
 function SpendingBars({ rows, month }: { rows: SpendRow[]; month: string }) {
   const navigate = useNavigate();
   const [hover, setHover] = useState<number | null>(null);
-  if (!rows.length) return <div className="empty">No spending recorded for {monthLabel(month)}.</div>;
+  if (!rows.length) return <div className="empty">Ingen utgifter registrert i {monthLabel(month).toLowerCase()}.</div>;
   const max = Math.max(...rows.map((r) => Math.max(r.spent, r.usual)));
   const total = rows.reduce((s, r) => s + r.spent, 0);
   return (
     <div>
       <div className="small muted" style={{ marginBottom: 6 }}>
-        Total <Money value={-total} /> · the dark tick marks your usual (3-month average). Click a bar to see the transactions.
+        Totalt <Money value={-total} /> · den mørke streken viser det vanlige (snitt siste 3 måneder). Klikk på en stolpe for å se transaksjonene.
       </div>
       {rows.map((r) => {
         const diff = r.usual ? (r.spent - r.usual) / r.usual : null;
@@ -250,9 +250,9 @@ function SpendingBars({ rows, month }: { rows: SpendRow[]; month: string }) {
               {hover === r.id && (
                 <div className="tooltip" style={{ left: `${Math.min(80, Math.max(20, (r.spent / max) * 100))}%`, top: 0 }}>
                   <strong>{r.name}</strong>
-                  <div>Spent {kr(r.spent)}</div>
-                  <div className="muted">Usual {kr(r.usual)}</div>
-                  <div className="muted">{Math.round((r.spent / total) * 100)} % of spending</div>
+                  <div>Brukt {kr(r.spent)}</div>
+                  <div className="muted">Vanlig {kr(r.usual)}</div>
+                  <div className="muted">{Math.round((r.spent / total) * 100)} % av forbruket</div>
                 </div>
               )}
             </div>
@@ -260,7 +260,7 @@ function SpendingBars({ rows, month }: { rows: SpendRow[]; month: string }) {
               {kr(r.spent)}
               {diff !== null && Math.abs(diff) >= 0.2 && (
                 <div className="faint" style={{ fontSize: 11 }}>
-                  {diff > 0 ? '▲' : '▼'} {Math.round(Math.abs(diff) * 100)} % vs usual
+                  {diff > 0 ? '▲' : '▼'} {Math.round(Math.abs(diff) * 100)} % mot vanlig
                 </div>
               )}
             </div>
@@ -310,7 +310,7 @@ function CashflowChart({ rows }: { rows: FlowRow[] }) {
   const h = hover !== null ? rows[hover] : null;
   return (
     <div className="chart" ref={ref}>
-      <svg height={height} role="img" aria-label="Income and spending per month">
+      <svg height={height} role="img" aria-label="Inntekt og forbruk per måned">
         {ticks.map((t) => (
           <g key={t}>
             <line className="grid-line" x1={pad.left} x2={width - pad.right} y1={y(t)} y2={y(t)} />
@@ -348,14 +348,14 @@ function CashflowChart({ rows }: { rows: FlowRow[] }) {
           <strong>{monthLabel(h.month)}</strong>
           <div>
             <span className="swatch" style={{ background: 'var(--series-1)' }} />
-            Income {kr(h.income)}
+            Inntekt {kr(h.income)}
           </div>
           <div>
             <span className="swatch" style={{ background: 'var(--series-2)' }} />
-            Spending {kr(h.spending)}
+            Forbruk {kr(h.spending)}
           </div>
           <div className="muted">
-            {h.income >= h.spending ? 'Saved' : 'Overspent'} {kr(Math.abs(h.income - h.spending))}
+            {h.income >= h.spending ? 'Spart' : 'Brukt for mye'} {kr(Math.abs(h.income - h.spending))}
           </div>
         </div>
       )}
@@ -397,7 +397,7 @@ function NetWorthChart({ rows }: { rows: WorthRow[] }) {
       }}
       onMouseLeave={() => setHover(null)}
     >
-      <svg height={height} role="img" aria-label="Net worth over the last 12 months">
+      <svg height={height} role="img" aria-label="Formue de siste 12 månedene">
         {ticks.map((t) => (
           <g key={t}>
             <line className="grid-line" x1={pad.left} x2={width - pad.right} y1={y(t)} y2={y(t)} style={t === 0 ? { stroke: 'var(--faint)' } : undefined} />
@@ -425,9 +425,9 @@ function NetWorthChart({ rows }: { rows: WorthRow[] }) {
       {h && hover !== null && (
         <div className="tooltip" style={{ left: Math.min(Math.max(x(hover), 90), width - 90), top: y(h.netWorth) }}>
           <strong>{monthLabel(h.month)}</strong>
-          <div>Net worth {kr(h.netWorth)}</div>
-          <div className="muted">Assets {kr(h.assets)}</div>
-          <div className="muted">Debts {kr(-h.debts)}</div>
+          <div>Formue {kr(h.netWorth)}</div>
+          <div className="muted">Eiendeler {kr(h.assets)}</div>
+          <div className="muted">Gjeld {kr(-h.debts)}</div>
         </div>
       )}
     </div>

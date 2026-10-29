@@ -17,7 +17,7 @@ function b64url(input: Buffer | string) {
 function jwt(db: DB): string {
   const appId = getSetting(db, 'enablebanking_app_id');
   const key = getSetting(db, 'enablebanking_private_key');
-  if (!appId || !key) throw new Error('Enable Banking is not set up yet. Add the application ID and private key in Settings.');
+  if (!appId || !key) throw new Error('Enable Banking er ikke satt opp ennå. Legg inn applikasjons-ID og privat nøkkel under Innstillinger.');
   const now = Math.floor(Date.now() / 1000);
   const header = b64url(JSON.stringify({ typ: 'JWT', alg: 'RS256', kid: appId }));
   const payload = b64url(JSON.stringify({ iss: 'enablebanking.com', aud: 'api.enablebanking.com', iat: now, exp: now + 3600 }));
@@ -34,9 +34,9 @@ async function call(db: DB, method: string, path: string, body?: unknown) {
   const text = await res.text();
   const json = text ? JSON.parse(text) : {};
   if (res.status === 401 || res.status === 403 || json?.error === 'EXPIRED_SESSION') {
-    throw new ReauthRequired(json?.message ?? 'The bank connection has expired. Reconnect with BankID.');
+    throw new ReauthRequired(json?.message ?? 'Bankkoblingen har utløpt. Koble til på nytt med BankID.');
   }
-  if (!res.ok) throw new Error(json?.message ?? json?.detail ?? `Enable Banking error ${res.status}`);
+  if (!res.ok) throw new Error(json?.message ?? json?.detail ?? `Feil fra Enable Banking (${res.status})`);
   return json;
 }
 
@@ -49,15 +49,15 @@ function kindFromName(name = ''): 'checking' | 'savings' | 'credit' {
 export const enableBanking: Provider = {
   id: 'enablebanking',
   label: 'Enable Banking',
-  description: 'Connects DNB, SpareBank 1, Revolut and most Norwegian and European banks through BankID.',
+  description: 'Kobler til DNB, SpareBank 1, Revolut og de fleste norske og europeiske banker med BankID.',
   settings: [
-    { key: 'enablebanking_app_id', label: 'Application ID', help: 'From the Enable Banking control panel → Applications.' },
+    { key: 'enablebanking_app_id', label: 'Applikasjons-ID', help: 'Fra kontrollpanelet hos Enable Banking → Applications.' },
     {
       key: 'enablebanking_private_key',
-      label: 'Private key (.pem)',
+      label: 'Privat nøkkel (.pem)',
       secret: true,
       multiline: true,
-      help: 'The private key file you downloaded when creating the application.',
+      help: 'Nøkkelfilen du lastet ned da du opprettet applikasjonen.',
     },
   ],
 
@@ -69,7 +69,7 @@ export const enableBanking: Provider = {
   },
 
   async start(db, { bankId, redirectUrl, state }) {
-    if (!bankId) throw new Error('Pick a bank first');
+    if (!bankId) throw new Error('Velg en bank først');
     // Banks allow at most 180 days before you have to confirm again with BankID; ask for the maximum.
     const validUntil = new Date(Date.now() + 179 * 86_400_000).toISOString();
     const json = await call(db, 'POST', '/auth', {
@@ -85,7 +85,7 @@ export const enableBanking: Provider = {
   async complete(db, { code, pending }) {
     const session = await call(db, 'POST', '/sessions', { code });
     const accounts = (session.accounts ?? []).map((a: any) => {
-      const name = a.name || a.product || a.details || a.account_id?.iban || 'Account';
+      const name = a.name || a.product || a.details || a.account_id?.iban || 'Konto';
       return {
         remoteId: a.uid,
         name,
@@ -124,7 +124,7 @@ export const enableBanking: Provider = {
             t.entry_reference ?? t.transaction_id ?? crypto.createHash('sha1').update(JSON.stringify([date, amount, remittance])).digest('hex'),
           date: date.slice(0, 10),
           amount,
-          description: [remittance, counterparty].filter(Boolean).join(' ').trim() || counterparty || 'Unknown',
+          description: [remittance, counterparty].filter(Boolean).join(' ').trim() || counterparty || 'Ukjent',
           payee: counterparty || undefined,
         });
       }
