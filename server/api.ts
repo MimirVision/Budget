@@ -10,8 +10,17 @@ import { cleanPayee } from './payees.ts';
 
 const MONTH = /^\d{4}-\d{2}$/;
 
+export interface AppConfig {
+  /** Shared household password. Empty means no login (fine on your own machine or behind Cloudflare Access). */
+  password?: string;
+  /** The address the app is opened on; banks redirect back here after BankID. Guessed from the request if empty. */
+  publicUrl?: string;
+}
+
+let config: AppConfig = {};
+
 function publicUrl(c: any): string {
-  if (process.env.PUBLIC_URL) return process.env.PUBLIC_URL;
+  if (config.publicUrl) return config.publicUrl;
   const origin = c.req.header('origin');
   if (origin) return origin;
   const proto = c.req.header('x-forwarded-proto') ?? 'http';
@@ -70,7 +79,8 @@ function rememberRule(db: DB, payee: string, categoryId: number) {
   else run(db, "INSERT INTO rules(match_type, pattern, category_id) VALUES ('equals', ?, ?)", payee, categoryId);
 }
 
-export function createApi(db: DB) {
+export function createApi(db: DB, appConfig: AppConfig = {}) {
+  config = appConfig;
   const api = new Hono();
 
   api.onError((err: any, c) => {
@@ -405,12 +415,21 @@ export function createApi(db: DB) {
 
   /** "Looks good" for everything that has a suggestion. */
   api.post('/transactions/approve', async (c) => {
-    const { ids } = await c.req.json<{ ids?: number[] }>().catch(() => ({ ids: undefined }));
+    const { ids: given } = await c.req.json<{ ids?: number[] }>().catch(() => ({ ids: undefined }));
+    const ids = given?.slice(0, 90); // SQLite on Cloudflare allows at most 100 parameters per query
+    // In batches, so one request never runs long (Cloudflare's free plan allows ~10 ms of CPU per request).
+    // The app calls again while `more` is true.
+    const BATCH = 60;
     const rows = all<any>(
       db,
       `SELECT t.id, t.suggested_category_id, t.suggested_transfer_id, t.payee, t.amount, st.transfer_id AS st_linked
          FROM transactions t LEFT JOIN transactions st ON st.id = t.suggested_transfer_id
-        WHERE t.reviewed = 0 ${ids ? `AND t.id IN (${ids.map(() => '?').join(',')})` : ''}`,
+        WHERE t.reviewed = 0 ${
+          ids
+            ? `AND t.id IN (${ids.map(() => '?').join(',')})`
+            : 'AND (t.suggested_category_id IS NOT NULL OR (t.suggested_transfer_id IS NOT NULL AND st.transfer_id IS NULL))'
+        }
+        ORDER BY t.id LIMIT ${BATCH}`,
       ...(ids ?? []),
     );
     let approved = 0;
@@ -428,7 +447,7 @@ export function createApi(db: DB) {
         approved++;
       }
     }
-    return c.json({ approved });
+    return c.json({ approved, more: !ids && rows.length === BATCH });
   });
 
   // ---------- Rules ----------
@@ -490,12 +509,22 @@ export function createApi(db: DB) {
   });
 
   api.post('/import/commit', async (c) => {
-    const { accountId, text, mapping } = await c.req.json<{ accountId: number; text: string; mapping: Partial<CsvMapping> }>();
+    const { accountId, text, mapping, offset = 0, limit = 80 } = await c.req.json<{
+      accountId: number;
+      text: string;
+      mapping: Partial<CsvMapping>;
+      offset?: number;
+      limit?: number;
+    }>();
     const account = get<any>(db, 'SELECT * FROM accounts WHERE id = ?', accountId);
     if (!account) badRequest('Velg kontoen du vil importere til');
     const p = previewCsv(text, account.kind, mapping);
-    const result = ingest(db, accountId, withImportHashes(p.rows), 'csv');
-    return c.json(result);
+    // Fingerprints are computed over the whole file, then imported a slice at a time; the app sends the next
+    // offset until `next` is null. Keeps each request small enough for Cloudflare's free plan.
+    const rows = withImportHashes(p.rows);
+    const result = ingest(db, accountId, rows.slice(offset, offset + limit), 'csv');
+    const next = offset + limit < rows.length ? offset + limit : null;
+    return c.json({ ...result, total: rows.length, next });
   });
 
   // ---------- Bank connections ----------
@@ -531,13 +560,13 @@ export function createApi(db: DB) {
   });
 
   api.get('/connections/callback/:provider', async (c) => {
-    const base = process.env.PUBLIC_URL ?? '';
+    const base = config.publicUrl ?? '';
     const { code, state, error, error_description } = c.req.query();
     if (error || !code || !state) {
       return c.redirect(`${base}/accounts?bankError=${encodeURIComponent(error_description ?? error ?? 'Bankinnloggingen ble avbrutt')}`);
     }
     try {
-      const pub = process.env.PUBLIC_URL ?? `${new URL(c.req.url).origin}`;
+      const pub = config.publicUrl || new URL(c.req.url).origin;
       const r = await completeConnection(db, c.req.param('provider'), code, state, pub);
       if (!r.needsLinking) await syncConnection(db, r.id).catch(() => undefined);
       return c.redirect(`${base}/accounts?${r.needsLinking ? 'link' : 'synced'}=${r.id}`);
@@ -550,11 +579,15 @@ export function createApi(db: DB) {
     const id = Number(c.req.param('id'));
     const { choices } = await c.req.json();
     linkAccounts(db, id, choices);
-    const result = await syncConnection(db, id);
-    return c.json(result);
+    // The app then syncs each account in its own request (see /connections/:id/sync?account=).
+    const accounts = all<{ remote_id: string }>(db, 'SELECT remote_id FROM connection_accounts WHERE connection_id = ? AND account_id IS NOT NULL', id);
+    return c.json({ accounts: accounts.map((a) => a.remote_id) });
   });
 
-  api.post('/connections/:id/sync', async (c) => c.json(await syncConnection(db, Number(c.req.param('id')))));
+  // `?account=<remote id>` syncs a single account, so a first sync of many accounts can be split into small requests.
+  api.post('/connections/:id/sync', async (c) =>
+    c.json(await syncConnection(db, Number(c.req.param('id')), c.req.query('account') || undefined)),
+  );
   api.post('/connections/sync-all', async (c) => c.json(await syncAll(db)));
 
   api.delete('/connections/:id', (c) => {
@@ -566,7 +599,7 @@ export function createApi(db: DB) {
   api.get('/settings', (c) =>
     c.json({
       publicUrl: publicUrl(c),
-      passwordEnabled: !!process.env.APP_PASSWORD,
+      passwordEnabled: !!config.password,
       providers: Object.values(providers).map((p) => ({
         id: p.id,
         label: p.label,

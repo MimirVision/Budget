@@ -4,7 +4,8 @@
  */
 import path from 'node:path';
 import fs from 'node:fs';
-import { all, get, openDb, run } from '../server/db.ts';
+import { all, get, run } from '../server/db.ts';
+import { openDb } from '../server/db-node.ts';
 import { ingest, linkTransfer, withImportHashes } from '../server/ingest.ts';
 import { autoAssign, setAssigned } from '../server/budget.ts';
 import { addDays, addMonths, currentMonth, todayISO } from '../shared/months.ts';

@@ -1,9 +1,9 @@
-import crypto from 'node:crypto';
 import { all, get, run, tx, type DB } from '../db.ts';
 import { ingest, type IngestResult } from '../ingest.ts';
 import { addDays, todayISO } from '../../shared/months.ts';
 import { enableBanking } from './enablebanking.ts';
 import { sparebank1 } from './sparebank1.ts';
+import { randomHex } from '../webcrypto.ts';
 import { ReauthRequired, type Provider } from './types.ts';
 
 export const providers: Record<string, Provider> = {
@@ -26,7 +26,7 @@ export async function startConnection(
 ): Promise<string> {
   const provider = getProvider(opts.providerId);
   if (!provider.isConfigured(db)) throw new Error(`${provider.label} er ikke satt opp ennå. Legg inn API-nøklene under Innstillinger først.`);
-  const state = crypto.randomBytes(16).toString('hex');
+  const state = randomHex(16);
   const result = await provider.start(db, {
     bankId: opts.bankId,
     redirectUrl: callbackUrl(opts.publicUrl, provider.id),
@@ -135,13 +135,15 @@ export function linkAccounts(db: DB, connectionId: number, choices: LinkChoice[]
   });
 }
 
-export async function syncConnection(db: DB, connectionId: number): Promise<IngestResult & { errors: string[] }> {
+export async function syncConnection(db: DB, connectionId: number, onlyRemoteId?: string): Promise<IngestResult & { errors: string[] }> {
   const conn = get<any>(db, 'SELECT * FROM connections WHERE id = ?', connectionId);
   if (!conn) throw new Error('Fant ikke bankkoblingen');
   const provider = getProvider(conn.provider);
   const total: IngestResult & { errors: string[] } = { added: 0, duplicates: 0, matched: 0, categorized: 0, transfers: 0, ids: [], errors: [] };
   let data = JSON.parse(conn.data);
-  const links = all<any>(db, 'SELECT * FROM connection_accounts WHERE connection_id = ? AND account_id IS NOT NULL', connectionId);
+  const links = all<any>(db, 'SELECT * FROM connection_accounts WHERE connection_id = ? AND account_id IS NOT NULL', connectionId).filter(
+    (l) => !onlyRemoteId || l.remote_id === onlyRemoteId,
+  );
 
   for (const link of links) {
     // Re-read a few days back every time: banks sometimes book transactions late.
@@ -222,15 +224,4 @@ export async function syncAll(db: DB) {
     }
   }
   return results;
-}
-
-let timer: NodeJS.Timeout | undefined;
-export function startScheduler(db: DB, everyHours = 4) {
-  const tick = () =>
-    syncAll(db)
-      .then((r) => r.length && console.log(`[sync] ${r.map((x) => `${x.name}: ${x.error ?? `+${x.added}`}`).join(', ')}`))
-      .catch((e) => console.error('[sync] failed', e));
-  setTimeout(tick, 60_000);
-  timer = setInterval(tick, everyHours * 3_600_000);
-  timer.unref();
 }

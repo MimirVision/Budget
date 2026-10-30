@@ -567,6 +567,7 @@ function ImportWizard({ account, onClose, onDone }: { account: Account; onClose:
   const [over, setOver] = useState(false);
   const [showCols, setShowCols] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
   const toast = useToast();
   const navigate = useNavigate();
 
@@ -596,8 +597,15 @@ function ImportWizard({ account, onClose, onDone }: { account: Account; onClose:
   const commit = async () => {
     setBusy(true);
     try {
-      const r = await api.post<IngestResult>('/import/commit', { accountId: account.id, text, mapping });
-      setResult(r);
+      // Sent in slices so each request stays small; the server says where to continue.
+      const total: IngestResult = { added: 0, duplicates: 0, matched: 0, categorized: 0, transfers: 0 };
+      for (let offset: number | null = 0; offset !== null; ) {
+        const r: IngestResult & { next: number | null; total: number } = await api.post('/import/commit', { accountId: account.id, text, mapping, offset });
+        for (const k of ['added', 'duplicates', 'matched', 'categorized', 'transfers'] as const) total[k] += r[k];
+        setProgress(r.next === null ? null : `${r.next} av ${r.total}`);
+        offset = r.next;
+      }
+      setResult(total);
       onDone();
     } catch (e: any) {
       toast(e.message, { error: true });
@@ -777,7 +785,7 @@ function ImportWizard({ account, onClose, onDone }: { account: Account; onClose:
               Velg en annen fil
             </button>
             <button className="btn primary" disabled={busy || preview.count === 0} onClick={commit}>
-              {busy ? 'Importerer…' : `Importer ${preview.count - preview.alreadyImported} transaksjoner`}
+              {busy ? `Importerer…${progress ? ` (${progress})` : ''}` : `Importer ${preview.count - preview.alreadyImported} transaksjoner`}
             </button>
           </div>
         </>
@@ -822,6 +830,7 @@ function LinkAccounts({
     ),
   );
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState('');
   const toast = useToast();
   const set = (id: string, patch: any) => setChoices((c) => ({ ...c, [id]: { ...c[id], ...patch } }));
 
@@ -834,8 +843,16 @@ function LinkAccounts({
         if (c.choice === 'new') return { remoteId: d.remote_id, create: { name: c.name, kind: c.kind, onBudget: c.onBudget } };
         return { remoteId: d.remote_id, accountId: Number(c.choice) };
       });
-      const r = await api.post<IngestResult>(`/connections/${connection.id}/link`, { choices: payload });
-      onDone(r);
+      const { accounts } = await api.post<{ accounts: string[] }>(`/connections/${connection.id}/link`, { choices: payload });
+      // First sync one account at a time, so no single request gets too big.
+      const total: IngestResult = { added: 0, duplicates: 0, matched: 0, categorized: 0, transfers: 0, errors: [] };
+      for (const [i, remoteId] of accounts.entries()) {
+        setProgress(`${i + 1} av ${accounts.length}`);
+        const r = await api.post<IngestResult>(`/connections/${connection.id}/sync?account=${encodeURIComponent(remoteId)}`);
+        for (const k of ['added', 'duplicates', 'matched', 'categorized', 'transfers'] as const) total[k] += r[k];
+        total.errors!.push(...(r.errors ?? []));
+      }
+      onDone(total);
     } catch (e: any) {
       toast(e.message, { error: true });
       setBusy(false);
@@ -849,7 +866,7 @@ function LinkAccounts({
       wide
       footer={
         <button className="btn primary" disabled={busy} onClick={save}>
-          {busy ? 'Synkroniserer… (første gang kan ta et minutt)' : 'Lagre og synkroniser'}
+          {busy ? `Synkroniserer konto ${progress}…` : 'Lagre og synkroniser'}
         </button>
       }
     >

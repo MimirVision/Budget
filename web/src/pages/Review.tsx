@@ -61,8 +61,14 @@ export default function ReviewPage() {
   };
 
   const approveAll = async () => {
-    const r = await api.post<{ approved: number }>('/transactions/approve');
-    toast(`Godkjente ${r.approved} ${r.approved === 1 ? 'transaksjon' : 'transaksjoner'}`);
+    // The server approves in batches; keep asking until it's done.
+    let approved = 0;
+    for (let more = true; more; ) {
+      const r = await api.post<{ approved: number; more: boolean }>('/transactions/approve');
+      approved += r.approved;
+      more = r.more && r.approved > 0;
+    }
+    toast(`Godkjente ${approved} ${approved === 1 ? 'transaksjon' : 'transaksjoner'}`);
     await after();
   };
 
