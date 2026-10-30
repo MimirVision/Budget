@@ -12,6 +12,8 @@ export interface Recurring {
   lastDate: string;
   nextDate: string;
   occurrences: number;
+  /** Every payment within 10 % of the usual amount, as bills are (shopping isn't). */
+  steady: boolean;
 }
 
 const CADENCES: Array<{ name: Recurring['cadence']; days: number; tolerance: number }> = [
@@ -64,16 +66,19 @@ export function detectRecurring(db: DB, today = todayISO()): Recurring[] {
     let next = step ? addDays(last.date, step) : `${addMonths(last.date.slice(0, 7), 1)}-${last.date.slice(8, 10)}`;
     if (!/^\d{4}-\d{2}-(0[1-9]|[12]\d|3[01])$/.test(next) || Number.isNaN(Date.parse(next))) next = addDays(last.date, 30);
     while (next < today && dayDiff(next, today) > cadence.tolerance) next = step ? addDays(next, step) : addDays(next, 30);
+    // The latest payment you've put in a category says the most about where it belongs.
+    const categorized = [...similar].reverse().find((r) => r.category_id) ?? last;
     out.push({
       payee: last.payee,
-      categoryId: last.category_id,
-      categoryName: last.category_name,
+      categoryId: categorized.category_id,
+      categoryName: categorized.category_name,
       accountName: last.account_name,
       amount: typical,
       cadence: cadence.name,
       lastDate: last.date,
       nextDate: next,
       occurrences: similar.length,
+      steady: similar.every((r) => Math.abs(r.amount - typical) <= Math.abs(typical) * 0.1),
     });
   }
   return out.sort((a, b) => a.nextDate.localeCompare(b.nextDate));

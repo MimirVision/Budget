@@ -222,7 +222,25 @@ export function transferToAccount(db: DB, txnId: number, accountId: number): num
   return otherId;
 }
 
-export function ingest(db: DB, accountId: number, incoming: IncomingTxn[], source: string): IngestResult {
+/**
+ * Remember a deleted transaction's bank id, so a later sync or re-import doesn't add it again.
+ * Call before deleting the row.
+ */
+export function forgetImport(db: DB, id: number) {
+  run(
+    db,
+    `INSERT INTO forgotten_imports(account_id, external_id, import_hash)
+     SELECT account_id, external_id, import_hash FROM transactions WHERE id = ? AND (external_id IS NOT NULL OR import_hash IS NOT NULL)`,
+    id,
+  );
+}
+
+/**
+ * Adds transactions to an account, skipping ones already there.
+ * `complete` is set for bank syncs: the bank sent every booked transaction from that date, so anything of ours
+ * from the same source in that window that the bank no longer lists has had its id changed (see below).
+ */
+export function ingest(db: DB, accountId: number, incoming: IncomingTxn[], source: string, complete?: { since: string }): IngestResult {
   const result: IngestResult = { added: 0, duplicates: 0, matched: 0, categorized: 0, transfers: 0, ids: [] };
   if (incoming.length === 0) return result;
 
@@ -232,11 +250,26 @@ export function ingest(db: DB, accountId: number, incoming: IncomingTxn[], sourc
   const from = addDays(dates[0], -5);
   const to = addDays(dates[dates.length - 1], 5);
   const externalIds = new Set(
-    all<{ v: string }>(db, 'SELECT external_id AS v FROM transactions WHERE account_id = ? AND external_id IS NOT NULL', accountId).map((r) => r.v),
+    all<{ v: string }>(
+      db,
+      `SELECT external_id AS v FROM transactions WHERE account_id = ? AND external_id IS NOT NULL
+       UNION SELECT external_id FROM forgotten_imports WHERE account_id = ? AND external_id IS NOT NULL`,
+      accountId,
+      accountId,
+    ).map((r) => r.v),
   );
   const hashes = new Set(
-    all<{ v: string }>(db, 'SELECT import_hash AS v FROM transactions WHERE account_id = ? AND import_hash IS NOT NULL', accountId).map((r) => r.v),
+    all<{ v: string }>(
+      db,
+      `SELECT import_hash AS v FROM transactions WHERE account_id = ? AND import_hash IS NOT NULL
+       UNION SELECT import_hash FROM forgotten_imports WHERE account_id = ? AND import_hash IS NOT NULL`,
+      accountId,
+      accountId,
+    ).map((r) => r.v),
   );
+  const batchIds = new Set(incoming.map((t) => t.externalId).filter(Boolean));
+  // A couple of days of margin: banks don't all filter on the same date field.
+  const staleFrom = complete ? addDays(complete.since, 2) : null;
   type Existing = { id: number; amount: number; date: string; source: string; external_id: string | null; import_hash: string | null };
   const existing = all<Existing>(
     db,
@@ -284,11 +317,36 @@ export function ingest(db: DB, accountId: number, incoming: IncomingTxn[], sourc
         continue;
       }
 
+      // The same purchase with a new id from the same bank. Some banks change the id (or the date and text the
+      // fallback id is built from) when a purchase goes from reserved to booked. The old copy is no longer in the
+      // bank's list, so it's updated in place instead of a second copy being added.
+      const renamed =
+        staleFrom &&
+        closest(
+          existing.filter(
+            (e) =>
+              !touched.has(e.id) && e.source === source && e.amount === t.amount && !!e.external_id &&
+              !batchIds.has(e.external_id) && e.date >= staleFrom && Math.abs(dayDiff(e.date, t.date)) <= 4,
+          ),
+          t.date,
+        );
+      if (renamed) {
+        run(db, 'UPDATE transactions SET external_id = ?, date = ?, raw_description = ? WHERE id = ?', t.externalId ?? null, t.date, t.description, renamed.id);
+        if (t.externalId) externalIds.add(t.externalId);
+        touched.add(renamed.id);
+        result.matched++;
+        continue;
+      }
+
       // The same transaction arriving through a different route (e.g. a CSV covering days already synced).
-      const otherRoute = existing.find(
-        (e) =>
-          !touched.has(e.id) && e.amount === t.amount && !['manual', 'transfer', source].includes(e.source) &&
-          Math.abs(dayDiff(e.date, t.date)) <= 2,
+      // Card purchases can show the purchase date in one and the booking date in the other, so allow a few days.
+      const otherRoute = closest(
+        existing.filter(
+          (e) =>
+            !touched.has(e.id) && e.amount === t.amount && !['manual', 'transfer', source].includes(e.source) &&
+            Math.abs(dayDiff(e.date, t.date)) <= 4,
+        ),
+        t.date,
       );
       if (otherRoute) {
         touched.add(otherRoute.id);

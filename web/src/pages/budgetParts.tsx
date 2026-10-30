@@ -380,7 +380,12 @@ export function Upcoming({ items }: { items: Recurring[] }) {
     <div className="card" style={{ overflow: 'hidden' }}>
       <div className="card-pad" style={{ paddingBottom: 8 }}>
         <h3 style={{ marginBottom: 2 }}>Kommende regninger</h3>
-        <div className="small muted">Funnet automatisk i historikken · <Money value={total} /></div>
+        <div className="small muted">
+          Funnet automatisk i historikken · <Money value={total} /> ·{' '}
+          <Link to="/bills" style={{ color: 'var(--brand-text)', fontWeight: 600 }}>
+            Faste regninger →
+          </Link>
+        </div>
       </div>
       <div className="list">
         {soon.map((r) => (

@@ -1,15 +1,16 @@
-const withOre = new Intl.NumberFormat('nb-NO', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const twoDecimals = new Intl.NumberFormat('nb-NO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const wholeKroner = new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 });
-let nok = withOre;
+let showOre = true;
 
 /** Innstillinger → Utseende: show øre, or round to whole kroner for a calmer look. */
 export function setShowOre(show: boolean) {
-  nok = show ? withOre : wholeKroner;
+  showOre = show;
 }
 
-/** 123456 øre → "1 234,56 kr" (drops ",00"). */
+/** 123456 øre → "1 234,56 kr"; whole kroner drop ",00", and 10 øre shows as ",10" (not ",1"). */
 export function kr(ore: number, opts: { sign?: boolean } = {}): string {
   const value = ore / 100;
+  const nok = showOre && Math.round(ore) % 100 !== 0 ? twoDecimals : wholeKroner;
   const text = nok.format(Math.abs(value));
   const sign = value < 0 ? '−' : opts.sign && value > 0 ? '+' : '';
   return `${sign}${text} kr`;
