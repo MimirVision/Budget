@@ -58,13 +58,22 @@ export default function ReviewPage() {
     setItems((list) => list?.filter((x) => x.id !== t.id && x.id !== t.suggested_transfer_id) ?? null);
     haptic();
     await api.patch(`/transactions/${t.id}`, { transfer_id: t.suggested_transfer_id });
-    toast(`Markert som overføring ${t.amount < 0 ? 'til' : 'fra'} ${t.suggested_transfer_account_name}`);
+    toast(`Markert som overføring ${t.amount < 0 ? 'til' : 'fra'} ${t.suggested_transfer_account_name}`, {
+      action: {
+        label: 'Angre',
+        run: async () => {
+          await api.patch(`/transactions/${t.id}`, { transfer_account_id: null, restore_suggestion: true });
+          await after();
+        },
+      },
+    });
     await after();
   };
 
   const rejectTransfer = async (t: Transaction) => {
-    // Forget the transfer guess and fall back to normal categorising.
+    // Forget the transfer guess (on the server too, so it doesn't come back) and fall back to categorising.
     setItems((list) => list?.map((x) => (x.id === t.id ? { ...x, suggested_transfer_id: null, suggested_transfer_account_name: null } : x)) ?? null);
+    await api.patch(`/transactions/${t.id}`, { reject_transfer: true });
   };
 
   const approveAll = async () => {

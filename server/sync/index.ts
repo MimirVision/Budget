@@ -1,6 +1,7 @@
 import { all, get, getSetting, run, tx, type DB } from '../db.ts';
 import { addFreshStartOpening, followBankAfterFreshStart } from '../freshstart.ts';
 import { ingest, type IngestResult } from '../ingest.ts';
+import { cleanPayee } from '../payees.ts';
 import { addDays, todayISO } from '../../shared/months.ts';
 import { enableBanking } from './enablebanking.ts';
 import { sparebank1 } from './sparebank1.ts';
@@ -172,6 +173,7 @@ export async function syncConnection(
         run(db, 'UPDATE connections SET data = ? WHERE id = ?', JSON.stringify(data), connectionId);
       }
       const r = ingest(db, link.account_id, result.transactions, conn.provider);
+      if (result.pending) replacePending(db, link.account_id, result.pending);
       for (const k of ['added', 'duplicates', 'matched', 'categorized', 'transfers'] as const) total[k] += r[k];
       total.ids.push(...r.ids);
       if (result.balance !== undefined) {
@@ -226,6 +228,24 @@ export function seedOpeningBalance(db: DB, accountId: number, bankBalance: numbe
     diff,
     acc.on_budget ? incomeCat?.id ?? null : null,
   );
+}
+
+/** Reserved card purchases: shown so you see them right away, replaced wholesale on every sync. */
+export function replacePending(db: DB, accountId: number, pending: Array<{ date: string; amount: number; description: string; payee?: string }>) {
+  tx(db, () => {
+    run(db, 'DELETE FROM pending WHERE account_id = ?', accountId);
+    for (const p of pending) {
+      run(
+        db,
+        'INSERT INTO pending(account_id, date, amount, payee, description) VALUES (?, ?, ?, ?, ?)',
+        accountId,
+        p.date,
+        p.amount,
+        p.payee || cleanPayee(p.description),
+        p.description,
+      );
+    }
+  });
 }
 
 /** Syncs every bank. Without `psu` it's a background sync (the scheduled one). */

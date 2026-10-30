@@ -475,3 +475,147 @@ export function Welcome() {
     </div>
   );
 }
+
+interface WrapUpData {
+  month: string;
+  income: number;
+  spending: number;
+  prevSpending: number;
+  top: Array<{ name: string; spent: number; prevSpent: number }>;
+  overspent: Array<{ id: number; name: string; amount: number }>;
+  leftovers: Array<{ id: number; name: string; amount: number }>;
+  savings: Array<{ id: number; name: string }>;
+}
+
+/** Shown at the start of a month: how last month went, and a one-tap way to sweep leftovers into savings. */
+export function WrapUp({ month, startMonth, onChanged }: { month: string; startMonth: string | null; onChanged: () => void }) {
+  const prev = addMonths(month, -1);
+  const key = `wrapup.${prev}`;
+  const [hidden, setHidden] = useState(() => {
+    try {
+      return localStorage.getItem(key) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [data, setData] = useState<WrapUpData | null>(null);
+  const [target, setTarget] = useState<number | null>(null);
+  const [picked, setPicked] = useState<number[]>([]);
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  const show = month === currentMonth() && !hidden && (!startMonth || prev >= startMonth);
+
+  useEffect(() => {
+    if (!show) return;
+    api.get<WrapUpData>(`/wrapup?month=${prev}`).then((d) => {
+      setData(d);
+      setTarget(d.savings[0]?.id ?? null);
+      setPicked(d.leftovers.map((l) => l.id));
+    });
+  }, [show, prev]);
+
+  if (!show || !data || (data.income === 0 && data.spending === 0)) return null;
+  const dismiss = () => {
+    try {
+      localStorage.setItem(key, '1');
+    } catch {
+      /* private mode */
+    }
+    setHidden(true);
+  };
+  const saved = data.income - data.spending;
+  const sweep = data.leftovers.filter((l) => picked.includes(l.id));
+  const sweepTotal = sweep.reduce((s, l) => s + l.amount, 0);
+  const change = data.prevSpending ? Math.round(((data.spending - data.prevSpending) / data.prevSpending) * 100) : null;
+
+  const moveLeftovers = async () => {
+    if (!target) return;
+    setBusy(true);
+    try {
+      for (const l of sweep) await api.post(`/budget/${month}/move`, { from: l.id, to: target, amount: l.amount });
+      haptic();
+      toast(`Flyttet ${kr(sweepTotal)} til ${data.savings.find((s) => s.id === target)?.name}`);
+      onChanged();
+      dismiss();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="card wrapup">
+      <div className="wrapup-head">
+        <div>
+          <div className="eyebrow">Månedsoppsummering</div>
+          <h3>Slik gikk {monthLabel(prev).toLowerCase()}</h3>
+        </div>
+        <button className="icon-btn" onClick={dismiss} aria-label="Lukk oppsummeringen">
+          <Icon name="close" />
+        </button>
+      </div>
+      <div className="wrapup-stats">
+        <div>
+          <span className="muted">Inn</span>
+          <strong>{kr(data.income)}</strong>
+        </div>
+        <div>
+          <span className="muted">Brukt</span>
+          <strong>{kr(data.spending)}</strong>
+          {change !== null && (
+            <small className={change > 0 ? 'neg' : 'pos'}>
+              {change > 0 ? '+' : ''}
+              {change} % mot måneden før
+            </small>
+          )}
+        </div>
+        <div>
+          <span className="muted">{saved >= 0 ? 'Til overs' : 'Brukt mer enn inn'}</span>
+          <strong className={saved >= 0 ? 'pos' : 'neg'}>{kr(Math.abs(saved))}</strong>
+        </div>
+      </div>
+      {data.top.length > 0 && (
+        <p className="muted wrapup-line">Mest brukt på {data.top.map((t) => `${t.name} (${kr(t.spent)})`).join(', ')}.</p>
+      )}
+      {data.overspent.length > 0 && (
+        <p className="wrapup-line neg">
+          Overforbruk i{' '}
+          {[...data.overspent]
+            .sort((a, b) => b.amount - a.amount)
+            .slice(0, 3)
+            .map((o) => `${o.name} (${kr(o.amount)})`)
+            .join(', ')}
+          {data.overspent.length > 3 ? ` og ${data.overspent.length - 3} til` : ''}.
+        </p>
+      )}
+      {data.leftovers.length > 0 && data.savings.length > 0 && (
+        <div className="wrapup-sweep">
+          <div className="muted">Penger igjen i kategorier. Kryss av det du vil flytte til sparing:</div>
+          <div className="wrapup-chips">
+            {data.leftovers.map((l) => (
+              <label key={l.id} className={`chip ${picked.includes(l.id) ? 'on' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={picked.includes(l.id)}
+                  onChange={(e) => setPicked((p) => (e.target.checked ? [...p, l.id] : p.filter((x) => x !== l.id)))}
+                />
+                {l.name} · {kr(l.amount)}
+              </label>
+            ))}
+          </div>
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <select className="select" style={{ width: 'auto' }} value={target ?? ''} onChange={(e) => setTarget(Number(e.target.value))} aria-label="Sparekategori">
+              {data.savings.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <button className="btn primary" disabled={busy || sweepTotal <= 0} onClick={moveLeftovers}>
+              Flytt {kr(sweepTotal)}
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}

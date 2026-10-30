@@ -123,13 +123,14 @@ export const sparebank1: Provider = {
     const json = await api(`/personal/banking/transactions?${qs}`, t.access_token);
     const list: any[] = json.transactions ?? json.list ?? [];
     const transactions: RemoteTxn[] = [];
+    const pending: RemoteTxn[] = [];
     for (const x of list) {
-      if (x.bookingStatus && x.bookingStatus !== 'BOOKED') continue;
+      const isPending = !!x.bookingStatus && x.bookingStatus !== 'BOOKED';
       const date = osloDate(x.date ?? x.bookingDate ?? x.accountingDate ?? x.valueDate);
       if (!date) continue;
       const amount = toOre(num(x.amount));
       const description = String(x.description ?? x.cleanedDescription ?? x.reference ?? '').trim();
-      transactions.push({
+      (isPending ? pending : transactions).push({
         externalId:
           String(x.id ?? x.transactionId ?? '') ||
           stableId(JSON.stringify([date, amount, description, x.nonUniqueId ?? ''])),
@@ -146,6 +147,6 @@ export const sparebank1: Provider = {
     } catch {
       // Balance is optional.
     }
-    return { transactions, balance, data: t };
+    return { transactions, pending, balance, data: t };
   },
 };

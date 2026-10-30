@@ -56,7 +56,7 @@ export interface Provider {
     remoteId: string,
     since: string,
     psu?: PsuContext,
-  ): Promise<{ transactions: RemoteTxn[]; balance?: number; data?: Record<string, any> }>;
+  ): Promise<{ transactions: RemoteTxn[]; pending?: RemoteTxn[]; balance?: number; data?: Record<string, any> }>;
 }
 
 /**

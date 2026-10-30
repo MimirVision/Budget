@@ -164,7 +164,9 @@ export function linkTransfer(db: DB, aId: number, bId: number) {
   });
 }
 
-export function unlinkTransfer(db: DB, id: number) {
+/** Splits a transfer back into two ordinary transactions. With `restoreSuggestion` (undo), they go back to
+ * being a suggested transfer waiting in Gjennomgå, exactly as before. */
+export function unlinkTransfer(db: DB, id: number, restoreSuggestion = false) {
   const t = get<any>(db, 'SELECT * FROM transactions WHERE id = ?', id);
   if (!t?.transfer_id) return;
   const other = get<any>(db, 'SELECT * FROM transactions WHERE id = ?', t.transfer_id);
@@ -172,7 +174,18 @@ export function unlinkTransfer(db: DB, id: number) {
     run(db, 'UPDATE transactions SET transfer_id = NULL, reviewed = 0 WHERE id IN (?, ?)', id, t.transfer_id);
     // A counterpart we invented ourselves has no reason to exist anymore.
     if (other?.source === 'transfer') run(db, 'DELETE FROM transactions WHERE id = ?', other.id);
+    else if (restoreSuggestion && other) {
+      run(db, 'UPDATE transactions SET suggested_transfer_id = ? WHERE id = ?', other.id, id);
+      run(db, 'UPDATE transactions SET suggested_transfer_id = ? WHERE id = ?', id, other.id);
+    }
   });
+}
+
+/** "Nei, ikke en overføring": forget the guess on both sides so it doesn't come back. */
+export function rejectTransferSuggestion(db: DB, id: number) {
+  const t = get<any>(db, 'SELECT suggested_transfer_id FROM transactions WHERE id = ?', id);
+  run(db, 'UPDATE transactions SET suggested_transfer_id = NULL WHERE id = ? OR suggested_transfer_id = ?', id, id);
+  if (t?.suggested_transfer_id) run(db, 'UPDATE transactions SET suggested_transfer_id = NULL WHERE id = ?', t.suggested_transfer_id);
 }
 
 /** Marks a transaction as a transfer to an account where the other half hasn't shown up yet. */
