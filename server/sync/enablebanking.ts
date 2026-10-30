@@ -3,32 +3,27 @@
  * other European banks. Create an application in their control panel (restricted/personal mode lets you link
  * your own accounts for free), download the private key, and paste the application ID + key into Settings.
  */
-import crypto from 'node:crypto';
 import { getSetting, type DB } from '../db.ts';
 import { todayISO } from '../../shared/months.ts';
+import { base64url, signRS256, stableId } from '../webcrypto.ts';
 import { ReauthRequired, toOre, type Provider, type RemoteTxn } from './types.ts';
 
 const API = 'https://api.enablebanking.com';
 
-function b64url(input: Buffer | string) {
-  return Buffer.from(input).toString('base64url');
-}
-
-function jwt(db: DB): string {
+async function jwt(db: DB): Promise<string> {
   const appId = getSetting(db, 'enablebanking_app_id');
   const key = getSetting(db, 'enablebanking_private_key');
   if (!appId || !key) throw new Error('Enable Banking er ikke satt opp ennå. Legg inn applikasjons-ID og privat nøkkel under Innstillinger.');
   const now = Math.floor(Date.now() / 1000);
-  const header = b64url(JSON.stringify({ typ: 'JWT', alg: 'RS256', kid: appId }));
-  const payload = b64url(JSON.stringify({ iss: 'enablebanking.com', aud: 'api.enablebanking.com', iat: now, exp: now + 3600 }));
-  const signature = crypto.createSign('RSA-SHA256').update(`${header}.${payload}`).sign(key);
-  return `${header}.${payload}.${b64url(signature)}`;
+  const header = base64url(JSON.stringify({ typ: 'JWT', alg: 'RS256', kid: appId }));
+  const payload = base64url(JSON.stringify({ iss: 'enablebanking.com', aud: 'api.enablebanking.com', iat: now, exp: now + 3600 }));
+  return `${header}.${payload}.${await signRS256(key, `${header}.${payload}`)}`;
 }
 
 async function call(db: DB, method: string, path: string, body?: unknown) {
   const res = await fetch(`${API}${path}`, {
     method,
-    headers: { Authorization: `Bearer ${jwt(db)}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${await jwt(db)}`, 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
@@ -121,7 +116,7 @@ export const enableBanking: Provider = {
         if (!date) continue;
         transactions.push({
           externalId:
-            t.entry_reference ?? t.transaction_id ?? crypto.createHash('sha1').update(JSON.stringify([date, amount, remittance])).digest('hex'),
+            t.entry_reference ?? t.transaction_id ?? stableId(JSON.stringify([date, amount, remittance])),
           date: date.slice(0, 10),
           amount,
           description: [remittance, counterparty].filter(Boolean).join(' ').trim() || counterparty || 'Ukjent',

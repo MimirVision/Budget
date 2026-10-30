@@ -1,0 +1,23 @@
+{
+  // Cloudflare Workers config. Everything here fits the free plan.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "budget",
+  "main": "server/worker.ts",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // The bank's BankID redirect lands on /api/..., so the API must win over the web app's fallback page.
+    "run_worker_first": ["/api/*"]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "BUDGET", "class_name": "BudgetStore" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["BudgetStore"] }],
+  "triggers": {
+    // Bank sync every four hours (UTC).
+    "crons": ["17 */4 * * *"]
+  },
+  "observability": { "enabled": true }
+}

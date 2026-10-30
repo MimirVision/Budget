@@ -1,8 +1,19 @@
-import { DatabaseSync } from 'node:sqlite';
-import fs from 'node:fs';
-import path from 'node:path';
+/**
+ * Storage-agnostic database layer. The same synchronous SQLite API runs on Node (`node:sqlite`, see db-node.ts)
+ * and on Cloudflare (a Durable Object's built-in SQLite, see db-do.ts), so all app code is shared.
+ */
+export interface Statement {
+  all(...params: any[]): unknown[];
+  get(...params: any[]): unknown;
+  run(...params: any[]): { lastInsertRowid: number | bigint; changes: number | bigint };
+}
 
-export type DB = DatabaseSync;
+export interface DB {
+  prepare(sql: string): Statement;
+  exec(sql: string): void;
+  /** Durable Objects forbid BEGIN/COMMIT and provide their own transaction wrapper instead. */
+  transaction?<T>(fn: () => T): T;
+}
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -123,16 +134,14 @@ CREATE TABLE IF NOT EXISTS pending_auth (
 );
 `;
 
-export function openDb(file: string): DB {
-  if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
-  const db = new DatabaseSync(file);
-  db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
-  db.exec(SCHEMA);
+export function initSchema(db: DB) {
+  // One statement at a time: not every SQLite host accepts several in one call.
+  for (const statement of SCHEMA.split(';')) if (statement.trim()) db.exec(statement);
   seedDefaults(db);
-  return db;
 }
 
 export function tx<T>(db: DB, fn: () => T): T {
+  if (db.transaction) return db.transaction(fn);
   db.exec('BEGIN');
   try {
     const result = fn();

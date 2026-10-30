@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { all, get, openDb, run, type DB } from './db.ts';
+import { all, get, run, type DB } from './db.ts';
+import { openDb } from './db-node.ts';
 import { autoAssign, getBudget, readyToAssign, setAssigned } from './budget.ts';
 import { ingest, linkTransfer, transferToAccount, withImportHashes } from './ingest.ts';
 

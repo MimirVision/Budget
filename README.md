@@ -43,7 +43,27 @@ også.
 mot forbruk, formue), oppfølgingskontoer (boliglån, BSU), fungerer på mobil (kan legges på hjemskjermen som en app), mørk modus
 og valgfritt passord for husstanden.
 
-## Kjør appen
+## Gratis på Cloudflare (uten egen PC)
+
+Appen kjører gratis på Cloudflare Workers. Dataene ligger i en Durable Object med innebygd SQLite, og banksynkroniseringen
+kjøres av Cloudflare hver fjerde time. Alt kan settes opp fra mobilen:
+
+1. Gå til [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages** → **Create** → **Import a repository**.
+2. Koble til GitHub og velg `MimirVision/Budget`.
+3. Kall prosjektet **`budget`** (må være likt `name` i `wrangler.jsonc`). La byggekommandoen være `npm run build` og
+   deploy-kommandoen `npx wrangler deploy`. Trykk **Deploy**.
+4. Appen ligger nå på **https://budget.&lt;ditt-subdomene&gt;.workers.dev**. Hver gang `main` endres, bygges og publiseres den
+   automatisk.
+5. **Lås appen**, siden den inneholder bankdata. Velg én av disse:
+   - *Anbefalt:* Worker → **Settings → Domains & Routes** → workers.dev → slå på **Cloudflare Access**, og legg inn
+     e-postadressene deres. Da får bare dere tilgang, med engangskode på e-post.
+   - Eller: Worker → **Settings → Variables and Secrets** → legg til hemmeligheten `APP_PASSWORD`.
+6. Valgfritt: legg til variabelen `PUBLIC_URL` med adressen fra punkt 4. Ellers finner appen den selv.
+
+Gratisplanen gir rundt 10 ms CPU per forespørsel, så store jobber (CSV-import, «Godkjenn alle», første synkronisering) deles
+automatisk opp i små biter. Cloudflare tillater 5 planlagte jobber (cron) per konto på gratisplanen. Appen bruker én.
+
+## Kjør appen på egen maskin
 
 Krever Node.js 22.13 eller nyere (bruker den innebygde SQLite-støtten).
 
@@ -91,7 +111,7 @@ npm test          # budsjettregning, CSV-lesing, navnerydding, duplikater, overf
 npm run typecheck
 ```
 
-- `server/` (Hono + `node:sqlite`): `budget.ts` (konvoluttregning), `ingest.ts` (løypa), `payees.ts`, `import/csv.ts`,
+- `server/` (Hono; `node:sqlite` lokalt, Durable Object-SQLite på Cloudflare via `worker.ts`): `budget.ts` (konvoluttregning), `ingest.ts` (løypa), `payees.ts`, `import/csv.ts`,
   `sync/` (bankleverandører), `reports.ts`, `api.ts`
 - `web/` (React + Vite): sider for Budsjett, Gjennomgå, Transaksjoner, Kontoer, Rapporter og Innstillinger
 - Penger lagres som heltall i øre overalt.

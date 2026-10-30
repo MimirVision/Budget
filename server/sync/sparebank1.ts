@@ -7,8 +7,8 @@
  * Access tokens last 10 minutes; the refresh token lasts 30 days and is renewed every sync, so as long as
  * the app syncs at least once a month you never need to log in again.
  */
-import crypto from 'node:crypto';
 import { getSetting, type DB } from '../db.ts';
+import { stableId } from '../webcrypto.ts';
 import { ReauthRequired, toOre, type Provider, type RemoteTxn } from './types.ts';
 
 const AUTH = 'https://api-auth.sparebank1.no';
@@ -128,7 +128,7 @@ export const sparebank1: Provider = {
       transactions.push({
         externalId:
           String(x.id ?? x.transactionId ?? '') ||
-          crypto.createHash('sha1').update(JSON.stringify([date, amount, description, x.nonUniqueId ?? ''])).digest('hex'),
+          stableId(JSON.stringify([date, amount, description, x.nonUniqueId ?? ''])),
         date,
         amount,
         description,
