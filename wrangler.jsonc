@@ -16,8 +16,8 @@
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["BudgetStore"] }],
   "triggers": {
-    // Bank sync every four hours (UTC).
-    "crons": ["17 */4 * * *"]
+    // Bank sync every six hours (UTC): 4 times a day, the most PSD2 allows without you present.
+    "crons": ["17 */6 * * *"]
   },
   "observability": { "enabled": true }
 }

@@ -5,7 +5,7 @@ import { addDays, todayISO } from '../../shared/months.ts';
 import { enableBanking } from './enablebanking.ts';
 import { sparebank1 } from './sparebank1.ts';
 import { randomHex } from '../webcrypto.ts';
-import { ReauthRequired, type Provider } from './types.ts';
+import { ReauthRequired, type Provider, type PsuContext } from './types.ts';
 
 export const providers: Record<string, Provider> = {
   [enableBanking.id]: enableBanking,
@@ -141,7 +141,12 @@ export function linkAccounts(db: DB, connectionId: number, choices: LinkChoice[]
   });
 }
 
-export async function syncConnection(db: DB, connectionId: number, onlyRemoteId?: string): Promise<IngestResult & { errors: string[] }> {
+export async function syncConnection(
+  db: DB,
+  connectionId: number,
+  onlyRemoteId?: string,
+  psu?: PsuContext,
+): Promise<IngestResult & { errors: string[] }> {
   const conn = get<any>(db, 'SELECT * FROM connections WHERE id = ?', connectionId);
   if (!conn) throw new Error('Fant ikke bankkoblingen');
   const provider = getProvider(conn.provider);
@@ -161,7 +166,7 @@ export async function syncConnection(db: DB, connectionId: number, onlyRemoteId?
     )?.d;
     const since = last ? addDays(last, -7) : addDays(todayISO(), -90);
     try {
-      const result = await provider.fetch(db, data, link.remote_id, since);
+      const result = await provider.fetch(db, data, link.remote_id, since, psu);
       if (result.data) {
         data = { ...data, ...result.data };
         run(db, 'UPDATE connections SET data = ? WHERE id = ?', JSON.stringify(data), connectionId);
@@ -223,12 +228,13 @@ export function seedOpeningBalance(db: DB, accountId: number, bankBalance: numbe
   );
 }
 
-export async function syncAll(db: DB) {
+/** Syncs every bank. Without `psu` it's a background sync (the scheduled one). */
+export async function syncAll(db: DB, psu?: PsuContext) {
   const conns = all<{ id: number; name: string }>(db, "SELECT id, name FROM connections WHERE status IN ('active', 'error')");
   const results: Array<{ id: number; name: string; added?: number; error?: string }> = [];
   for (const c of conns) {
     try {
-      const r = await syncConnection(db, c.id);
+      const r = await syncConnection(db, c.id, undefined, psu);
       results.push({ id: c.id, name: c.name, added: r.added });
     } catch (e: any) {
       if (!(e instanceof ReauthRequired)) run(db, "UPDATE connections SET status = 'error', last_error = ? WHERE id = ?", e.message, c.id);

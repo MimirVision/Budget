@@ -339,7 +339,7 @@ function AddAccount({
           <div className="option-grid">
             <button className="option" onClick={() => setMethod('bank')}>
               <strong>🔄 Koble til med BankID</strong>
-              <span className="small muted">Automatisk synkronisering hver fjerde time. Best for SpareBank 1, DNB og Revolut.</span>
+              <span className="small muted">Automatisk synkronisering fire ganger i døgnet. Best for SpareBank 1, DNB og Revolut.</span>
             </button>
             <button className="option" onClick={() => setMethod('file')}>
               <strong>📄 Importer en fil</strong>

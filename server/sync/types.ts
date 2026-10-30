@@ -55,7 +55,18 @@ export interface Provider {
     data: Record<string, any>,
     remoteId: string,
     since: string,
+    psu?: PsuContext,
   ): Promise<{ transactions: RemoteTxn[]; balance?: number; data?: Record<string, any> }>;
+}
+
+/**
+ * Set when you are using the app right now (tapping "Synkroniser nå" or connecting a bank). PSD2 limits
+ * background fetches to 4 per account per day; fetches made while you're present don't count, but only
+ * if the bank is told so.
+ */
+export interface PsuContext {
+  ip: string;
+  userAgent: string;
 }
 
 export class ReauthRequired extends Error {}

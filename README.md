@@ -28,7 +28,7 @@ På PC får du tabell og sidepanel. På mobil får du store trykkflater, bunnark
 
 **Slik kommer transaksjonene inn**
 - **Banksynkronisering** via [Enable Banking](https://enablebanking.com) (DNB, SpareBank 1, Revolut og de fleste europeiske
-  banker) eller **SpareBank 1 sitt eget gratis API**. Synkroniserer hver fjerde time og varsler en uke før BankID-samtykket
+  banker) eller **SpareBank 1 sitt eget gratis API**. Synkroniserer hver sjette time (det PSD2 tillater i bakgrunnen), pluss «Synkroniser nå» når du vil, og varsler en uke før BankID-samtykket
   utløper.
 - **CSV-import** som kjenner igjen filer fra SpareBank 1, DNB og Revolut. Den forstår `1 234,56`, filer i Windows-1252 (æøå),
   egne inn/ut-kolonner og kredittkortfiler med snudd fortegn. Det er trygt å importere samme fil to ganger.
@@ -53,7 +53,7 @@ og valgfritt passord for husstanden.
 ## Gratis på Cloudflare (uten egen PC)
 
 Appen kjører gratis på Cloudflare Workers. Dataene ligger i en Durable Object med innebygd SQLite, og banksynkroniseringen
-kjøres av Cloudflare hver fjerde time. Alt kan settes opp fra mobilen:
+kjøres av Cloudflare hver sjette time. Alt kan settes opp fra mobilen:
 
 1. Gå til [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages** → **Create** → **Import a repository**.
 2. Koble til GitHub og velg `MimirVision/Budget`.

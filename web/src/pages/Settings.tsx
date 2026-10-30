@@ -363,7 +363,7 @@ function BankSync() {
         </table>
         <p className="muted" style={{ marginBottom: 0 }}>
           Bankene krever at du bekrefter med BankID på nytt omtrent hver 90.–180. dag. Appen varsler deg en uke før. Synkroniseringen
-          kjører automatisk hver fjerde time så lenge serveren kjører.
+          kjører automatisk hver sjette time (fire ganger i døgnet, det bankene tillater uten at du er til stede). «Synkroniser nå» kan brukes når du vil.
           {!data.passwordEnabled && ' Tips: sett APP_PASSWORD i .env før appen gjøres tilgjengelig på internett.'}
         </p>
       </div>
