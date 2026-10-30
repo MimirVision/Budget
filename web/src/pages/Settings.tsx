@@ -387,7 +387,7 @@ const SETUP_STEPS: Record<string, (callback: string) => React.ReactNode> = {
   sparebank1: (callback) => (
     <ol className="small" style={{ margin: 0, paddingLeft: 18 }}>
       <li>
-        Logg inn på <a href="https://developersparebank1.no" target="_blank" rel="noreferrer">developersparebank1.no</a> med BankID og åpne{' '}
+        Logg inn på <a href="https://developer.sparebank1.no" target="_blank" rel="noreferrer">developer.sparebank1.no</a> med BankID og åpne{' '}
         <em>Personlig klient</em>.
       </li>
       <li>
