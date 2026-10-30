@@ -3,7 +3,8 @@
  * Spending = money out of budget accounts that isn't a transfer between your own accounts, net of refunds.
  */
 import { all, type DB } from './db.ts';
-import { budgetStart } from './budget.ts';
+import { budgetStart, getBudget } from './budget.ts';
+import { billsLeftThisMonth, fixedCategoryIds } from './bills.ts';
 import { addMonths, daysInMonth, todayISO } from '../shared/months.ts';
 
 export interface Overview {
@@ -19,13 +20,29 @@ export interface Overview {
   pendingIncome: number;
   /** Set when the period reaches back before "Start på nytt": those months are history and may count transfers wrong. */
   historyBefore: string | null;
+  /** Spending in fixed-cost categories (bills, mortgage); the rest is everyday spending. */
+  fixedSpending: number;
+  prevFixedSpending: number;
   groups: Array<{
     id: number | null;
     name: string;
     spent: number;
     prevSpent: number;
-    categories: Array<{ id: number | null; name: string; spent: number; prevSpent: number; count: number }>;
+    fixed: boolean;
+    categories: Array<{ id: number | null; name: string; spent: number; prevSpent: number; count: number; fixed: boolean }>;
   }>;
+  /** Spending per account or card. */
+  accounts: Array<{ id: number; name: string; spent: number; count: number }>;
+  /** Everyday spending (no bills) per weekday, Monday first, averaged over the days in the period. */
+  weekdays: Array<{ day: number; avg: number; total: number }>;
+  /** Everyday spending per day of the month (one-month periods). */
+  calendar: Array<{ date: string; spent: number }>;
+  stats: { purchases: number; days: number; noSpendDays: number; avgPerDay: number; biggestDay: { date: string; spent: number } | null };
+  /** Assigned against spent per category (one month, from the budget start). */
+  budget: { assigned: number; spent: number; rows: Array<{ id: number; name: string; assigned: number; spent: number }> } | null;
+  /** Where this month is heading: so far + everyday pace for the rest + bills not paid yet. */
+  forecast: { projected: number; everydayRest: number; billsLeft: number; billsLeftCount: number } | null;
+  /** Where the everyday money went (fixed bills left out). */
   payees: Array<{ payee: string; spent: number; count: number; category: string | null }>;
   largest: Array<{ id: number; date: string; payee: string; amount: number; category: string | null; account: string }>;
   /** Cumulative spending per day of the month (only for one-month periods), with last month for comparison. */
@@ -91,13 +108,19 @@ export function overview(db: DB, month: string, span: number): Overview {
     prevFrom,
     to,
   );
+  const fixed = fixedCategoryIds(db);
+  // Plain integers from our own table, so they can go straight into the SQL.
+  const notFixed = `(category_id IS NULL OR category_id NOT IN (${[...fixed].map(Number).join(',') || 'NULL'}))`;
   const groups = new Map<string, Overview['groups'][number]>();
   for (const r of byCategory) {
     const gKey = String(r.group_id ?? 'none');
-    if (!groups.has(gKey)) groups.set(gKey, { id: r.group_id, name: r.group_name ?? 'Uten kategori', spent: 0, prevSpent: 0, categories: [] });
+    if (!groups.has(gKey)) groups.set(gKey, { id: r.group_id, name: r.group_name ?? 'Uten kategori', spent: 0, prevSpent: 0, fixed: false, categories: [] });
     const g = groups.get(gKey)!;
     let c = g.categories.find((x) => x.id === r.category_id);
-    if (!c) g.categories.push((c = { id: r.category_id, name: r.category ?? 'Uten kategori', spent: 0, prevSpent: 0, count: 0 }));
+    if (!c) {
+      const isFixed = r.category_id !== null && fixed.has(r.category_id);
+      g.categories.push((c = { id: r.category_id, name: r.category ?? 'Uten kategori', spent: 0, prevSpent: 0, count: 0, fixed: isFixed }));
+    }
     if (r.period === 'now') {
       c.spent += r.spent;
       c.count += r.count;
@@ -108,14 +131,17 @@ export function overview(db: DB, month: string, span: number): Overview {
     }
   }
   const groupList = [...groups.values()]
-    .map((g) => ({ ...g, categories: g.categories.filter((c) => c.spent > 0 || c.prevSpent > 0).sort((a, b) => b.spent - a.spent) }))
+    .map((g) => {
+      const categories = g.categories.filter((c) => c.spent > 0 || c.prevSpent > 0).sort((a, b) => b.spent - a.spent);
+      return { ...g, categories, fixed: categories.length > 0 && categories.every((c) => c.fixed) };
+    })
     .filter((g) => g.spent > 0 || g.prevSpent > 0)
     .sort((a, b) => b.spent - a.spent);
 
   const payees = all<Overview['payees'][number]>(
     db,
     `${LINES} SELECT payee, SUM(spend) AS spent, COUNT(*) AS count, MAX(category) AS category
-                FROM tagged WHERE is_income = 0 AND spend != 0 AND payee != '' AND date BETWEEN ? AND ?
+                FROM tagged WHERE is_income = 0 AND spend != 0 AND payee != '' AND ${notFixed} AND date BETWEEN ? AND ?
                GROUP BY lower(payee) HAVING spent > 0 ORDER BY spent DESC LIMIT 10`,
     from,
     to,
@@ -124,7 +150,7 @@ export function overview(db: DB, month: string, span: number): Overview {
   const largest = all<Overview['largest'][number]>(
     db,
     `${LINES} SELECT tid AS id, date, payee, amount, category, (SELECT name FROM accounts WHERE id = account_id) AS account
-                FROM tagged WHERE is_income = 0 AND amount < 0 AND date BETWEEN ? AND ?
+                FROM tagged WHERE is_income = 0 AND amount < 0 AND ${notFixed} AND date BETWEEN ? AND ?
                ORDER BY amount ASC LIMIT 5`,
     from,
     to,
@@ -171,7 +197,86 @@ export function overview(db: DB, month: string, span: number): Overview {
     return { month: m, income: byMonth.get(m)?.income ?? 0, spending: byMonth.get(m)?.spending ?? 0 };
   });
 
+  const fixedTotal = (a: string, b: string) =>
+    all<{ v: number }>(db, `${LINES} SELECT COALESCE(SUM(spend), 0) AS v FROM tagged WHERE NOT ${notFixed} AND date BETWEEN ? AND ?`, a, b)[0].v;
+  const fixedSpending = fixedTotal(from, to);
+
+  const accounts = all<Overview['accounts'][number]>(
+    db,
+    `${LINES} SELECT account_id AS id, (SELECT name FROM accounts WHERE id = account_id) AS name, SUM(spend) AS spent,
+                     SUM(CASE WHEN spend > 0 THEN 1 ELSE 0 END) AS count
+                FROM tagged WHERE is_income = 0 AND date BETWEEN ? AND ? GROUP BY account_id HAVING spent > 0 ORDER BY spent DESC`,
+    from,
+    to,
+  );
+
+  // Days that have actually happened in the period.
+  const today = todayISO();
+  const lastDate = to < today ? to.slice(0, 7) + '-' + String(daysInMonth(to.slice(0, 7))).padStart(2, '0') : today;
+  const dayCount = from > today ? 0 : Math.max(0, Math.round((Date.parse(lastDate) - Date.parse(from)) / 86_400_000) + 1);
+  const everydayByDay = new Map(
+    all<{ date: string; spent: number; n: number }>(
+      db,
+      `${LINES} SELECT date, SUM(spend) AS spent, SUM(CASE WHEN spend > 0 THEN 1 ELSE 0 END) AS n
+                  FROM tagged WHERE is_income = 0 AND ${notFixed} AND date BETWEEN ? AND ? GROUP BY date`,
+      from,
+      lastDate,
+    ).map((r) => [r.date, r]),
+  );
+  const weekdays = Array.from({ length: 7 }, (_, day) => ({ day, avg: 0, total: 0, n: 0 }));
+  let purchases = 0;
+  let noSpendDays = 0;
+  let everyday = 0;
+  let biggestDay: { date: string; spent: number } | null = null;
+  const calendar: Overview['calendar'] = [];
+  for (let i = 0; i < dayCount; i++) {
+    const date = new Date(Date.parse(`${from}T12:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10);
+    const r = everydayByDay.get(date);
+    const spent = Math.max(0, r?.spent ?? 0);
+    const w = weekdays[(new Date(`${date}T12:00:00Z`).getUTCDay() + 6) % 7];
+    w.total += spent;
+    w.n++;
+    purchases += r?.n ?? 0;
+    everyday += spent;
+    if (spent === 0) noSpendDays++;
+    if (spent > 0 && (!biggestDay || spent > biggestDay.spent)) biggestDay = { date, spent };
+    if (span === 1) calendar.push({ date, spent });
+  }
+
+  let budget: Overview['budget'] = null;
+  if (span === 1 && month >= start.slice(0, 7)) {
+    const b = getBudget(db, month);
+    const rows = b.groups
+      .filter((g) => !g.hidden)
+      .flatMap((g) => g.categories)
+      .filter((c) => !c.hidden && (c.assigned > 0 || c.activity < 0))
+      .map((c) => ({ id: c.id, name: c.name, assigned: c.assigned, spent: Math.max(0, -c.activity) }));
+    if (rows.some((r) => r.assigned > 0))
+      budget = { assigned: rows.reduce((s, r) => s + r.assigned, 0), spent: rows.reduce((s, r) => s + r.spent, 0), rows };
+  }
+
+  let forecast: Overview['forecast'] = null;
+  const elapsed = Number(today.slice(8, 10));
+  if (span === 1 && month === today.slice(0, 7) && elapsed >= 3) {
+    const left = daysInMonth(month) - elapsed;
+    const bills = billsLeftThisMonth(db, today);
+    // Without any bills set up, assume the fixed costs end up like last month.
+    const fixedLeft = bills.count || all<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM bills')[0].n
+      ? bills.amount
+      : Math.max(0, fixedTotal(prevFrom, prevTo) - fixedSpending);
+    const everydayRest = Math.round((everyday / elapsed) * left);
+    forecast = { projected: now.spending + everydayRest + fixedLeft, everydayRest, billsLeft: fixedLeft, billsLeftCount: bills.count };
+  }
+
   return {
+    fixedSpending,
+    prevFixedSpending: fixedTotal(prevFrom, prevTo),
+    accounts,
+    weekdays: weekdays.map(({ day, total, n }) => ({ day, total, avg: n ? Math.round(total / n) : 0 })),
+    calendar,
+    stats: { purchases, days: dayCount, noSpendDays, avgPerDay: dayCount ? Math.round(everyday / dayCount) : 0, biggestDay },
+    budget,
+    forecast,
     from,
     to,
     prevFrom,

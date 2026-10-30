@@ -1891,7 +1891,7 @@ label.field .help {
 /* ---------- Oversikt ---------- */
 .ov-tiles {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 12px;
 }
 
@@ -1954,14 +1954,11 @@ label.field .help {
   .ov-tiles {
     grid-template-columns: 1fr 1fr;
   }
-  .ov-tiles .ov-tile:first-child {
-    grid-column: 1 / -1;
+  .ov-tiles .ov-tile {
+    padding: 12px 14px;
   }
   .ov-value {
-    font-size: 24px;
-  }
-  .ov-tiles .ov-tile:first-child .ov-value {
-    font-size: 32px;
+    font-size: 22px;
   }
 }
 
@@ -2825,5 +2822,208 @@ label.field .help {
   }
   .bill-row {
     padding: 12px 14px;
+  }
+}
+
+/* ---------- Oversikt: story, split, budget vs actual, calendar, weekdays ---------- */
+.ov-story {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: 80ch;
+}
+.ov-story strong {
+  color: var(--text);
+}
+.split {
+  margin: 2px 0 14px;
+}
+.split-bar {
+  display: flex;
+  gap: 2px;
+  height: 12px;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.split-bar span {
+  min-width: 4px;
+}
+.split-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin-top: 8px;
+  font-size: 13px;
+}
+.split-legend .swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+.bad-text {
+  color: var(--bad);
+  font-weight: 600;
+}
+.bva {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bva-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  padding: 8px 6px;
+  margin: 0 -6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.bva-row:hover {
+  background: var(--surface-2);
+}
+.bva-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.bva-track {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-2);
+}
+.bva-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--series-1);
+}
+.bva-over {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--bad);
+}
+.bva-end {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--muted);
+  border-radius: 1px;
+}
+.num {
+  font-variant-numeric: tabular-nums;
+}
+.cal {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+.cal-head {
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  padding-bottom: 2px;
+}
+.cal-day {
+  aspect-ratio: 1.6;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+  color: var(--text);
+  outline-offset: 1px;
+}
+.cal-day.on {
+  outline: 2px solid var(--text);
+}
+.l0 {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.l1 {
+  background: color-mix(in oklab, var(--series-1) 22%, var(--surface));
+}
+.l2 {
+  background: color-mix(in oklab, var(--series-1) 45%, var(--surface));
+}
+.l3 {
+  background: color-mix(in oklab, var(--series-1) 72%, var(--surface));
+}
+.l4 {
+  background: var(--series-1);
+  color: #fff;
+}
+:root[data-theme='dark'] .l4 {
+  color: #0f1110;
+}
+.lx {
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--faint);
+}
+.cal-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.cal-scale {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.cal-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+.wk {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 10px;
+  height: 170px;
+  align-items: end;
+}
+.wk-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  gap: 4px;
+}
+.wk-bar {
+  width: min(36px, 100%);
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+  background: var(--series-1);
+}
+.wk-val {
+  min-height: 16px;
+}
+@media (max-width: 860px) {
+  .cal-day {
+    aspect-ratio: 1.15;
+  }
+  .ov-story {
+    font-size: 14px;
   }
 }

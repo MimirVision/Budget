@@ -75,6 +75,31 @@ function findPayment(db: DB, b: Bill, due: string) {
   );
 }
 
+/** Bills still to be paid later this month (for the end-of-month forecast in Oversikt). */
+export function billsLeftThisMonth(db: DB, today = todayISO()): { count: number; amount: number } {
+  let count = 0;
+  let amount = 0;
+  for (const b of all<Bill>(db, 'SELECT * FROM bills')) {
+    const due = dueThisCycle(b, today);
+    if (due.slice(0, 7) !== today.slice(0, 7) || due < today || findPayment(db, b, due)) continue;
+    count++;
+    amount += b.amount;
+  }
+  return { count, amount };
+}
+
+/** Categories that hold fixed costs: those with a bill, or in a group for fixed expenses. */
+export function fixedCategoryIds(db: DB): Set<number> {
+  return new Set(
+    all<{ id: number }>(
+      db,
+      `SELECT c.id FROM categories c JOIN category_groups g ON g.id = c.group_id
+        WHERE g.name LIKE '%fast%' OR g.name LIKE '%regning%' OR g.name LIKE '%bolig%'
+       UNION SELECT category_id FROM bills WHERE category_id IS NOT NULL`,
+    ).map((r) => r.id),
+  );
+}
+
 export function listBills(db: DB, today = todayISO()) {
   const bills = all<Bill & { category_name: string | null }>(
     db,
@@ -104,13 +129,7 @@ export function suggestBills(db: DB, existing: Bill[], today = todayISO()) {
   const known = existing.map((b) => (b.match || b.name).toLowerCase()).filter(Boolean);
   const every = { monthly: 1, quarterly: 3, yearly: 12 } as Record<string, number>;
   // Bills cost about the same each time, or sit with the other fixed costs (power varies with the season).
-  const fixedGroup = new Set(
-    all<{ id: number }>(
-      db,
-      `SELECT c.id FROM categories c JOIN category_groups g ON g.id = c.group_id
-        WHERE g.name LIKE '%fast%' OR g.name LIKE '%regning%' OR g.name LIKE '%bolig%'`,
-    ).map((r) => r.id),
-  );
+  const fixedGroup = fixedCategoryIds(db);
   return detectRecurring(db, today)
     .filter((r) => r.amount < 0 && every[r.cadence] && !known.some((k) => r.payee.toLowerCase().includes(k)))
     .filter((r) => r.steady || (r.categoryId !== null && fixedGroup.has(r.categoryId)))
