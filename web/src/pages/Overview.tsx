@@ -45,6 +45,32 @@ function periodLabel(month: string, span: number) {
   return `${shortMonth(start)} ${start.slice(0, 4) !== month.slice(0, 4) ? start.slice(0, 4) + ' ' : ''}– ${shortMonth(month)} ${month.slice(0, 4)}`;
 }
 
+/** The period is before "Start på nytt": say so, instead of looking like nothing happened. */
+function BeforeStart({ start, onGo }: { start: string; onGo: (month: string) => void }) {
+  const startMonth = start.slice(0, 7);
+  const date = `${Number(start.slice(8, 10))}. ${monthLabel(startMonth).toLowerCase()}`;
+  const future = startMonth > currentMonth();
+  return (
+    <div className="stack" style={{ gap: 12, alignItems: 'center' }}>
+      <div>
+        Budsjettet ditt starter på nytt {date}, så Oversikten teller bare det som skjer fra da.
+        {future ? ' De første tallene dukker opp her når måneden begynner.' : ''}
+      </div>
+      <div className="row" style={{ gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+        {!future && (
+          <button className="btn primary sm" onClick={() => onGo(startMonth)}>
+            Gå til {monthLabel(startMonth).split(' ')[0].toLowerCase()}
+          </button>
+        )}
+        <Link className="btn sm" to="/transactions">
+          Se transaksjonene
+        </Link>
+      </div>
+      <div className="faint small">Du kan endre eller angre startdatoen under Innstillinger → Budsjett.</div>
+    </div>
+  );
+}
+
 /** Change against the previous period, phrased plainly ("12 % mer enn forrige måned"). */
 function Delta({ now, prev, prevLabel, goodWhenUp }: { now: number; prev: number; prevLabel: string; goodWhenUp: boolean }) {
   if (!prev) return <span className="delta faint">Ingen data for {prevLabel}</span>;
@@ -66,7 +92,7 @@ export default function OverviewPage() {
   const setMonth = (m: string) => setParams(m === currentMonth() ? {} : { month: m });
   const [data, setData] = useState<OverviewData | null>(null);
   const [worth, setWorth] = useState<WorthRow[]>([]);
-  const { version } = useStore();
+  const { version, summary } = useStore();
   const mobile = useIsMobile();
 
   useEffect(() => {
@@ -221,7 +247,11 @@ export default function OverviewPage() {
       {empty ? (
         <div className="card empty">
           <div className="emoji">📊</div>
-          Ingen inntekter eller utgifter i {periodLabel(month, span).toLowerCase()} ennå.
+          {summary?.budgetStart && `${month}-31` < summary.budgetStart ? (
+            <BeforeStart start={summary.budgetStart} onGo={(m) => setMonth(m)} />
+          ) : (
+            <>Ingen inntekter eller utgifter i {periodLabel(month, span).toLowerCase()} ennå.</>
+          )}
         </div>
       ) : mobile ? (
         <div className="stack" style={{ gap: 14 }}>
