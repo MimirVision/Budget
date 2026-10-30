@@ -97,7 +97,7 @@ redirect-URL dere skal registrere.
 
 | Bank | Anbefalt vei |
 | --- | --- |
-| SpareBank 1 Sør-Norge | Enable Banking, eller *SpareBank 1 (direkte)* via developersparebank1.no → Personlig klient |
+| SpareBank 1 Sør-Norge | Enable Banking, eller *SpareBank 1 (direkte)* via developer.sparebank1.no → Personlig klient |
 | DNB kredittkort | Enable Banking |
 | Revolut | Enable Banking (eller CSV-eksport fra appen) |
 | TF Bank kredittkort | Enable Banking hvis kortet står i banklisten, ellers CSV-import |

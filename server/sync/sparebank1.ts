@@ -1,6 +1,6 @@
 /**
  * SpareBank 1 "Personlig klient" — SpareBank 1's own free API for reading your own accounts.
- * Register at https://developersparebank1.no (Personlig klient), set the redirect URL to
+ * Register at https://developer.sparebank1.no (Personlig klient), set the redirect URL to
  * <PUBLIC_URL>/api/connections/callback/sparebank1, and paste client ID, secret and your bank's
  * finInst ID (listed on the same page, e.g. "fid-smn") into Settings.
  *
@@ -39,7 +39,8 @@ async function token(db: DB, form: Record<string, string>) {
 }
 
 async function api(path: string, accessToken: string) {
-  const res = await fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${accessToken}`, Accept: ACCEPT } });
+  // SpareBank 1's own sample sends the version as Content-Type even on GET, so send it both ways.
+  const res = await fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${accessToken}`, Accept: ACCEPT, 'Content-Type': ACCEPT } });
   if (res.status === 401) throw new ReauthRequired('SpareBank 1-innloggingen har utløpt. Koble til på nytt med BankID.');
   if (!res.ok) throw new Error(`Feil fra SpareBank 1 (${res.status}): ${await res.text()}`);
   return res.json() as Promise<any>;
@@ -68,12 +69,12 @@ export const sparebank1: Provider = {
   label: 'SpareBank 1 (direkte)',
   description: 'SpareBank 1 sitt eget gratis API. Fungerer bare for SpareBank 1-banker, som SpareBank 1 Sør-Norge.',
   settings: [
-    { key: 'sparebank1_client_id', label: 'Klient-ID', help: 'Fra developersparebank1.no → Personlig klient.' },
+    { key: 'sparebank1_client_id', label: 'Klient-ID', help: 'Fra developer.sparebank1.no → Personlig klient.' },
     { key: 'sparebank1_client_secret', label: 'Klienthemmelighet', secret: true },
     {
       key: 'sparebank1_fininst',
       label: 'Bank-ID (finInst)',
-      help: 'Bankens ID fra banklisten på developersparebank1.no, f.eks. «fid-smn».',
+      help: 'Står som «Financial institution» på klienten din, f.eks. «fid-sor-norge».',
     },
   ],
 
@@ -92,7 +93,8 @@ export const sparebank1: Provider = {
   },
 
   async complete(db, { code, redirectUrl }) {
-    const t = await token(db, { grant_type: 'authorization_code', code, redirect_uri: redirectUrl });
+    // Their sample code names the field redirect_url; standard OAuth says redirect_uri. Send both.
+    const t = await token(db, { grant_type: 'authorization_code', code, redirect_uri: redirectUrl, redirect_url: redirectUrl });
     const json = await api('/personal/banking/accounts', t.access_token);
     const list: any[] = json.accounts ?? json.list ?? (Array.isArray(json) ? json : []);
     return {
