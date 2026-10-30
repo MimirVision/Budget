@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api, type BudgetMonth, type CategoryRow, type Recurring, type Transaction } from '../api';
 import { dayLabel, kr, monthLabel, relativeDay } from '../format';
 import { useStore } from '../store';
+import { useIsMobile } from '../hooks';
 import { AnimatedMoney, Icon, Modal, Money, MoneyInput, haptic, useToast } from '../components/ui';
 import { addMonths, currentMonth, todayISO } from '../../../shared/months';
 
@@ -580,6 +581,8 @@ export function WrapUp({ month, startMonth, onChanged }: { month: string; startM
   const [picked, setPicked] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
+  const mobile = useIsMobile();
+  const [open, setOpen] = useState(false);
   const show = month === currentMonth() && !hidden && (!startMonth || prev >= startMonth);
 
   useEffect(() => {
@@ -619,17 +622,8 @@ export function WrapUp({ month, startMonth, onChanged }: { month: string; startM
     }
   };
 
-  return (
-    <section className="card wrapup">
-      <div className="wrapup-head">
-        <div>
-          <div className="eyebrow">Månedsoppsummering</div>
-          <h3>Slik gikk {monthLabel(prev).toLowerCase()}</h3>
-        </div>
-        <button className="icon-btn" onClick={dismiss} aria-label="Lukk oppsummeringen">
-          <Icon name="close" />
-        </button>
-      </div>
+  const body = (
+    <>
       <div className="wrapup-stats">
         <div>
           <span className="muted">Inn</span>
@@ -693,6 +687,57 @@ export function WrapUp({ month, startMonth, onChanged }: { month: string; startM
           </div>
         </div>
       )}
+    </>
+  );
+
+  // On the phone the summary is one tappable row that opens as a sheet, so it doesn't push the budget down.
+  if (mobile) {
+    return (
+      <>
+        <button className="card wrapup-row" onClick={() => setOpen(true)}>
+          <span className="wrapup-row-icon" aria-hidden>
+            <Icon name="calendar" size={18} />
+          </span>
+          <span className="grow" style={{ minWidth: 0 }}>
+            <strong className="ellipsis" style={{ display: 'block' }}>
+              Slik gikk {monthLabel(prev).split(' ')[0].toLowerCase()}
+            </strong>
+            <span className={`small ${saved >= 0 ? 'pos' : 'neg'}`}>
+              {saved >= 0 ? `${kr(saved)} til overs` : `${kr(-saved)} mer brukt enn inn`}
+              {data.leftovers.length > 0 && data.savings.length > 0 ? ' · flytt rester til sparing' : ''}
+            </span>
+          </span>
+          <Icon name="right" size={18} />
+        </button>
+        {open && (
+          <Modal
+            title={`Slik gikk ${monthLabel(prev).toLowerCase()}`}
+            onClose={() => setOpen(false)}
+            footer={
+              <button className="btn ghost" onClick={() => (setOpen(false), dismiss())}>
+                Ikke vis igjen
+              </button>
+            }
+          >
+            <div className="wrapup sheet-body">{body}</div>
+          </Modal>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <section className="card wrapup">
+      <div className="wrapup-head">
+        <div>
+          <div className="eyebrow">Månedsoppsummering</div>
+          <h3>Slik gikk {monthLabel(prev).toLowerCase()}</h3>
+        </div>
+        <button className="icon-btn" onClick={dismiss} aria-label="Lukk oppsummeringen">
+          <Icon name="close" />
+        </button>
+      </div>
+      {body}
     </section>
   );
 }
