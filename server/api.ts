@@ -3,6 +3,7 @@ import { all, get, getSetting, run, setSetting, tx, type DB } from './db.ts';
 import { autoAssign, getBudget, moveMoney, readyToAssign, setAssigned, type AutoAssignMode } from './budget.ts';
 import { ingest, linkTransfer, ruleMatches, transferToAccount, unlinkTransfer, withImportHashes } from './ingest.ts';
 import { previewCsv, type CsvMapping } from './import/csv.ts';
+import { overview } from './overview.ts';
 import { cashflowReport, detectRecurring, netWorthReport, spendingReport } from './reports.ts';
 import { callbackUrl, completeConnection, getProvider, linkAccounts, providers, startConnection, syncAll, syncConnection, providerForState } from './sync/index.ts';
 import { addDays, currentMonth, todayISO } from '../shared/months.ts';
@@ -634,6 +635,12 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
   api.get('/reports/cashflow', (c) => c.json(cashflowReport(db, Number(c.req.query('months') ?? 12))));
   api.get('/reports/networth', (c) => c.json(netWorthReport(db, Number(c.req.query('months') ?? 12))));
   api.get('/recurring', (c) => c.json(detectRecurring(db)));
+  api.get('/overview', (c) => {
+    const month = c.req.query('month') ?? currentMonth();
+    if (!MONTH.test(month)) badRequest('Måned må se slik ut: 2026-10');
+    const span = Math.min(24, Math.max(1, Number(c.req.query('span') ?? 1) || 1));
+    return c.json(overview(db, month, span));
+  });
 
   return api;
 }

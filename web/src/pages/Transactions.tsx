@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, type Transaction } from '../api';
-import { dayLabel, monthLabel } from '../format';
+import { dayLabel, monthLabel, relativeDay } from '../format';
 import { useStore } from '../store';
+import { useIsMobile } from '../hooks';
 import { CategorySelect, Icon, Money, useToast } from '../components/ui';
 import { TransactionEditor } from '../components/TransactionEditor';
 
@@ -10,7 +11,9 @@ const PAGE = 100;
 
 export default function TransactionsPage() {
   const [params, setParams] = useSearchParams();
-  const { summary, refresh } = useStore();
+  const { summary, refresh, version } = useStore();
+  const mobile = useIsMobile();
+  const [showFilters, setShowFilters] = useState(false);
   const toast = useToast();
   const [rows, setRows] = useState<Transaction[]>([]);
   const [total, setTotal] = useState(0);
@@ -44,7 +47,7 @@ export default function TransactionsPage() {
   );
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, version]);
 
   // Search as you type, but not on every keystroke.
   useEffect(() => {
@@ -85,9 +88,11 @@ export default function TransactionsPage() {
             )}
           </div>
         </div>
+        {!mobile && (
         <button className="btn primary" onClick={() => setEditing('new')}>
           <Icon name="plus" size={16} /> Ny transaksjon
         </button>
+        )}
       </div>
 
       <div className="row" style={{ marginBottom: 14 }}>
@@ -97,6 +102,13 @@ export default function TransactionsPage() {
             <Icon name="search" size={18} />
           </span>
         </div>
+        {mobile && (
+          <button className={`btn ${showFilters ? 'primary' : ''}`} onClick={() => setShowFilters((v) => !v)} aria-expanded={showFilters}>
+            <Icon name="filter" size={16} /> Filter{[account, category, month].filter(Boolean).length ? ` (${[account, category, month].filter(Boolean).length})` : ''}
+          </button>
+        )}
+        {(!mobile || showFilters) && (
+        <>
         <select className="select" style={{ flex: '0 1 200px' }} value={account} onChange={(e) => setFilter('account', e.target.value)}>
           <option value="">Alle kontoer</option>
           {summary.accounts.map((a) => (
@@ -115,6 +127,8 @@ export default function TransactionsPage() {
           />
         </div>
         <input className="input" type="month" style={{ flex: '0 1 170px' }} value={month} onChange={(e) => setFilter('month', e.target.value)} aria-label="Måned" />
+        </>
+        )}
         {filtered && (
           <button
             className="btn ghost sm"
@@ -130,6 +144,9 @@ export default function TransactionsPage() {
       {category === 'none' && <div className="callout info small" style={{ marginBottom: 12 }}>Viser transaksjoner uten kategori.</div>}
       {month && <div className="small muted" style={{ marginBottom: 8 }}>{monthLabel(month)}</div>}
 
+      {mobile && rows.length > 0 ? (
+        <DayList rows={rows} onOpen={setEditing} />
+      ) : (
       <div className="card table-wrap">
         {rows.length === 0 ? (
           <div className="empty">
@@ -199,6 +216,7 @@ export default function TransactionsPage() {
           </table>
         )}
       </div>
+      )}
       {rows.length < total && (
         <div style={{ textAlign: 'center', marginTop: 14 }}>
           <button className="btn" onClick={() => load(rows.length)}>
@@ -219,5 +237,57 @@ export default function TransactionsPage() {
         />
       )}
     </>
+  );
+}
+
+/** Phone list: grouped by day with a daily total, big rows, category under the payee. */
+function DayList({ rows, onOpen }: { rows: Transaction[]; onOpen: (t: Transaction) => void }) {
+  const days: Array<{ date: string; items: Transaction[] }> = [];
+  for (const t of rows) {
+    const last = days[days.length - 1];
+    if (last && last.date === t.date) last.items.push(t);
+    else days.push({ date: t.date, items: [t] });
+  }
+  return (
+    <div>
+      {days.map((d) => {
+        const total = d.items.filter((t) => !t.transfer_id).reduce((s, t) => s + t.amount, 0);
+        return (
+          <section key={d.date}>
+            <div className="day-head">
+              <span>{relativeDay(d.date)}</span>
+              {total !== 0 && <Money value={total} />}
+            </div>
+            <div className="card" style={{ overflow: 'hidden' }}>
+              {d.items.map((t) => (
+                <button key={t.id} className="tx-row" onClick={() => onOpen(t)}>
+                  <span className="tx-avatar" aria-hidden="true">
+                    {t.transfer_id ? <Icon name="swap" size={16} /> : (t.payee || t.raw_description || '?').trim().charAt(0).toUpperCase()}
+                  </span>
+                  <span className="tx-main">
+                    <span className="ellipsis" style={{ display: 'block', fontWeight: 600 }}>
+                      {t.payee || t.raw_description}
+                      {!t.reviewed && <span className="chip brand" style={{ marginLeft: 6 }}>ny</span>}
+                    </span>
+                    <span className="small muted ellipsis" style={{ display: 'block' }}>
+                      {t.transfer_id
+                        ? `Overføring ${t.amount < 0 ? 'til' : 'fra'} ${t.transfer_account_name}`
+                        : t.splits.length
+                          ? `Delt (${t.splits.length})`
+                          : t.category_name ?? (t.suggested_category_name ? `${t.suggested_category_name}?` : 'Uten kategori')}
+                      {' · '}
+                      {t.account_name}
+                    </span>
+                  </span>
+                  <span className="tx-amount">
+                    <Money value={t.amount} sign />
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        );
+      })}
+    </div>
   );
 }

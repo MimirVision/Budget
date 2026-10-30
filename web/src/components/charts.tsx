@@ -1,34 +1,31 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { api } from '../api';
+/** Shared chart pieces (single axis, thin marks, hover tooltips, table view), used by the Oversikt tab. */
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { kr, monthLabel, shortMonth } from '../format';
-import { Icon, Money } from '../components/ui';
-import { addMonths, currentMonth } from '../../../shared/months';
 
-interface SpendRow {
+export interface SpendRow {
   id: number;
   name: string;
   group_name: string;
   spent: number;
   usual: number;
 }
-interface FlowRow {
+export interface FlowRow {
   month: string;
   income: number;
   spending: number;
 }
-interface WorthRow {
+export interface WorthRow {
   month: string;
   assets: number;
   debts: number;
   netWorth: number;
 }
 
-const compact = new Intl.NumberFormat('nb-NO', { notation: 'compact', maximumFractionDigits: 1 });
-const axisKr = (ore: number) => compact.format(ore / 100);
+export const compact = new Intl.NumberFormat('nb-NO', { notation: 'compact', maximumFractionDigits: 1 });
+export const axisKr = (ore: number) => compact.format(ore / 100);
 
 /** "Nice" axis maximum and ticks, so gridlines land on round numbers. */
-function niceTicks(max: number, count = 4): number[] {
+export function niceTicks(max: number, count = 4): number[] {
   if (max <= 0) return [0];
   const raw = max / count;
   const mag = 10 ** Math.floor(Math.log10(raw));
@@ -36,120 +33,7 @@ function niceTicks(max: number, count = 4): number[] {
   return Array.from({ length: Math.ceil(max / step) + 1 }, (_, i) => i * step);
 }
 
-export default function ReportsPage() {
-  const [month, setMonth] = useState(currentMonth());
-  const [spending, setSpending] = useState<SpendRow[]>([]);
-  const [flow, setFlow] = useState<FlowRow[]>([]);
-  const [worth, setWorth] = useState<WorthRow[]>([]);
-
-  useEffect(() => {
-    api.get<SpendRow[]>(`/reports/spending?month=${month}`).then(setSpending);
-  }, [month]);
-  useEffect(() => {
-    api.get<FlowRow[]>('/reports/cashflow?months=12').then(setFlow);
-    api.get<WorthRow[]>('/reports/networth?months=12').then(setWorth);
-  }, []);
-
-  const last3 = flow.slice(-4, -1);
-  const avgIncome = last3.length ? last3.reduce((s, r) => s + r.income, 0) / last3.length : 0;
-  const avgSpend = last3.length ? last3.reduce((s, r) => s + r.spending, 0) / last3.length : 0;
-  const savingsRate = avgIncome > 0 ? (avgIncome - avgSpend) / avgIncome : null;
-  const nw = worth[worth.length - 1];
-  // Compare with the first month that has any data, not an empty month before you started.
-  const nwYearAgo = worth.find((r) => r.assets || r.debts);
-
-  return (
-    <>
-      <div className="page-head">
-        <h1>Rapporter</h1>
-      </div>
-
-      <div className="stat-tiles">
-        <div className="card stat">
-          <div className="small muted">Formue</div>
-          <div className="v num">{nw ? kr(nw.netWorth) : '–'}</div>
-          {nw && nwYearAgo && (
-            <div className="small muted">
-              {nw.netWorth >= nwYearAgo.netWorth ? '▲' : '▼'} {kr(Math.abs(nw.netWorth - nwYearAgo.netWorth))} siden {shortMonth(nwYearAgo.month)}
-            </div>
-          )}
-        </div>
-        <div className="card stat">
-          <div className="small muted">Snittinntekt per måned</div>
-          <div className="v num">{kr(Math.round(avgIncome / 100) * 100)}</div>
-          <div className="small muted">siste 3 hele måneder</div>
-        </div>
-        <div className="card stat">
-          <div className="small muted">Snittforbruk per måned</div>
-          <div className="v num">{kr(Math.round(avgSpend / 100) * 100)}</div>
-          <div className="small muted">siste 3 hele måneder</div>
-        </div>
-        <div className="card stat">
-          <div className="small muted">Sparerate</div>
-          <div className="v num">{savingsRate === null ? '–' : `${Math.round(savingsRate * 100)} %`}</div>
-          <div className="small muted">av inntekten spart</div>
-        </div>
-      </div>
-
-      <div className="stack" style={{ gap: 16 }}>
-        <ChartCard
-          title="Hvor pengene gikk"
-          sub={
-            <span className="row" style={{ gap: 4 }}>
-              <button className="icon-btn" onClick={() => setMonth(addMonths(month, -1))} aria-label="Forrige måned">
-                <Icon name="left" size={16} />
-              </button>
-              {monthLabel(month)}
-              <button className="icon-btn" onClick={() => setMonth(addMonths(month, 1))} aria-label="Neste måned" disabled={month >= currentMonth()}>
-                <Icon name="right" size={16} />
-              </button>
-            </span>
-          }
-          table={
-            <SimpleTable
-              head={['Kategori', 'Brukt', 'Vanlig (snitt 3 mnd)']}
-              rows={spending.map((r) => [r.name, kr(r.spent), kr(r.usual)])}
-            />
-          }
-        >
-          <SpendingBars rows={spending} month={month} />
-        </ChartCard>
-
-        <ChartCard
-          title="Inntekt og forbruk"
-          sub="Siste 12 måneder · overføringer mellom egne kontoer er holdt utenfor"
-          legend={[
-            { label: 'Inntekt', color: 'var(--series-1)' },
-            { label: 'Forbruk', color: 'var(--series-2)' },
-          ]}
-          table={
-            <SimpleTable
-              head={['Måned', 'Inntekt', 'Forbruk', 'Spart']}
-              rows={flow.map((r) => [monthLabel(r.month), kr(r.income), kr(r.spending), kr(r.income - r.spending)])}
-            />
-          }
-        >
-          <CashflowChart rows={flow} />
-        </ChartCard>
-
-        <ChartCard
-          title="Formue"
-          sub="Alle kontoer, også oppfølgingskontoer som boliglån og sparing"
-          table={
-            <SimpleTable
-              head={['Måned', 'Eiendeler', 'Gjeld', 'Formue']}
-              rows={worth.map((r) => [monthLabel(r.month), kr(r.assets), kr(-r.debts), kr(r.netWorth)])}
-            />
-          }
-        >
-          <NetWorthChart rows={worth} />
-        </ChartCard>
-      </div>
-    </>
-  );
-}
-
-function ChartCard({
+export function ChartCard({
   title,
   sub,
   legend,
@@ -158,7 +42,7 @@ function ChartCard({
 }: {
   title: string;
   sub?: ReactNode;
-  legend?: Array<{ label: string; color: string }>;
+  legend?: Array<{ label: string; color: string; dashed?: boolean }>;
   table: ReactNode;
   children: ReactNode;
 }) {
@@ -178,7 +62,11 @@ function ChartCard({
         <div className="legend" style={{ marginBottom: 8 }}>
           {legend.map((l) => (
             <span key={l.label}>
-              <span className="swatch" style={{ background: l.color }} />
+              {l.dashed ? (
+                <span className="swatch-line" style={{ borderColor: l.color }} />
+              ) : (
+                <span className="swatch" style={{ background: l.color }} />
+              )}
               {l.label}
             </span>
           ))}
@@ -189,7 +77,7 @@ function ChartCard({
   );
 }
 
-function SimpleTable({ head, rows }: { head: string[]; rows: string[][] }) {
+export function SimpleTable({ head, rows }: { head: string[]; rows: string[][] }) {
   return (
     <div className="table-wrap">
       <table className="table">
@@ -218,60 +106,7 @@ function SimpleTable({ head, rows }: { head: string[]; rows: string[][] }) {
   );
 }
 
-/** Horizontal bars, one hue: magnitude per category. The tick shows what's normal for you. */
-function SpendingBars({ rows, month }: { rows: SpendRow[]; month: string }) {
-  const navigate = useNavigate();
-  const [hover, setHover] = useState<number | null>(null);
-  if (!rows.length) return <div className="empty">Ingen utgifter registrert i {monthLabel(month).toLowerCase()}.</div>;
-  const max = Math.max(...rows.map((r) => Math.max(r.spent, r.usual)));
-  const total = rows.reduce((s, r) => s + r.spent, 0);
-  return (
-    <div>
-      <div className="small muted" style={{ marginBottom: 6 }}>
-        Totalt <Money value={-total} /> · den mørke streken viser det vanlige (snitt siste 3 måneder). Klikk på en stolpe for å se transaksjonene.
-      </div>
-      {rows.map((r) => {
-        const diff = r.usual ? (r.spent - r.usual) / r.usual : null;
-        return (
-          <div
-            key={r.id}
-            className="hbar-row"
-            style={{ cursor: 'pointer', background: hover === r.id ? 'var(--surface-2)' : undefined, borderRadius: 6 }}
-            onMouseEnter={() => setHover(r.id)}
-            onMouseLeave={() => setHover(null)}
-            onClick={() => navigate(`/transactions?category=${r.id}&month=${month}`)}
-          >
-            <div className="ellipsis small" style={{ fontWeight: 500 }}>
-              {r.name}
-            </div>
-            <div className="hbar-track">
-              <div className="hbar-fill" style={{ width: `${(r.spent / max) * 100}%` }} />
-              {r.usual > 0 && <div className="hbar-usual" style={{ left: `${(r.usual / max) * 100}%` }} />}
-              {hover === r.id && (
-                <div className="tooltip" style={{ left: `${Math.min(80, Math.max(20, (r.spent / max) * 100))}%`, top: 0 }}>
-                  <strong>{r.name}</strong>
-                  <div>Brukt {kr(r.spent)}</div>
-                  <div className="muted">Vanlig {kr(r.usual)}</div>
-                  <div className="muted">{Math.round((r.spent / total) * 100)} % av forbruket</div>
-                </div>
-              )}
-            </div>
-            <div className="small num" style={{ textAlign: 'right', minWidth: 110 }}>
-              {kr(r.spent)}
-              {diff !== null && Math.abs(diff) >= 0.2 && (
-                <div className="faint" style={{ fontSize: 11 }}>
-                  {diff > 0 ? '▲' : '▼'} {Math.round(Math.abs(diff) * 100)} % mot vanlig
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function useWidth() {
+export function useWidth() {
   // A callback ref, because the chart's div only mounts once data has arrived.
   const [w, setW] = useState(640);
   const observer = useRef<ResizeObserver | null>(null);
@@ -286,7 +121,7 @@ function useWidth() {
 }
 
 /** Grouped columns: income and spending side by side per month, one shared axis. */
-function CashflowChart({ rows }: { rows: FlowRow[] }) {
+export function CashflowChart({ rows }: { rows: FlowRow[] }) {
   const [ref, width] = useWidth();
   const [hover, setHover] = useState<number | null>(null);
   const height = 220;
@@ -364,7 +199,7 @@ function CashflowChart({ rows }: { rows: FlowRow[] }) {
 }
 
 /** Single line with a crosshair tooltip. */
-function NetWorthChart({ rows }: { rows: WorthRow[] }) {
+export function NetWorthChart({ rows }: { rows: WorthRow[] }) {
   const [ref, width] = useWidth();
   const [hover, setHover] = useState<number | null>(null);
   const height = 200;
@@ -428,6 +263,79 @@ function NetWorthChart({ rows }: { rows: WorthRow[] }) {
           <div>Formue {kr(h.netWorth)}</div>
           <div className="muted">Eiendeler {kr(h.assets)}</div>
           <div className="muted">Gjeld {kr(-h.debts)}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Cumulative spending through the month, with last month as a dashed reference line.
+ * Answers "are we on track?" at a glance; crosshair tooltip on hover/touch.
+ */
+export function PaceChart({ rows }: { rows: Array<{ day: number; cum: number | null; prevCum: number | null }> }) {
+  const [ref, width] = useWidth();
+  const [hover, setHover] = useState<number | null>(null);
+  const height = 210;
+  const pad = { top: 12, right: 12, bottom: 24, left: 48 };
+  const max = Math.max(1, ...rows.flatMap((r) => [r.cum ?? 0, r.prevCum ?? 0]));
+  const ticks = niceTicks(max);
+  const top = ticks[ticks.length - 1] || 1;
+  const innerW = Math.max(10, width - pad.left - pad.right);
+  const innerH = height - pad.top - pad.bottom;
+  const x = (day: number) => pad.left + ((day - 1) / Math.max(1, rows.length - 1)) * innerW;
+  const y = (v: number) => pad.top + innerH - (v / top) * innerH;
+  const line = (key: 'cum' | 'prevCum') =>
+    rows
+      .filter((r) => r[key] !== null)
+      .map((r, i) => `${i ? 'L' : 'M'}${x(r.day)},${y(r[key]!)}`)
+      .join('');
+  const lastNow = [...rows].reverse().find((r) => r.cum !== null);
+  const h = hover !== null ? rows[hover] : null;
+  const pick = (clientX: number, el: HTMLElement) => {
+    const px = clientX - el.getBoundingClientRect().left;
+    const i = Math.round(((px - pad.left) / innerW) * (rows.length - 1));
+    setHover(Math.max(0, Math.min(rows.length - 1, i)));
+  };
+  return (
+    <div
+      className="chart"
+      ref={ref}
+      onMouseMove={(e) => pick(e.clientX, e.currentTarget)}
+      onTouchMove={(e) => pick(e.touches[0].clientX, e.currentTarget)}
+      onTouchStart={(e) => pick(e.touches[0].clientX, e.currentTarget)}
+      onMouseLeave={() => setHover(null)}
+    >
+      <svg height={height} role="img" aria-label="Forbruk gjennom måneden, sammenlignet med forrige måned">
+        {ticks.map((t) => (
+          <g key={t}>
+            <line className="grid-line" x1={pad.left} x2={width - pad.right} y1={y(t)} y2={y(t)} />
+            <text className="axis" x={pad.left - 6} y={y(t) + 4} textAnchor="end">
+              {axisKr(t)}
+            </text>
+          </g>
+        ))}
+        {[1, 8, 15, 22, rows.length].map((d) => (
+          <text key={d} className="axis" x={x(d)} y={height - 6} textAnchor="middle">
+            {d}.
+          </text>
+        ))}
+        <path d={line('prevCum')} fill="none" stroke="var(--faint)" strokeWidth={2} strokeDasharray="5 4" strokeLinecap="round" />
+        <path d={line('cum')} fill="none" stroke="var(--series-1)" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+        {lastNow && hover === null && <circle cx={x(lastNow.day)} cy={y(lastNow.cum!)} r={5} fill="var(--series-1)" stroke="var(--surface)" strokeWidth={2} />}
+        {h && hover !== null && (
+          <>
+            <line x1={x(h.day)} x2={x(h.day)} y1={pad.top} y2={pad.top + innerH} stroke="var(--faint)" strokeDasharray="3 3" />
+            {h.prevCum !== null && <circle cx={x(h.day)} cy={y(h.prevCum)} r={4} fill="var(--faint)" stroke="var(--surface)" strokeWidth={2} />}
+            {h.cum !== null && <circle cx={x(h.day)} cy={y(h.cum)} r={5} fill="var(--series-1)" stroke="var(--surface)" strokeWidth={2} />}
+          </>
+        )}
+      </svg>
+      {h && hover !== null && (
+        <div className="tooltip" style={{ left: Math.min(Math.max(x(h.day), 90), width - 90), top: y(Math.max(h.cum ?? 0, h.prevCum ?? 0)) }}>
+          <strong>{h.day}. i måneden</strong>
+          {h.cum !== null && <div>Denne måneden {kr(h.cum)}</div>}
+          {h.prevCum !== null && <div className="muted">Forrige måned {kr(h.prevCum)}</div>}
         </div>
       )}
     </div>
