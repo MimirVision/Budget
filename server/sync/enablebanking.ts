@@ -58,18 +58,21 @@ export const enableBanking: Provider = {
 
   isConfigured: (db) => !!getSetting(db, 'enablebanking_app_id') && !!getSetting(db, 'enablebanking_private_key'),
 
-  async listBanks(db) {
-    const json = await call(db, 'GET', '/aspsps?country=NO&psu_type=personal');
-    return (json.aspsps ?? []).map((a: any) => ({ id: a.name, name: a.name, logo: a.logo }));
+  async listBanks(db, country = 'NO') {
+    const cc = /^[A-Z]{2}$/.test(country) ? country : 'NO';
+    const json = await call(db, 'GET', `/aspsps?country=${cc}&psu_type=personal`);
+    // The id carries the country too: Revolut, for example, is listed under Lithuania (LT), not Norway.
+    return (json.aspsps ?? []).map((a: any) => ({ id: `${a.name}|${a.country ?? cc}`, name: a.name, logo: a.logo }));
   },
 
   async start(db, { bankId, redirectUrl, state }) {
     if (!bankId) throw new Error('Velg en bank først');
+    const [bankName, country = 'NO'] = bankId.split('|');
     // Banks allow at most 180 days before you have to confirm again with BankID; ask for the maximum.
     const validUntil = new Date(Date.now() + 179 * 86_400_000).toISOString();
     const json = await call(db, 'POST', '/auth', {
       access: { valid_until: validUntil },
-      aspsp: { name: bankId, country: 'NO' },
+      aspsp: { name: bankName, country },
       state,
       redirect_url: redirectUrl,
       psu_type: 'personal',
@@ -90,7 +93,7 @@ export const enableBanking: Provider = {
       };
     });
     return {
-      name: pending.bank ?? session.aspsp?.name ?? 'Bank',
+      name: String(pending.bank ?? session.aspsp?.name ?? 'Bank').split('|')[0],
       data: { session_id: session.session_id, bank: pending.bank },
       expiresAt: session.access?.valid_until,
       accounts,

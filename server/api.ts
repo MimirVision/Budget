@@ -537,6 +537,7 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
           data: undefined,
           providerLabel: providers[conn.provider]?.label ?? conn.provider,
           discovered: data.discovered ?? [],
+          bankId: data.bank ?? null,
           accounts: all(
             db,
             `SELECT ca.*, a.name AS account_name FROM connection_accounts ca LEFT JOIN accounts a ON a.id = ca.account_id WHERE ca.connection_id = ?`,
@@ -550,7 +551,7 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
   api.get('/banks/:provider', async (c) => {
     const p = getProvider(c.req.param('provider'));
     if (!p.listBanks) return c.json([]);
-    return c.json(await p.listBanks(db));
+    return c.json(await p.listBanks(db, c.req.query('country')));
   });
 
   api.post('/connections/start', async (c) => {

@@ -11,6 +11,7 @@ interface Connection {
   providerLabel: string;
   name: string;
   status: 'pending' | 'linking' | 'active' | 'expired' | 'error';
+  bankId: string | null;
   expires_at: string | null;
   last_sync_at: string | null;
   last_error: string | null;
@@ -88,7 +89,7 @@ export default function AccountsPage() {
 
   const reconnect = async (c: Connection) => {
     try {
-      const bankId = c.provider === 'enablebanking' ? c.name : undefined;
+      const bankId = c.provider === 'enablebanking' ? c.bankId ?? c.name : undefined;
       const { url } = await api.post<{ url: string }>('/connections/start', { provider: c.provider, bankId, reconnectId: c.id });
       window.location.href = url;
     } catch (e: any) {
@@ -368,6 +369,7 @@ function ConnectBank({ onBack }: { onBack: () => void }) {
   const [provider, setProvider] = useState<string | null>(null);
   const [banks, setBanks] = useState<Array<{ id: string; name: string; logo?: string }> | null>(null);
   const [filter, setFilter] = useState('');
+  const [country, setCountry] = useState('NO');
   const [bank, setBank] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -380,10 +382,10 @@ function ConnectBank({ onBack }: { onBack: () => void }) {
     if (provider !== 'enablebanking') return;
     setBanks(null);
     api
-      .get<Array<{ id: string; name: string; logo?: string }>>(`/banks/${provider}`)
+      .get<Array<{ id: string; name: string; logo?: string }>>(`/banks/${provider}?country=${country}`)
       .then(setBanks)
       .catch((e) => setError(e.message));
-  }, [provider]);
+  }, [provider, country]);
 
   const go = async () => {
     setBusy(true);
@@ -426,7 +428,19 @@ function ConnectBank({ onBack }: { onBack: () => void }) {
       )}
       {p?.configured && provider === 'enablebanking' && (
         <>
-          <input className="input" placeholder="Søk etter banken (f.eks. DNB, SpareBank 1, Revolut)" value={filter} onChange={(e) => setFilter(e.target.value)} />
+          <div className="row" style={{ flexWrap: 'nowrap' }}>
+            <input className="input" placeholder="Søk etter banken (f.eks. DNB, SpareBank 1)" value={filter} onChange={(e) => setFilter(e.target.value)} />
+            <select className="select" style={{ width: 'auto' }} value={country} onChange={(e) => (setCountry(e.target.value), setBank(null))} aria-label="Land">
+              <option value="NO">Norge</option>
+              <option value="LT">Litauen (Revolut)</option>
+              <option value="SE">Sverige</option>
+              <option value="FI">Finland</option>
+              <option value="DK">Danmark</option>
+            </select>
+          </div>
+          {country === 'NO' && filter.toLowerCase().includes('revolut') && shown.length === 0 && (
+            <div className="small muted">Revolut er en litauisk bank. Velg «Litauen (Revolut)» i listen ved siden av.</div>
+          )}
           <div className="card list" style={{ maxHeight: 260, overflowY: 'auto' }}>
             {!banks && !error && <div className="list-item muted">Henter banker…</div>}
             {shown.map((b) => (
