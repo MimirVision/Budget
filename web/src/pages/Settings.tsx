@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { useStore } from '../store';
-import { CategorySelect, Icon, useToast } from '../components/ui';
+import { CategorySelect, Icon, Money, MoneyInput, useToast } from '../components/ui';
+import { kr, monthLabel } from '../format';
+import { addMonths, currentMonth, todayISO } from '../../../shared/months';
 import { ACCENTS, usePrefs, type Theme } from '../prefs';
 
 interface ProviderSettings {
@@ -31,7 +33,7 @@ interface Group {
   categories: Array<{ id: number; name: string; hidden: number }>;
 }
 
-const TABS = ['Utseende', 'Kategorier', 'Regler', 'Banksynkronisering'] as const;
+const TABS = ['Utseende', 'Budsjett', 'Kategorier', 'Regler', 'Banksynkronisering'] as const;
 
 export default function SettingsPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]>('Utseende');
@@ -48,6 +50,7 @@ export default function SettingsPage() {
         </div>
       </div>
       {tab === 'Utseende' && <Appearance />}
+      {tab === 'Budsjett' && <FreshStart />}
       {tab === 'Kategorier' && <Categories />}
       {tab === 'Regler' && <Rules />}
       {tab === 'Banksynkronisering' && <BankSync />}
@@ -567,6 +570,137 @@ function Appearance() {
       <p className="small faint" style={{ margin: 0 }}>
         Utseendet lagres på denne enheten, så telefonen og PC-en kan se forskjellige ut.
       </p>
+    </div>
+  );
+}
+
+interface Opening {
+  accountId: number;
+  name: string;
+  kind: string;
+  onBudget: boolean;
+  source: 'bank' | 'history';
+  opening: number;
+}
+
+/** «Start på nytt»: begin the budget from a chosen month with today's real balances, nothing carried over. */
+function FreshStart() {
+  const { summary, changed } = useStore();
+  const toast = useToast();
+  // Late in the month, starting next month is the natural choice.
+  const [month, setMonth] = useState(() => (Number(todayISO().slice(8, 10)) >= 20 ? addMonths(currentMonth(), 1) : currentMonth()));
+  const [rows, setRows] = useState<Opening[] | null>(null);
+  const [edits, setEdits] = useState<Record<number, number>>({});
+  const [busy, setBusy] = useState(false);
+  const active = summary?.budgetStart ?? null;
+
+  useEffect(() => {
+    setRows(null);
+    api.get<{ accounts: Opening[] }>(`/fresh-start/preview?month=${month}`).then((r) => setRows(r.accounts));
+  }, [month, active]);
+
+  const value = (r: Opening) => edits[r.accountId] ?? r.opening;
+  const total = (rows ?? []).filter((r) => r.onBudget).reduce((s, r) => s + value(r), 0);
+  const startLabel = `1. ${monthLabel(month).toLowerCase()}`;
+
+  const apply = async () => {
+    if (!confirm(`Starte budsjettet på nytt fra ${startLabel}?\n\nAlt før dette blir historikk og teller ikke lenger. Kategoriene starter tomme, og ${kr(total)} havner i «Klar til fordeling». Du kan angre.`)) return;
+    setBusy(true);
+    try {
+      await api.post('/fresh-start', { month, overrides: edits });
+      toast(`Budsjettet starter nå ${startLabel}. Gi pengene en jobb!`);
+      setEdits({});
+      changed();
+    } catch (e: any) {
+      toast(e.message, { error: true });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const undo = async () => {
+    if (!confirm('Angre den nye starten? Budsjettet går tilbake til slik det var, med all historikk.')) return;
+    await api.del('/fresh-start');
+    toast('Ny start er angret');
+    changed();
+  };
+
+  return (
+    <div className="stack">
+      {active && (
+        <div className="callout good">
+          <Icon name="check" size={20} />
+          <div className="grow" style={{ flex: 1 }}>
+            <strong>Budsjettet startet {`1. ${monthLabel(active.slice(0, 7)).toLowerCase()}`}.</strong>
+            <div className="small">Alt før det er historikk. Saldoene følger banken de første dagene, så sene bokføringer fra før start ikke forstyrrer.</div>
+          </div>
+          <button className="btn sm" onClick={undo}>
+            Angre
+          </button>
+        </div>
+      )}
+
+      <div className="card card-pad stack">
+        <div>
+          <h3 style={{ marginBottom: 4 }}>{active ? 'Start på nytt igjen' : 'Start på nytt'}</h3>
+          <p className="small muted" style={{ margin: 0 }}>
+            Rot i gamle tall, for eksempel overføringer som ble registrert som inntekt eller et kort uten historikk? Start budsjettet fra en ny
+            måned. Hver konto starter med saldoen fra banken, pengene havner i «Klar til fordeling», og kategoriene starter tomme. Gamle
+            transaksjoner blir liggende som historikk.
+          </p>
+        </div>
+        <label className="field" style={{ maxWidth: 240 }}>
+          Start fra
+          <select className="select" value={month} onChange={(e) => (setMonth(e.target.value), setEdits({}))}>
+            {[-2, -1, 0, 1].map((n) => {
+              const m = addMonths(currentMonth(), n);
+              return (
+                <option key={m} value={m}>
+                  1. {monthLabel(m).toLowerCase()}
+                </option>
+              );
+            })}
+          </select>
+        </label>
+
+        <div className="card list">
+          {rows === null ? (
+            <div className="list-item muted">Henter saldoer…</div>
+          ) : (
+            rows.map((r) => (
+              <div key={r.accountId} className="list-item" style={{ flexWrap: 'wrap' }}>
+                <div className="grow" style={{ minWidth: 150 }}>
+                  <div style={{ fontWeight: 600 }}>{r.name}</div>
+                  <div className="small faint">
+                    {r.source === 'bank' ? 'Fra banken' : 'Ingen synk: sjekk og skriv inn saldoen'}
+                    {!r.onBudget && ' · oppfølging'}
+                  </div>
+                </div>
+                <div style={{ width: 150 }}>
+                  <MoneyInput
+                    value={value(r)}
+                    onCommit={(v) => setEdits((e) => ({ ...e, [r.accountId]: v }))}
+                    ariaLabel={`Startsaldo for ${r.name}`}
+                  />
+                  {(r.kind === 'credit' || r.kind === 'loan') && <div className="small faint" style={{ textAlign: 'right' }}>gjeld skrives med minus</div>}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="row">
+          <div className="spacer">
+            <div className="small muted">Klar til fordeling blir</div>
+            <strong style={{ fontSize: 20 }}>
+              <Money value={total} />
+            </strong>
+          </div>
+          <button className="btn primary" disabled={busy || rows === null} onClick={apply}>
+            Start på nytt fra {startLabel}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

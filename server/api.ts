@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { all, get, getSetting, run, setSetting, tx, type DB } from './db.ts';
-import { autoAssign, getBudget, moveMoney, readyToAssign, setAssigned, type AutoAssignMode } from './budget.ts';
+import { autoAssign, budgetStart, getBudget, moveMoney, readyToAssign, setAssigned, type AutoAssignMode } from './budget.ts';
+import { applyFreshStart, previewFreshStart, undoFreshStart } from './freshstart.ts';
 import { ingest, linkTransfer, ruleMatches, transferToAccount, unlinkTransfer, withImportHashes } from './ingest.ts';
 import { previewCsv, type CsvMapping } from './import/csv.ts';
 import { overview } from './overview.ts';
@@ -94,13 +95,15 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
   api.get('/summary', (c) => {
     const accounts = all<any>(
       db,
-      `SELECT a.*, COALESCE((SELECT SUM(amount) FROM transactions t WHERE t.account_id = a.id), 0) AS balance,
-              (SELECT COUNT(*) FROM transactions t WHERE t.account_id = a.id AND t.reviewed = 0) AS unreviewed,
+      `SELECT a.*, COALESCE((SELECT SUM(amount) FROM transactions t WHERE t.account_id = a.id AND t.date >= ?), 0) AS balance,
+              (SELECT COUNT(*) FROM transactions t WHERE t.account_id = a.id AND t.reviewed = 0 AND t.date >= ?) AS unreviewed,
               (SELECT MAX(date) FROM transactions t WHERE t.account_id = a.id) AS last_date,
               (SELECT co.id FROM connection_accounts ca JOIN connections co ON co.id = ca.connection_id WHERE ca.account_id = a.id LIMIT 1) AS connection_id,
               (SELECT co.status FROM connection_accounts ca JOIN connections co ON co.id = ca.connection_id WHERE ca.account_id = a.id LIMIT 1) AS connection_status,
               (SELECT co.last_sync_at FROM connection_accounts ca JOIN connections co ON co.id = ca.connection_id WHERE ca.account_id = a.id LIMIT 1) AS last_sync_at
          FROM accounts a ORDER BY a.closed, a.sort, a.id`,
+      budgetStart(db),
+      budgetStart(db),
     );
     const attention = all<any>(
       db,
@@ -110,7 +113,8 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
     );
     return c.json({
       readyToAssign: readyToAssign(db),
-      unreviewed: get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM transactions WHERE reviewed = 0')!.n,
+      unreviewed: get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM transactions WHERE reviewed = 0 AND date >= ?', budgetStart(db))!.n,
+      budgetStart: getSetting(db, 'budget_start') ?? null,
       accounts,
       attention,
       categories: all<any>(
@@ -323,7 +327,11 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
       where.push('t.date BETWEEN ? AND ?');
       params.push(`${q.month}-01`, `${q.month}-31`);
     }
-    if (q.review === '1') where.push('t.reviewed = 0');
+    if (q.review === '1') {
+      // Transactions from before a fresh start are history, not something to review.
+      where.push('t.reviewed = 0 AND t.date >= ?');
+      params.push(budgetStart(db));
+    }
     if (q.q) {
       where.push('(t.payee LIKE ? OR t.raw_description LIKE ? OR t.memo LIKE ? OR CAST(abs(t.amount) / 100 AS TEXT) = ?)');
       const like = `%${q.q}%`;
@@ -425,7 +433,7 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
       db,
       `SELECT t.id, t.suggested_category_id, t.suggested_transfer_id, t.payee, t.amount, st.transfer_id AS st_linked
          FROM transactions t LEFT JOIN transactions st ON st.id = t.suggested_transfer_id
-        WHERE t.reviewed = 0 ${
+        WHERE t.reviewed = 0 AND t.date >= '${budgetStart(db)}' ${
           ids
             ? `AND t.id IN (${ids.map(() => '?').join(',')})`
             : 'AND (t.suggested_category_id IS NOT NULL OR (t.suggested_transfer_id IS NOT NULL AND st.transfer_id IS NULL))'
@@ -635,6 +643,23 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
   api.get('/reports/cashflow', (c) => c.json(cashflowReport(db, Number(c.req.query('months') ?? 12))));
   api.get('/reports/networth', (c) => c.json(netWorthReport(db, Number(c.req.query('months') ?? 12))));
   api.get('/recurring', (c) => c.json(detectRecurring(db)));
+
+  // ---------- Start på nytt ----------
+  api.get('/fresh-start/preview', (c) => {
+    const month = c.req.query('month') ?? currentMonth();
+    if (!MONTH.test(month)) badRequest('Måned må se slik ut: 2026-11');
+    return c.json({ start: getSetting(db, 'budget_start') ?? null, accounts: previewFreshStart(db, `${month}-01`) });
+  });
+  api.post('/fresh-start', async (c) => {
+    const { month, overrides } = await c.req.json<{ month: string; overrides?: Record<string, number> }>();
+    if (!MONTH.test(month ?? '')) badRequest('Velg en måned å starte fra');
+    const o = Object.fromEntries(Object.entries(overrides ?? {}).map(([k, v]) => [Number(k), Math.round(Number(v))]));
+    return c.json({ accounts: applyFreshStart(db, `${month}-01`, o) });
+  });
+  api.delete('/fresh-start', (c) => {
+    undoFreshStart(db);
+    return c.json({ ok: true });
+  });
   api.get('/overview', (c) => {
     const month = c.req.query('month') ?? currentMonth();
     if (!MONTH.test(month)) badRequest('Måned må se slik ut: 2026-10');

@@ -60,6 +60,13 @@ export default function BudgetPage() {
     } else if (mode !== 'reset') toast(`${label}: fordelte ${kr(r.assigned)}`);
   };
 
+  // After «Start på nytt» in a coming month, open the budget on that month.
+  const startMonth = summary?.budgetStart?.slice(0, 7) ?? null;
+  useEffect(() => {
+    if (startMonth && !params.get('month') && currentMonth() < startMonth) setParams({ month: startMonth }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startMonth]);
+
   const all = useMemo(() => budget?.groups.flatMap((g) => g.categories) ?? [], [budget]);
   const current = all.find((c) => c.id === selected) ?? null;
 
@@ -127,6 +134,17 @@ export default function BudgetPage() {
     <>
       {header}
       {!hasAccounts && <Welcome />}
+      {startMonth && month < startMonth && (
+        <div className="callout info small" style={{ marginBottom: 12 }}>
+          <Icon name="calendar" size={18} />
+          <div style={{ flex: 1 }}>
+            Budsjettet startet på nytt {`1. ${monthLabel(startMonth).toLowerCase()}`}. Måneder før det er bare historikk.
+          </div>
+          <button className="btn sm" onClick={() => setMonth(startMonth)}>
+            Gå til {monthLabel(startMonth).split(' ')[0].toLowerCase()}
+          </button>
+        </div>
+      )}
       <Attention budget={budget} />
       <Hero budget={budget} onAuto={() => setAutoOpen(true)} />
       <Stats budget={budget} />

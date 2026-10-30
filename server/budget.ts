@@ -6,7 +6,7 @@
  *    roll over automatically and overspending shows up as a negative you can cover.
  *  - Transfers between your own budget accounts (paying the credit card, topping up Revolut) are not spending.
  */
-import { all, get, run, tx, type DB } from './db.ts';
+import { all, get, getSetting, run, tx, type DB } from './db.ts';
 import { addMonths, currentMonth, daysInMonth, monthDiff, todayISO } from '../shared/months.ts';
 
 export interface CategoryRow {
@@ -41,6 +41,14 @@ export interface BudgetMonth {
   groups: Array<{ id: number; name: string; hidden: number; categories: CategoryRow[] }>;
 }
 
+/**
+ * "Start på nytt": when set, the budget begins on this date. Older transactions and assignments stay as history
+ * but don't count, and each account starts with an opening balance on the start date (see freshstart.ts).
+ */
+export function budgetStart(db: DB): string {
+  return getSetting(db, 'budget_start') ?? '0000-01-01';
+}
+
 /** Sum of category activity per category for a set of months, counting splits and ignoring transfers. */
 function activityBy(db: DB, where: string, ...params: any[]): Map<number, number> {
   const rows = all<{ category_id: number; total: number }>(
@@ -53,7 +61,8 @@ function activityBy(db: DB, where: string, ...params: any[]): Map<number, number
        SELECT s.category_id, s.amount, t.date FROM splits s
          JOIN transactions t ON t.id = s.transaction_id JOIN accounts a ON a.id = t.account_id
         WHERE a.on_budget = 1 AND s.category_id IS NOT NULL
-     ) WHERE ${where} GROUP BY category_id`,
+     ) WHERE date >= ? AND ${where} GROUP BY category_id`,
+    budgetStart(db),
     ...params,
   );
   return new Map(rows.map((r) => [r.category_id, r.total]));
@@ -62,7 +71,8 @@ function activityBy(db: DB, where: string, ...params: any[]): Map<number, number
 function assignedBy(db: DB, where: string, ...params: any[]): Map<number, number> {
   const rows = all<{ category_id: number; total: number }>(
     db,
-    `SELECT category_id, SUM(amount) AS total FROM assignments WHERE ${where} GROUP BY category_id`,
+    `SELECT category_id, SUM(amount) AS total FROM assignments WHERE month >= ? AND ${where} GROUP BY category_id`,
+    budgetStart(db).slice(0, 7),
     ...params,
   );
   return new Map(rows.map((r) => [r.category_id, r.total]));
@@ -76,17 +86,20 @@ export function readyToAssign(db: DB): number {
     `SELECT COALESCE(SUM(amount), 0) AS total FROM (
        SELECT t.amount FROM transactions t JOIN accounts a ON a.id = t.account_id
          JOIN categories c ON c.id = t.category_id JOIN category_groups g ON g.id = c.group_id
-        WHERE a.on_budget = 1 AND g.is_income = 1 AND NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id)
+        WHERE a.on_budget = 1 AND g.is_income = 1 AND t.date >= ? AND NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id)
        UNION ALL
        SELECT s.amount FROM splits s JOIN transactions t ON t.id = s.transaction_id JOIN accounts a ON a.id = t.account_id
          JOIN categories c ON c.id = s.category_id JOIN category_groups g ON g.id = c.group_id
-        WHERE a.on_budget = 1 AND g.is_income = 1
+        WHERE a.on_budget = 1 AND g.is_income = 1 AND t.date >= ?
      )`,
+    budgetStart(db),
+    budgetStart(db),
   )!.total;
   const assigned = get<{ total: number }>(
     db,
     `SELECT COALESCE(SUM(a.amount), 0) AS total FROM assignments a
-       JOIN categories c ON c.id = a.category_id JOIN category_groups g ON g.id = c.group_id WHERE g.is_income = 0`,
+       JOIN categories c ON c.id = a.category_id JOIN category_groups g ON g.id = c.group_id WHERE g.is_income = 0 AND a.month >= ?`,
+    budgetStart(db).slice(0, 7),
   )!.total;
   return income - assigned;
 }
@@ -169,7 +182,7 @@ export function getBudget(db: DB, month: string): BudgetMonth {
     db,
     `SELECT COALESCE(SUM(t.amount), 0) AS total FROM transactions t JOIN accounts a ON a.id = t.account_id
        JOIN categories c ON c.id = t.category_id JOIN category_groups g ON g.id = c.group_id
-      WHERE a.on_budget = 1 AND g.is_income = 1 AND t.date BETWEEN ? AND ?`,
+      WHERE a.on_budget = 1 AND g.is_income = 1 AND t.date BETWEEN ? AND ? AND t.payee != 'Startsaldo'`,
     `${month}-01`,
     endOf(month),
   )!.total;
@@ -177,10 +190,11 @@ export function getBudget(db: DB, month: string): BudgetMonth {
   const uncategorized = get<{ count: number; amount: number }>(
     db,
     `SELECT COUNT(*) AS count, COALESCE(SUM(t.amount), 0) AS amount FROM transactions t JOIN accounts a ON a.id = t.account_id
-      WHERE a.on_budget = 1 AND t.category_id IS NULL AND t.transfer_id IS NULL
+      WHERE a.on_budget = 1 AND t.category_id IS NULL AND t.transfer_id IS NULL AND t.date >= ?
         AND NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id)`,
+    budgetStart(db),
   )!;
-  const unreviewed = get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM transactions WHERE reviewed = 0')!.n;
+  const unreviewed = get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM transactions WHERE reviewed = 0 AND date >= ?', budgetStart(db))!.n;
 
   const today = todayISO();
   const cm = currentMonth();

@@ -25,6 +25,8 @@ export interface CategoryOption {
 
 export interface Summary {
   readyToAssign: number;
+  /** First day of the budget after "Start på nytt", or null. */
+  budgetStart: string | null;
   unreviewed: number;
   accounts: Account[];
   attention: Array<{ id: number; name: string; provider: string; status: string; expires_at: string | null; last_error: string | null }>;
