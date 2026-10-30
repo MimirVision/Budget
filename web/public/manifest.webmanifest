@@ -1,10 +1,18 @@
 {
+  "id": "/",
   "name": "Budsjett",
   "short_name": "Budsjett",
+  "description": "Husholdningsbudsjett med banksynk",
+  "lang": "nb",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#f7f7f5",
   "theme_color": "#0f766e",
+  "categories": [
+    "finance",
+    "productivity"
+  ],
   "icons": [
     {
       "src": "/icon.svg",
@@ -28,8 +36,6 @@
       "purpose": "maskable"
     }
   ],
-  "description": "Husholdningsbudsjett med banksynk",
-  "lang": "nb",
   "shortcuts": [
     {
       "name": "Gjennomgå",
