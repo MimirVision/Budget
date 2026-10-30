@@ -9,6 +9,7 @@ import { dayLabel, kr, monthLabel, shortMonth } from '../format';
 import { useStore } from '../store';
 import { useIsMobile, useStoredState } from '../hooks';
 import { AnimatedMoney, Icon, Money, Skeleton } from '../components/ui';
+import { Arranged, normalize, type Layout } from './overviewLayout';
 import { CashflowChart, ChartCard, NetWorthChart, PaceChart, SimpleTable, type WorthRow } from '../components/charts';
 import { addMonths, currentMonth, todayISO } from '../../../shared/months';
 
@@ -87,6 +88,11 @@ export default function OverviewPage() {
     api.get<WorthRow[]>('/reports/networth?months=12').then(setWorth);
   }, [version]);
 
+  const [savedLayout, saveLayout] = useStoredState<Layout | null>('overview.layout', null);
+  const layout = useMemo(() => normalize(savedLayout), [savedLayout]);
+  const setLayout = (l: Layout) => saveLayout(l);
+  const [editing, setEditing] = useState(false);
+
   const prevLabel = SPANS.find((s) => s.span === span)!.prev;
   const insights = useMemo(() => (data ? buildInsights(data, prevLabel) : []), [data, prevLabel]);
 
@@ -101,12 +107,28 @@ export default function OverviewPage() {
           <Icon name="right" />
         </button>
       </div>
+      <div className="row ov-head-tools" style={{ gap: 8 }}>
+        {editing ? (
+          <>
+            <button className="btn ghost sm" onClick={() => saveLayout(null)}>
+              Tilbakestill
+            </button>
+            <button className="btn primary sm" onClick={() => setEditing(false)}>
+              Ferdig
+            </button>
+          </>
+        ) : (
+          <button className="btn sm" onClick={() => setEditing(true)} aria-label="Tilpass Oversikt">
+            <Icon name="edit" size={15} /> Tilpass
+          </button>
+        )}
       <div className="seg" role="tablist" aria-label="Periode">
         {SPANS.map((s) => (
           <button key={s.span} role="tab" aria-selected={span === s.span} className={span === s.span ? 'on' : ''} onClick={() => setSpan(s.span)}>
             {s.label}
           </button>
         ))}
+      </div>
       </div>
     </div>
   );
@@ -274,43 +296,37 @@ export default function OverviewPage() {
           <div className="emoji">📊</div>
           Ingen inntekter eller utgifter i {periodLabel(month, span).toLowerCase()} ennå.
         </div>
-      ) : mobile ? (
-        <div className="stack" style={{ gap: 14 }}>
-          {pending}
-          {tiles}
-          {story}
-          {insightCards}
-          {budget}
-          {pace}
-          {trend}
-          {categories}
-          {days}
-          {payees}
-          {accounts}
-          {largest}
-          {worthCard}
-        </div>
       ) : (
-        <div className="stack" style={{ gap: 16 }}>
+        <div className="stack" style={{ gap: mobile ? 14 : 16 }}>
           {pending}
-          {tiles}
-          {story}
-          <div className="ov-grid">
-            <div className="stack" style={{ gap: 16 }}>
-              {pace}
-              {trend}
-              {categories}
-              {days}
+          {editing && (
+            <div className="callout info small">
+              <Icon name="edit" size={18} />
+              <div>
+                Flytt kortene med pilene, velg plassering og fjern det du ikke trenger. Fjernede kort kan legges til igjen
+                nederst. Oppsettet lagres på denne enheten.
+              </div>
             </div>
-            <div className="stack" style={{ gap: 16 }}>
-              {budget}
-              {insightCards}
-              {payees}
-              {accounts}
-              {largest}
-            </div>
-          </div>
-          {worthCard}
+          )}
+          <Arranged
+            layout={layout}
+            mobile={mobile}
+            editing={editing}
+            onChange={setLayout}
+            nodes={{
+              tiles,
+              story,
+              insights: insightCards || null,
+              budget,
+              trend: pace ?? trend,
+              categories,
+              days,
+              payees,
+              accounts,
+              largest,
+              worth: worthCard,
+            }}
+          />
         </div>
       )}
     </>

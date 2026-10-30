@@ -9,5 +9,5 @@ export default defineConfig({
     port: 5173,
     proxy: { '/api': 'http://localhost:8787' },
   },
-  test: { root: '.', include: ['server/**/*.test.ts', 'shared/**/*.test.ts'] },
+  test: { root: '.', include: ['server/**/*.test.ts', 'shared/**/*.test.ts', 'web/src/**/*.test.ts'] },
 } as any);

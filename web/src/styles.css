@@ -3027,3 +3027,72 @@ label.field .help {
     font-size: 14px;
   }
 }
+
+/* ---------- Tilpass Oversikt ---------- */
+.ov-head-tools {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.ov-slot {
+  border: 2px dashed var(--brand);
+  border-radius: calc(var(--radius) + 4px);
+  padding: 6px;
+  background: var(--brand-soft);
+}
+.ov-slot-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 8px;
+  min-width: 0;
+}
+.ov-slot-bar .select.sm {
+  width: auto;
+  padding: 4px 28px 4px 8px;
+  font-size: 13px;
+  height: 32px;
+}
+.ov-slot-body {
+  pointer-events: none;
+  opacity: 0.75;
+  max-height: 260px;
+  overflow: hidden;
+  border-radius: var(--radius);
+  mask-image: linear-gradient(180deg, #000 70%, transparent);
+}
+.ov-add {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ov-add-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+.ov-add-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.ov-add-item:hover {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+.ov-add-item > span {
+  display: flex;
+  flex-direction: column;
+}
+@media (max-width: 860px) {
+  .ov-slot-body {
+    max-height: 180px;
+  }
+}
