@@ -132,6 +132,12 @@ function App() {
   );
 }
 
+// SpareBank 1 sends you back to the front page after BankID; hand the code over to the API to finish connecting.
+const params = new URLSearchParams(window.location.search);
+if (window.location.pathname === '/' && params.has('state') && (params.has('code') || params.has('error'))) {
+  window.location.replace(`/api/connections/callback${window.location.search}`);
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>

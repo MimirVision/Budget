@@ -4,7 +4,7 @@ import { autoAssign, getBudget, moveMoney, readyToAssign, setAssigned, type Auto
 import { ingest, linkTransfer, ruleMatches, transferToAccount, unlinkTransfer, withImportHashes } from './ingest.ts';
 import { previewCsv, type CsvMapping } from './import/csv.ts';
 import { cashflowReport, detectRecurring, netWorthReport, spendingReport } from './reports.ts';
-import { completeConnection, getProvider, linkAccounts, providers, startConnection, syncAll, syncConnection } from './sync/index.ts';
+import { callbackUrl, completeConnection, getProvider, linkAccounts, providers, startConnection, syncAll, syncConnection, providerForState } from './sync/index.ts';
 import { addDays, currentMonth, todayISO } from '../shared/months.ts';
 import { cleanPayee } from './payees.ts';
 
@@ -559,21 +559,24 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
     return c.json({ url });
   });
 
-  api.get('/connections/callback/:provider', async (c) => {
+  const bankCallback = async (c: any, providerId: string | undefined) => {
     const base = config.publicUrl ?? '';
     const { code, state, error, error_description } = c.req.query();
-    if (error || !code || !state) {
+    if (error || !code || !state || !providerId) {
       return c.redirect(`${base}/accounts?bankError=${encodeURIComponent(error_description ?? error ?? 'Bankinnloggingen ble avbrutt')}`);
     }
     try {
       const pub = config.publicUrl || new URL(c.req.url).origin;
-      const r = await completeConnection(db, c.req.param('provider'), code, state, pub);
+      const r = await completeConnection(db, providerId, code, state, pub);
       if (!r.needsLinking) await syncConnection(db, r.id).catch(() => undefined);
       return c.redirect(`${base}/accounts?${r.needsLinking ? 'link' : 'synced'}=${r.id}`);
     } catch (e: any) {
       return c.redirect(`${base}/accounts?bankError=${encodeURIComponent(e.message)}`);
     }
-  });
+  };
+  api.get('/connections/callback/:provider', (c) => bankCallback(c, c.req.param('provider')));
+  // Banks that return to the front page (SpareBank 1) are forwarded here by the web app; the state says which bank.
+  api.get('/connections/callback', (c) => bankCallback(c, providerForState(db, c.req.query('state') ?? '')));
 
   api.post('/connections/:id/link', async (c) => {
     const id = Number(c.req.param('id'));
@@ -605,7 +608,7 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
         label: p.label,
         description: p.description,
         configured: p.isConfigured(db),
-        callbackUrl: `${publicUrl(c)}/api/connections/callback/${p.id}`,
+        callbackUrl: callbackUrl(publicUrl(c), p.id),
         settings: p.settings.map((s) => ({
           ...s,
           isSet: !!getSetting(db, s.key),
