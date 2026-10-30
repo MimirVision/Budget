@@ -19,6 +19,7 @@ import DuplicatesPage from './pages/Duplicates';
 import BillsPage from './pages/Bills';
 import { PageTransition, PullToRefresh, TopBar } from './mobile';
 import { AppVersion } from './version';
+import { InstallButton } from './install';
 
 const PRIMARY = [
   { to: '/', label: 'Budsjett', icon: 'wallet', end: true, hint: 'Planlegg pengene' },
@@ -109,6 +110,7 @@ function Layout() {
             </div>
           ))}
           <div className="spacer" />
+          <InstallButton />
           <div className="row" style={{ gap: 4, flexWrap: 'nowrap' }}>
             <NavLink to="/settings" className={({ isActive }) => `nav-link spacer ${isActive ? 'active' : ''}`}>
               <Icon name="settings" className="nav-icon" />
@@ -199,6 +201,7 @@ function Layout() {
               </div>
             </div>
           ))}
+          <InstallButton className="btn" />
           <AppVersion />
         </Modal>
       )}
