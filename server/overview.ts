@@ -17,6 +17,8 @@ export interface Overview {
   prevSpending: number;
   /** Money that came in without a category yet (e.g. a salary waiting in Gjennomgå). */
   pendingIncome: number;
+  /** Set when the period reaches back before "Start på nytt": those months are history and may count transfers wrong. */
+  historyBefore: string | null;
   groups: Array<{
     id: number | null;
     name: string;
@@ -57,10 +59,9 @@ const lines = (start: string) => `
 const end = (month: string) => `${month}-31`;
 
 export function overview(db: DB, month: string, span: number): Overview {
-  // Before a fresh start ("Start på nytt") nothing counts.
+  // A fresh start ("Start på nytt") resets the budget, not history: older months still show where the money went.
+  const LINES = lines('0000-01-01');
   const start = budgetStart(db);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) throw new Error('Ugyldig startdato');
-  const LINES = lines(start);
   const startMonth = addMonths(month, -(span - 1));
   const from = `${startMonth}-01`;
   const to = end(month);
@@ -180,6 +181,7 @@ export function overview(db: DB, month: string, span: number): Overview {
     prevIncome: prev.income,
     prevSpending: prev.spending,
     pendingIncome: now.pending,
+    historyBefore: start !== '0000-01-01' && from < start ? start : null,
     groups: groupList,
     payees,
     largest,

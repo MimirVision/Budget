@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { get, run } from './db.ts';
+import { get, run, setSetting } from './db.ts';
 import { openDb } from './db-node.ts';
 import { linkTransfer } from './ingest.ts';
 import { overview } from './overview.ts';
@@ -38,5 +38,17 @@ describe('overview', () => {
     expect(o.daily).toHaveLength(31);
     expect(o.daily[6].cum).toBe(60_000);
     expect(overview(db, '2026-10', 3).months.map((m) => m.month)).toEqual(['2026-08', '2026-09', '2026-10']);
+  });
+
+  it('keeps showing history from before a fresh start, and says so', () => {
+    const db = openDb(':memory:');
+    const cat = get<{ id: number }>(db, "SELECT id FROM categories WHERE name = 'Dagligvarer'")!.id;
+    const a = Number(run(db, "INSERT INTO accounts(name) VALUES ('SB1')").lastInsertRowid);
+    run(db, "INSERT INTO transactions(account_id, date, amount, payee, category_id, reviewed) VALUES (?, '2026-09-10', -40000, 'Rema 1000', ?, 1)", a, cat);
+    setSetting(db, 'budget_start', '2026-11-01');
+    const sept = overview(db, '2026-09', 1);
+    expect(sept.spending).toBe(40_000);
+    expect(sept.historyBefore).toBe('2026-11-01');
+    expect(overview(db, '2026-12', 1).historyBefore).toBeNull();
   });
 });
