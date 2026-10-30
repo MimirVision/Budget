@@ -6,7 +6,7 @@
 import { getSetting, type DB } from '../db.ts';
 import { todayISO } from '../../shared/months.ts';
 import { base64url, signRS256, stableId } from '../webcrypto.ts';
-import { ReauthRequired, toOre, type Provider, type RemoteTxn } from './types.ts';
+import { ReauthRequired, toOre, type Provider, type PsuContext, type RemoteTxn } from './types.ts';
 
 const API = 'https://api.enablebanking.com';
 
@@ -20,10 +20,15 @@ async function jwt(db: DB): Promise<string> {
   return `${header}.${payload}.${await signRS256(key, `${header}.${payload}`)}`;
 }
 
-async function call(db: DB, method: string, path: string, body?: unknown) {
+async function call(db: DB, method: string, path: string, body?: unknown, psu?: PsuContext) {
   const res = await fetch(`${API}${path}`, {
     method,
-    headers: { Authorization: `Bearer ${await jwt(db)}`, 'Content-Type': 'application/json' },
+    headers: {
+      Authorization: `Bearer ${await jwt(db)}`,
+      'Content-Type': 'application/json',
+      // Tells the bank you're present, so this fetch doesn't use up the 4 background fetches a day.
+      ...(psu ? { 'Psu-Ip-Address': psu.ip, 'Psu-User-Agent': psu.userAgent } : {}),
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
@@ -102,14 +107,14 @@ export const enableBanking: Provider = {
     };
   },
 
-  async fetch(db, _data, remoteId, since) {
+  async fetch(db, _data, remoteId, since, psu) {
     const transactions: RemoteTxn[] = [];
     let continuation: string | undefined;
     let guard = 0;
     do {
       const qs = new URLSearchParams({ date_from: since, date_to: todayISO() });
       if (continuation) qs.set('continuation_key', continuation);
-      const page = await call(db, 'GET', `/accounts/${encodeURIComponent(remoteId)}/transactions?${qs}`);
+      const page = await call(db, 'GET', `/accounts/${encodeURIComponent(remoteId)}/transactions?${qs}`, undefined, psu);
       for (const t of page.transactions ?? []) {
         // Only booked transactions: pending ones often change amount or disappear.
         if (t.status && t.status !== 'BOOK') continue;
@@ -133,7 +138,7 @@ export const enableBanking: Provider = {
 
     let balance: number | undefined;
     try {
-      const b = await call(db, 'GET', `/accounts/${encodeURIComponent(remoteId)}/balances`);
+      const b = await call(db, 'GET', `/accounts/${encodeURIComponent(remoteId)}/balances`, undefined, psu);
       const pick =
         b.balances?.find((x: any) => ['CLBD', 'ITBD', 'XPCD'].includes(x.balance_type)) ?? b.balances?.[0];
       if (pick) balance = toOre(pick.balance_amount?.amount ?? 0);

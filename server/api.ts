@@ -9,6 +9,7 @@ import { cashflowReport, detectRecurring, netWorthReport, spendingReport } from 
 import { callbackUrl, completeConnection, getProvider, linkAccounts, providers, startConnection, syncAll, syncConnection, providerForState } from './sync/index.ts';
 import { addDays, currentMonth, todayISO } from '../shared/months.ts';
 import { cleanPayee } from './payees.ts';
+import type { PsuContext } from './sync/types.ts';
 
 const MONTH = /^\d{4}-\d{2}$/;
 
@@ -27,6 +28,13 @@ function publicUrl(c: any): string {
   if (origin) return origin;
   const proto = c.req.header('x-forwarded-proto') ?? 'http';
   return `${proto}://${c.req.header('x-forwarded-host') ?? c.req.header('host')}`;
+}
+
+/** You, at the keyboard: sent to banks so syncs you start yourself don't count against PSD2's daily limit. */
+function psuOf(c: any): PsuContext | undefined {
+  const ip = c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? c.req.header('x-real-ip');
+  const userAgent = c.req.header('user-agent');
+  return ip && userAgent ? { ip, userAgent } : undefined;
 }
 
 function badRequest(message: string): never {
@@ -578,7 +586,7 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
     try {
       const pub = config.publicUrl || new URL(c.req.url).origin;
       const r = await completeConnection(db, providerId, code, state, pub);
-      if (!r.needsLinking) await syncConnection(db, r.id).catch(() => undefined);
+      if (!r.needsLinking) await syncConnection(db, r.id, undefined, psuOf(c)).catch(() => undefined);
       return c.redirect(`${base}/accounts?${r.needsLinking ? 'link' : 'synced'}=${r.id}`);
     } catch (e: any) {
       return c.redirect(`${base}/accounts?bankError=${encodeURIComponent(e.message)}`);
@@ -599,9 +607,9 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
 
   // `?account=<remote id>` syncs a single account, so a first sync of many accounts can be split into small requests.
   api.post('/connections/:id/sync', async (c) =>
-    c.json(await syncConnection(db, Number(c.req.param('id')), c.req.query('account') || undefined)),
+    c.json(await syncConnection(db, Number(c.req.param('id')), c.req.query('account') || undefined, psuOf(c))),
   );
-  api.post('/connections/sync-all', async (c) => c.json(await syncAll(db)));
+  api.post('/connections/sync-all', async (c) => c.json(await syncAll(db, psuOf(c))));
 
   api.delete('/connections/:id', (c) => {
     run(db, 'DELETE FROM connections WHERE id = ?', Number(c.req.param('id')));

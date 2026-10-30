@@ -32,5 +32,5 @@ if (process.env.SYNC_DISABLED !== '1') {
       .then((r) => r.length && console.log(`[sync] ${r.map((x) => `${x.name}: ${x.error ?? `+${x.added}`}`).join(', ')}`))
       .catch((e) => console.error('[sync] failed', e));
   setTimeout(tick, 60_000);
-  setInterval(tick, Number(process.env.SYNC_EVERY_HOURS ?? 4) * 3_600_000).unref();
+  setInterval(tick, Number(process.env.SYNC_EVERY_HOURS ?? 6) * 3_600_000).unref();
 }
