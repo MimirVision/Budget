@@ -3629,3 +3629,8 @@ label.field .help {
     font-size: 16px;
   }
 }
+.app-version {
+  text-align: center;
+  margin-top: 12px;
+  font-variant-numeric: tabular-nums;
+}

@@ -18,6 +18,7 @@ import SettingsPage from './pages/Settings';
 import DuplicatesPage from './pages/Duplicates';
 import BillsPage from './pages/Bills';
 import { PageTransition, PullToRefresh, TopBar } from './mobile';
+import { AppVersion } from './version';
 
 const PRIMARY = [
   { to: '/', label: 'Budsjett', icon: 'wallet', end: true, hint: 'Planlegg pengene' },
@@ -198,6 +199,7 @@ function Layout() {
               </div>
             </div>
           ))}
+          <AppVersion />
         </Modal>
       )}
       {adding && (

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { useStore } from '../store';
+import { AppVersion } from '../version';
 import { CategorySelect, Icon, Modal, Money, MoneyInput, useToast } from '../components/ui';
 import { kr, monthLabel } from '../format';
 import { addMonths, currentMonth, todayISO } from '../../../shared/months';
@@ -600,6 +601,7 @@ function Appearance() {
       <p className="small faint" style={{ margin: 0 }}>
         Utseendet lagres på denne enheten, så telefonen og PC-en kan se forskjellige ut.
       </p>
+      <AppVersion />
     </div>
   );
 }
