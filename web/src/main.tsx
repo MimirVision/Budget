@@ -1,10 +1,12 @@
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import './styles.css';
 import { api } from './api';
 import { StoreProvider, useStore } from './store';
 import { AnimatedMoney, Icon, Modal, Money, ToastProvider, haptic } from './components/ui';
+import { PrefsProvider, usePrefs } from './prefs';
+import { SyncNow, ThemeSegment, ThemeToggle } from './components/controls';
 import { TransactionEditor } from './components/TransactionEditor';
 import { useIsMobile } from './hooks';
 import BudgetPage from './pages/Budget';
@@ -30,6 +32,20 @@ function Layout() {
   const [adding, setAdding] = useState(false);
   const [more, setMore] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const { prefs } = usePrefs();
+  useEffect(() => {
+    if (prefs.start === 'overview' && window.location.pathname === '/' && !window.location.search && !sessionStorage.getItem('budget.started')) {
+      navigate('/oversikt', { replace: true });
+    }
+    try {
+      sessionStorage.setItem('budget.started', '1');
+    } catch {
+      // Storage blocked: fine.
+    }
+    // Only on first load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => setMore(false), [location.pathname, location.search]);
 
   const open = summary?.accounts.filter((a) => !a.closed) ?? [];
@@ -47,8 +63,8 @@ function Layout() {
           <div className="brand">
             <img src="/icon.svg" alt="" /> Budsjett
           </div>
-          <button className="btn primary side-add" onClick={() => setAdding(true)}>
-            <Icon name="plus" size={16} /> Ny transaksjon
+          <button className="btn ghost side-add" onClick={() => setAdding(true)}>
+            <Icon name="plus" size={16} /> Legg til manuelt
           </button>
           {PRIMARY.map((n) => (
             <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => `nav-link primary-link ${isActive ? 'active' : ''}`}>
@@ -85,10 +101,13 @@ function Layout() {
             </div>
           ))}
           <div className="spacer" />
-          <NavLink to="/settings" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            <Icon name="settings" className="nav-icon" />
-            Innstillinger
-          </NavLink>
+          <div className="row" style={{ gap: 4, flexWrap: 'nowrap' }}>
+            <NavLink to="/settings" className={({ isActive }) => `nav-link spacer ${isActive ? 'active' : ''}`}>
+              <Icon name="settings" className="nav-icon" />
+              Innstillinger
+            </NavLink>
+            <ThemeToggle />
+          </div>
         </aside>
       )}
       <main className="main">
@@ -111,13 +130,14 @@ function Layout() {
               {n.label}
             </NavLink>
           ))}
-          <button className="fab" onClick={() => setAdding(true)} aria-label="Ny transaksjon">
-            <Icon name="plus" size={26} />
-          </button>
           <NavLink to="/review" className={({ isActive }) => (isActive ? 'active' : '')}>
             <Icon name="inbox" />
             Gjennomgå
             {badge}
+          </NavLink>
+          <NavLink to="/transactions" className={({ isActive }) => (isActive ? 'active' : '')}>
+            <Icon name="list" />
+            Transaksjoner
           </NavLink>
           <button className={more ? 'active' : ''} onClick={() => setMore(true)}>
             <Icon name="more" />
@@ -128,12 +148,25 @@ function Layout() {
       {more && (
         <Modal title="Mer" onClose={() => setMore(false)}>
           <div className="more-grid">
-            {[...SECONDARY.slice(1), { to: '/settings', label: 'Innstillinger', icon: 'settings' }].map((n) => (
-              <Link key={n.to} to={n.to} className="more-tile">
-                <Icon name={n.icon} size={24} />
-                {n.label}
-              </Link>
-            ))}
+            <Link to="/accounts" className="more-tile">
+              <Icon name="bank" size={24} />
+              Kontoer
+            </Link>
+            <Link to="/settings" className="more-tile">
+              <Icon name="settings" size={24} />
+              Innstillinger
+            </Link>
+            <button className="more-tile" onClick={() => (setMore(false), setAdding(true))}>
+              <Icon name="plus" size={24} />
+              Legg til manuelt
+            </button>
+          </div>
+          <SyncNow />
+          <div className="row">
+            <span className="spacer small muted" style={{ fontWeight: 600 }}>
+              Tema
+            </span>
+            <ThemeSegment />
           </div>
           {groups.map((g) => (
             <div key={g.label}>
@@ -227,9 +260,11 @@ if (window.location.pathname === '/' && params.has('state') && (params.has('code
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
-      <ToastProvider>
-        <App />
-      </ToastProvider>
+      <PrefsProvider>
+        <ToastProvider>
+          <App />
+        </ToastProvider>
+      </PrefsProvider>
     </BrowserRouter>
   </StrictMode>,
 );

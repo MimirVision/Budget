@@ -136,11 +136,20 @@ export default function OverviewPage() {
         <AnimatedMoney value={data.income} className="ov-value" />
         <Delta now={data.income} prev={data.prevIncome} prevLabel={prevLabel} goodWhenUp />
       </div>
-      <div className={`card ov-tile ${saved >= 0 ? 'good' : 'bad'}`}>
-        <span className="ov-label">{saved >= 0 ? 'Til overs' : 'Brukt mer enn inntekt'}</span>
-        <AnimatedMoney value={Math.abs(saved)} className="ov-value" />
-        <span className="delta faint">{rate !== null ? `${Math.max(rate, 0)} % av inntekten spart` : 'Ingen inntekt registrert'}</span>
-      </div>
+      {data.income === 0 && data.pendingIncome > 0 ? (
+        // Salary not reviewed yet: "spent more than you earned" would be a false alarm.
+        <div className="card ov-tile">
+          <span className="ov-label">Til overs</span>
+          <span className="ov-value faint">–</span>
+          <span className="delta faint">Gå gjennom innbetalingene først</span>
+        </div>
+      ) : (
+        <div className={`card ov-tile ${saved >= 0 ? 'good' : 'bad'}`}>
+          <span className="ov-label">{saved >= 0 ? 'Til overs' : 'Brukt mer enn inntekt'}</span>
+          <AnimatedMoney value={Math.abs(saved)} className="ov-value" />
+          <span className="delta faint">{rate !== null ? `${Math.max(rate, 0)} % av inntekten spart` : 'Ingen inntekt registrert'}</span>
+        </div>
+      )}
     </div>
   );
 
