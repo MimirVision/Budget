@@ -63,3 +63,51 @@ describe('wrap-up', () => {
     expect(w.overspent).toEqual([{ id, name: 'Dagligvarer', amount: 30000 }]);
   });
 });
+
+describe('login', () => {
+  it('locks out after five wrong passwords', async () => {
+    const db = openDb(':memory:');
+    const app = createApp(db, { password: 'riktig', publicUrl: 'http://localhost' });
+    const login = (password: string) =>
+      app.request('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
+    for (let i = 0; i < 4; i++) expect((await login('feil')).status).toBe(401);
+    expect((await login('feil')).status).toBe(429);
+    expect((await login('riktig')).status).toBe(429); // even the right one waits
+    run(db, "DELETE FROM settings WHERE key = 'login_locked_until'");
+    const ok = await login('riktig');
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get('set-cookie')).toContain('budget_session=');
+  });
+});
+
+describe('bulk edit', () => {
+  it('sets a category on many, skips transfers, and deletes', async () => {
+    const { app, db, txn } = setup();
+    const acc = get<{ id: number }>(db, 'SELECT id FROM accounts')!.id;
+    const two = Number(run(db, "INSERT INTO transactions(account_id, date, amount, payee) VALUES (?, '2026-10-03', -5000, 'Kiwi')", acc).lastInsertRowid);
+    const tr = Number(run(db, "INSERT INTO transactions(account_id, date, amount, payee, transfer_id) VALUES (?, '2026-10-04', -9000, 'Til sparing', 999)", acc).lastInsertRowid);
+    const cat = get<{ id: number }>(db, "SELECT id FROM categories WHERE name = 'Dagligvarer'")!.id;
+    const post = (body: unknown) =>
+      app.request('/api/transactions/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const r = await (await post({ ids: [txn, two, tr], action: 'category', category_id: cat })).json();
+    expect(r).toEqual({ changed: 2, skipped: 1 });
+    expect(get<any>(db, 'SELECT category_id, reviewed FROM transactions WHERE id = ?', two)).toEqual({ category_id: cat, reviewed: 1 });
+    await post({ ids: [two], action: 'delete' });
+    expect(get(db, 'SELECT id FROM transactions WHERE id = ?', two)).toBeUndefined();
+  });
+});
+
+describe('category history', () => {
+  it('gives spent and assigned per month', async () => {
+    const { app, db } = setup();
+    const cat = get<{ id: number }>(db, "SELECT id FROM categories WHERE name = 'Dagligvarer'")!.id;
+    run(db, 'UPDATE transactions SET category_id = ?', cat);
+    run(db, "INSERT INTO assignments(month, category_id, amount) VALUES ('2026-10', ?, 50000)", cat);
+    const rows = await (await app.request(`/api/categories/${cat}/history?month=2026-10&months=3`)).json();
+    expect(rows).toEqual([
+      { month: '2026-08', spent: 0, assigned: 0 },
+      { month: '2026-09', spent: 0, assigned: 0 },
+      { month: '2026-10', spent: 30000, assigned: 50000 },
+    ]);
+  });
+});

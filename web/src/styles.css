@@ -1603,19 +1603,13 @@ label.field .help {
 }
 
 @media (max-width: 860px) {
+  /* Four numbers as a 2×2 grid: a sideways scroll hid the last one with no hint that it was there. */
   .stats {
-    display: flex;
-    overflow-x: auto;
-    scrollbar-width: none;
-    margin: 0 -14px 12px;
-    padding: 0 14px;
-  }
-  .stats::-webkit-scrollbar {
-    display: none;
+    grid-template-columns: 1fr 1fr;
+    margin-bottom: 12px;
   }
   .stat-mini {
-    flex: 0 0 auto;
-    min-width: 128px;
+    min-width: 0;
   }
 }
 
@@ -2485,13 +2479,15 @@ label.field .help {
 }
 
 @media (max-width: 860px) {
+  /* All tabs visible: wrap onto two lines rather than hiding "Banksynkronisering" off-screen. */
   .settings-tabs {
-    overflow-x: auto;
+    display: flex;
+    flex-wrap: wrap;
     max-width: 100%;
-    scrollbar-width: none;
   }
   .settings-tabs button {
     white-space: nowrap;
+    flex: 1 1 auto;
   }
   .theme-preview {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3095,4 +3091,145 @@ label.field .help {
   .ov-slot-body {
     max-height: 180px;
   }
+}
+
+/* ---------- Velg flere transaksjoner ---------- */
+.bulk-bar {
+  position: sticky;
+  bottom: 12px;
+  z-index: 25;
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--brand);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+}
+.bulk-count {
+  display: inline-flex;
+  gap: 10px;
+  align-items: baseline;
+  white-space: nowrap;
+}
+.bulk-actions {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.link-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--brand-text);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.tx-table tr.selected td,
+.tx-row.selected {
+  background: var(--brand-soft);
+}
+.tx-avatar.checked {
+  background: var(--brand);
+  color: #fff;
+}
+@media (max-width: 860px) {
+  .bulk-bar {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: calc(68px + env(safe-area-inset-bottom));
+    margin: 0;
+    padding: 10px 12px;
+  }
+  .bulk-actions {
+    justify-content: stretch;
+  }
+}
+.good-text {
+  color: var(--good);
+}
+.list-item.bill-paid > .grow > div:first-child,
+.list-item.bill-paid .money {
+  opacity: 0.6;
+}
+
+/* ---------- Category history (6 months) ---------- */
+.cat-history {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.ch-bars {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+  height: 92px;
+}
+.ch-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  min-width: 0;
+}
+.ch-track {
+  position: relative;
+  flex: 1;
+  width: min(28px, 100%);
+  display: flex;
+  align-items: flex-end;
+}
+.ch-bar {
+  width: 100%;
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+  background: color-mix(in oklab, var(--series-1) 55%, var(--surface));
+}
+.ch-col.current .ch-bar {
+  background: var(--series-1);
+}
+.ch-bar.over {
+  background: var(--bad);
+}
+.ch-col.on .ch-bar {
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+.ch-tick {
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  height: 2px;
+  background: var(--text);
+  border-radius: 1px;
+}
+.ch-label {
+  font-size: 11px;
+  color: var(--muted);
+}
+.ch-col.current .ch-label {
+  color: var(--text);
+  font-weight: 600;
+}
+.cat-history > .row {
+  flex-wrap: wrap;
+  gap: 2px 10px;
+}
+.cat-history > .row strong {
+  white-space: nowrap;
 }

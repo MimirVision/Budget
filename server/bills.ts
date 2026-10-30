@@ -100,7 +100,7 @@ export function fixedCategoryIds(db: DB): Set<number> {
   );
 }
 
-export function listBills(db: DB, today = todayISO()) {
+export function listBills(db: DB, today = todayISO(), opts: { suggest?: boolean } = {}) {
   const bills = all<Bill & { category_name: string | null }>(
     db,
     'SELECT b.*, c.name AS category_name FROM bills b LEFT JOIN categories c ON c.id = b.category_id ORDER BY b.sort, b.id',
@@ -120,7 +120,7 @@ export function listBills(db: DB, today = todayISO()) {
     monthlyTotal: out.reduce((s, b) => s + b.monthly, 0),
     needed: cats.reduce((s, c) => s + c.needed, 0),
     readyToAssign: budget.readyToAssign,
-    suggestions: suggestBills(db, out, today),
+    suggestions: opts.suggest === false ? [] : suggestBills(db, out, today),
   };
 }
 

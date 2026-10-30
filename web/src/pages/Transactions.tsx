@@ -20,6 +20,15 @@ export default function TransactionsPage() {
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState(params.get('q') ?? '');
   const [editing, setEditing] = useState<Transaction | 'new' | null>(null);
+  // Velg: tick several transactions and change them together.
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<number[]>([]);
+  const toggle = (id: number) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  const stopSelecting = () => {
+    setSelecting(false);
+    setSelected([]);
+  };
+  const open = (t: Transaction) => (selecting ? toggle(t.id) : setEditing(t));
 
   const account = params.get('account') ?? '';
   const category = params.get('category') ?? '';
@@ -100,15 +109,22 @@ export default function TransactionsPage() {
             )}
           </div>
         </div>
-        {mobile ? (
-          <button className="icon-btn" onClick={() => setEditing('new')} aria-label="Legg til manuelt" title="Legg til manuelt">
-            <Icon name="plus" />
-          </button>
-        ) : (
-        <button className="btn primary" onClick={() => setEditing('new')}>
-          <Icon name="plus" size={16} /> Ny transaksjon
-        </button>
-        )}
+        <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+          {rows.length > 0 && (
+            <button className={`btn ${mobile ? 'sm ' : ''}${selecting ? 'primary' : 'ghost'}`} onClick={() => (selecting ? stopSelecting() : setSelecting(true))}>
+              <Icon name="check" size={16} /> {selecting ? 'Ferdig' : 'Velg'}
+            </button>
+          )}
+          {mobile ? (
+            <button className="icon-btn" onClick={() => setEditing('new')} aria-label="Legg til manuelt" title="Legg til manuelt">
+              <Icon name="plus" />
+            </button>
+          ) : (
+            <button className="btn primary" onClick={() => setEditing('new')}>
+              <Icon name="plus" size={16} /> Ny transaksjon
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="row" style={{ marginBottom: 14 }}>
@@ -171,7 +187,7 @@ export default function TransactionsPage() {
       )}
       {pending.length > 0 && <PendingList items={pending} />}
       {mobile && rows.length > 0 ? (
-        <DayList rows={rows} onOpen={setEditing} />
+        <DayList rows={rows} onOpen={open} selecting={selecting} selected={selected} />
       ) : (
       <div className="card table-wrap">
         {rows.length === 0 ? (
@@ -183,6 +199,16 @@ export default function TransactionsPage() {
           <table className="table tx-table">
             <thead>
               <tr>
+                {selecting && (
+                  <th style={{ width: 36 }}>
+                    <input
+                      type="checkbox"
+                      aria-label="Velg alle viste"
+                      checked={selected.length > 0 && rows.every((t) => selected.includes(t.id))}
+                      onChange={(e) => setSelected(e.target.checked ? rows.map((t) => t.id) : [])}
+                    />
+                  </th>
+                )}
                 <th>Dato</th>
                 <th>Mottaker</th>
                 <th className="hide-sm">Konto</th>
@@ -192,7 +218,12 @@ export default function TransactionsPage() {
             </thead>
             <tbody>
               {rows.map((t) => (
-                <tr key={t.id} className="clickable" onClick={() => setEditing(t)}>
+                <tr key={t.id} className={`clickable ${selected.includes(t.id) ? 'selected' : ''}`} onClick={() => open(t)}>
+                  {selecting && (
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" aria-label={`Velg ${t.payee}`} checked={selected.includes(t.id)} onChange={() => toggle(t.id)} />
+                    </td>
+                  )}
                   <td className="num muted" style={{ width: 90 }}>
                     {dayLabel(t.date)}
                   </td>
@@ -218,8 +249,10 @@ export default function TransactionsPage() {
                     {t.memo && <div className="small faint ellipsis">{t.memo}</div>}
                   </td>
                   <td className="hide-sm muted">{t.account_name}</td>
-                  <td className="hide-sm" onClick={(e) => e.stopPropagation()} style={{ minWidth: 170 }}>
-                    {t.transfer_id ? (
+                  <td className="hide-sm" onClick={(e) => !selecting && e.stopPropagation()} style={{ minWidth: 170 }}>
+                    {selecting ? (
+                      <span className="muted small">{t.transfer_id ? 'Overføring' : t.category_name ?? 'Uten kategori'}</span>
+                    ) : t.transfer_id ? (
                       <span className="chip" onClick={() => setEditing(t)} style={{ cursor: 'pointer' }}>
                         <Icon name="swap" size={12} /> {t.amount < 0 ? 'Til' : 'Fra'} {t.transfer_account_name}
                       </span>
@@ -256,6 +289,19 @@ export default function TransactionsPage() {
         </div>
       )}
 
+      {selecting && (
+        <BulkBar
+          ids={selected}
+          visible={rows.map((t) => t.id)}
+          onSelectAll={() => setSelected(rows.map((t) => t.id))}
+          onDone={async (msg) => {
+            toast(msg);
+            stopSelecting();
+            await Promise.all([load(), refresh()]);
+          }}
+        />
+      )}
+
       {editing && (
         <TransactionEditor
           txn={editing === 'new' ? undefined : editing}
@@ -272,7 +318,17 @@ export default function TransactionsPage() {
 }
 
 /** Phone list: grouped by day with a daily total, big rows, category under the payee. */
-function DayList({ rows, onOpen }: { rows: Transaction[]; onOpen: (t: Transaction) => void }) {
+function DayList({
+  rows,
+  onOpen,
+  selecting,
+  selected,
+}: {
+  rows: Transaction[];
+  onOpen: (t: Transaction) => void;
+  selecting: boolean;
+  selected: number[];
+}) {
   const days: Array<{ date: string; items: Transaction[] }> = [];
   for (const t of rows) {
     const last = days[days.length - 1];
@@ -291,9 +347,20 @@ function DayList({ rows, onOpen }: { rows: Transaction[]; onOpen: (t: Transactio
             </div>
             <div className="card" style={{ overflow: 'hidden' }}>
               {d.items.map((t) => (
-                <button key={t.id} className="tx-row" onClick={() => onOpen(t)}>
-                  <span className="tx-avatar" aria-hidden="true">
-                    {t.transfer_id ? <Icon name="swap" size={16} /> : (t.payee || t.raw_description || '?').trim().charAt(0).toUpperCase()}
+                <button
+                  key={t.id}
+                  className={`tx-row ${selected.includes(t.id) ? 'selected' : ''}`}
+                  onClick={() => onOpen(t)}
+                  aria-pressed={selecting ? selected.includes(t.id) : undefined}
+                >
+                  <span className={`tx-avatar ${selecting && selected.includes(t.id) ? 'checked' : ''}`} aria-hidden="true">
+                    {selecting ? (
+                      selected.includes(t.id) ? <Icon name="check" size={16} /> : ''
+                    ) : t.transfer_id ? (
+                      <Icon name="swap" size={16} />
+                    ) : (
+                      (t.payee || t.raw_description || '?').trim().charAt(0).toUpperCase()
+                    )}
                   </span>
                   <span className="tx-main">
                     <span className="ellipsis" style={{ display: 'block', fontWeight: 600 }}>
@@ -372,5 +439,75 @@ function PendingList({ items }: { items: Pending[] }) {
         ))}
       </div>
     </section>
+  );
+}
+
+/** The bar that appears while choosing: what to do with the ticked transactions. */
+function BulkBar({
+  ids,
+  visible,
+  onSelectAll,
+  onDone,
+}: {
+  ids: number[];
+  visible: number[];
+  onSelectAll: () => void;
+  onDone: (message: string) => void;
+}) {
+  const { summary } = useStore();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const run = async (action: 'category' | 'reviewed' | 'delete', categoryId?: number | null) => {
+    if (!ids.length) return;
+    if (action === 'delete' && !confirm(`Slette ${ids.length} transaksjoner? Det kan ikke angres.`)) return;
+    setBusy(true);
+    try {
+      let changed = 0;
+      let skipped = 0;
+      // In chunks: each request stays small (Cloudflare's free plan).
+      for (let i = 0; i < ids.length; i += 90) {
+        const r = await api.post<{ changed: number; skipped: number }>('/transactions/bulk', {
+          ids: ids.slice(i, i + 90),
+          action,
+          category_id: categoryId,
+        });
+        changed += r.changed;
+        skipped += r.skipped;
+      }
+      const verb = action === 'delete' ? 'Slettet' : action === 'reviewed' ? 'Godkjente' : 'Oppdaterte';
+      onDone(`${verb} ${changed} transaksjoner${skipped ? ` (${skipped} overføringer hoppet over)` : ''}`);
+    } catch (e: any) {
+      toast(e.message, { error: true });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="bulk-bar" role="toolbar" aria-label="Endre valgte transaksjoner">
+      <span className="bulk-count">
+        <strong>{ids.length}</strong> valgt
+        {ids.length < visible.length && (
+          <button className="link-btn" onClick={onSelectAll}>
+            Velg alle {visible.length}
+          </button>
+        )}
+      </span>
+      <div className="bulk-actions">
+        <div style={{ minWidth: 170, flex: '1 1 170px' }}>
+          <CategorySelect
+            categories={summary?.categories ?? []}
+            value={null}
+            onChange={(id) => id && run('category', id)}
+            placeholder="Sett kategori…"
+          />
+        </div>
+        <button className="btn sm" disabled={busy || !ids.length} onClick={() => run('reviewed')}>
+          <Icon name="check" size={15} /> Godkjenn
+        </button>
+        <button className="btn sm ghost danger" disabled={busy || !ids.length} onClick={() => run('delete')}>
+          <Icon name="trash" size={15} /> Slett
+        </button>
+      </div>
+    </div>
   );
 }

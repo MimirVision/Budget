@@ -3,7 +3,7 @@
  * - The web app is served as static assets.
  * - /api/* goes to one Durable Object, "household", which holds all data in its built-in SQLite database.
  *   It runs the exact same code as the Node server, through the adapter in db-do.ts.
- * - A cron trigger syncs the banks every four hours.
+ * - A cron trigger syncs the banks four times a day (PSD2 allows four background fetches per account per day).
  */
 import { DurableObject } from 'cloudflare:workers';
 import { durableObjectDb } from './db-do.ts';
