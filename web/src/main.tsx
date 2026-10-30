@@ -110,7 +110,7 @@ function Layout() {
             </div>
           ))}
           <div className="spacer" />
-          <InstallButton />
+          <InstallButton always />
           <div className="row" style={{ gap: 4, flexWrap: 'nowrap' }}>
             <NavLink to="/settings" className={({ isActive }) => `nav-link spacer ${isActive ? 'active' : ''}`}>
               <Icon name="settings" className="nav-icon" />
