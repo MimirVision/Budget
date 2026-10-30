@@ -29,6 +29,11 @@ const paths: Record<string, string> = {
   eyeOff: 'M17.9 17.9A10 10 0 0112 20c-7 0-11-8-11-8a18 18 0 015.1-5.9M9.9 4.2A9 9 0 0112 4c7 0 11 8 11 8a18 18 0 01-2.2 3.2M1 1l22 22',
   alert: 'M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z',
   calendar: 'M3 6h18v15H3zM16 3v4M8 3v4M3 10h18',
+  wallet: 'M20 7H5a2 2 0 010-4h13v4M3 5v14a2 2 0 002 2h15v-5M20 12h-4a2 2 0 000 4h4z',
+  pie: 'M21.2 15.9A10 10 0 118 2.8M22 12A10 10 0 0012 2v10z',
+  more: 'M5 12h.01M12 12h.01M19 12h.01',
+  filter: 'M3 5h18M6 12h12M10 19h4',
+  sparkle: 'M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z',
 };
 
 export function Icon({ name, size = 20, className = '' }: { name: keyof typeof paths | string; size?: number; className?: string }) {
@@ -244,4 +249,52 @@ export const useToast = () => useContext(ToastContext);
 export function Availability({ value, needed = 0 }: { value: number; needed?: number }) {
   const cls = value < 0 ? 'bad' : needed > 0 ? 'warn' : value > 0 ? 'good' : 'zero';
   return <span className={`pill ${cls} num`}>{kr(value)}</span>;
+}
+
+/** Counts smoothly from the previous value to the new one. Small, but it makes changes feel alive. */
+export function AnimatedMoney({ value, className = '' }: { value: number; className?: string }) {
+  const [shown, setShown] = useState(value);
+  const from = useRef(value);
+  useEffect(() => {
+    const start = performance.now();
+    const a = from.current;
+    if (a === value || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      setShown(value);
+      from.current = value;
+      return;
+    }
+    let raf = 0;
+    const step = (t: number) => {
+      const p = Math.min(1, (t - start) / 450);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setShown(Math.round(a + (value - a) * eased));
+      if (p < 1) raf = requestAnimationFrame(step);
+      else from.current = value;
+    };
+    raf = requestAnimationFrame(step);
+    return () => {
+      cancelAnimationFrame(raf);
+      from.current = value;
+    };
+  }, [value]);
+  return <span className={`num ${className}`}>{kr(shown)}</span>;
+}
+
+/** A tiny vibration on phones that support it: a physical "done" for approving and assigning. */
+export function haptic(ms = 12) {
+  try {
+    navigator.vibrate?.(ms);
+  } catch {
+    // Not supported; that's fine.
+  }
+}
+
+export function Skeleton({ rows = 4 }: { rows?: number }) {
+  return (
+    <div className="stack" aria-busy="true" aria-label="Laster">
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="skeleton" style={{ width: `${90 - (i % 3) * 15}%` }} />
+      ))}
+    </div>
+  );
 }

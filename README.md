@@ -4,9 +4,16 @@ En budsjettapp for husstanden, laget for norske banker. Den budsjetterer som YNA
 gjennomgangsinnboks og innsikt som Copilot og Monarch. Transaksjonene kan komme fra **automatisk banksynkronisering (BankID)**,
 **CSV-import** eller **manuell føring**, og hver konto kan bruke sin egen metode. Alt går gjennom den samme smarte løypa.
 
-<p><img src="docs/budget.png" width="640" alt="Budsjettvisning"> <img src="docs/review-phone.png" width="190" alt="Gjennomgang på mobil"></p>
+<p><img src="docs/oversikt.png" width="560" alt="Oversikt"> <img src="docs/budget-phone.png" width="180" alt="Budsjett på mobil"> <img src="docs/review-phone.png" width="180" alt="Gjennomgå på mobil"></p>
 
 ## Hva appen gjør
+
+To hovedfaner:
+- **Budsjett**: styr pengene. Gi hver krone en jobb, se hva som er igjen i hver kategori, og fiks overforbruk med ett trykk.
+- **Oversikt**: se hvor pengene faktisk gikk. Brukt og inntekt mot forrige periode, forbruk gjennom måneden, kategorier, butikker
+  dere handler mest i, største kjøp og formue.
+
+På PC får du tabell og sidepanel. På mobil får du store trykkflater, bunnark, en «+»-knapp for raske kjøp og sveip for å godkjenne.
 
 **Budsjettering (som YNAB)**
 - *Klar til fordeling*: inntekten havner her, og dere gir hver krone en jobb. Kommer lønnen den 20. eller 25., kan dere

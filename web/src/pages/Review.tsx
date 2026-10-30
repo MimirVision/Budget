@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type Transaction } from '../api';
 import { dayLabel, kr } from '../format';
 import { useStore } from '../store';
-import { CategorySelect, Icon, Money, useToast } from '../components/ui';
+import { CategorySelect, Icon, Money, Skeleton, haptic, useToast } from '../components/ui';
+import { useIsMobile } from '../hooks';
 import { TransactionEditor } from '../components/TransactionEditor';
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -16,16 +17,19 @@ const SOURCE_LABEL: Record<string, string> = {
 export default function ReviewPage() {
   const [items, setItems] = useState<Transaction[] | null>(null);
   const [editing, setEditing] = useState<Transaction | null>(null);
-  const { summary, refresh } = useStore();
+  const [startCount, setStartCount] = useState<number | null>(null);
+  const { summary, refresh, version } = useStore();
+  const mobile = useIsMobile();
   const toast = useToast();
 
   const load = useCallback(async () => {
     const r = await api.get<{ transactions: Transaction[] }>('/transactions?review=1&limit=500');
     setItems(r.transactions);
+    setStartCount((n) => (n === null ? r.transactions.length : Math.max(n, r.transactions.length)));
   }, []);
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, version]);
 
   const after = async () => {
     await Promise.all([load(), refresh()]);
@@ -42,6 +46,7 @@ export default function ReviewPage() {
   const approve = async (t: Transaction, categoryId: number | null, remember: boolean) => {
     // Optimistically hide it so the list feels instant.
     setItems((list) => list?.filter((x) => x.id !== t.id) ?? null);
+    haptic();
     await api.patch(`/transactions/${t.id}`, categoryId ? { category_id: categoryId, remember } : { reviewed: true });
     const cat = summary?.categories.find((c) => c.id === categoryId);
     toast(cat ? `${t.payee} → ${cat.name}${remember ? ' (huskes)' : ''}` : `${t.payee} godkjent`, { action: undo(t.id) });
@@ -50,6 +55,7 @@ export default function ReviewPage() {
 
   const confirmTransfer = async (t: Transaction) => {
     setItems((list) => list?.filter((x) => x.id !== t.id && x.id !== t.suggested_transfer_id) ?? null);
+    haptic();
     await api.patch(`/transactions/${t.id}`, { transfer_id: t.suggested_transfer_id });
     toast(`Markert som overføring ${t.amount < 0 ? 'til' : 'fra'} ${t.suggested_transfer_account_name}`);
     await after();
@@ -68,11 +74,13 @@ export default function ReviewPage() {
       approved += r.approved;
       more = r.more && r.approved > 0;
     }
+    haptic(25);
     toast(`Godkjente ${approved} ${approved === 1 ? 'transaksjon' : 'transaksjoner'}`);
     await after();
   };
 
-  if (!items || !summary) return null;
+  if (!items || !summary) return <Skeleton rows={6} />;
+  const done = startCount ? startCount - items.length : 0;
   const withSuggestion = items.filter((t) => t.suggested_category_id || (t.suggested_transfer_id && t.suggested_transfer_account_name)).length;
 
   return (
@@ -91,9 +99,18 @@ export default function ReviewPage() {
         )}
       </div>
 
+      {startCount !== null && startCount > 0 && items.length > 0 && (
+        <>
+          <div className="review-progress" aria-label={`${done} av ${startCount} gjennomgått`}>
+            <div style={{ width: `${(done / startCount) * 100}%` }} />
+          </div>
+          {mobile && <div className="swipe-hint">Sveip til høyre for å godkjenne →</div>}
+        </>
+      )}
+
       {items.length === 0 ? (
         <div className="card empty">
-          <div className="emoji">🎉</div>
+          <div className="emoji celebrate">🎉</div>
           <h2 style={{ color: 'var(--text)' }}>Alt er gjennomgått</h2>
           <p>Nye transaksjoner dukker opp her når bankene synkroniseres eller du importerer en fil.</p>
           <div className="row" style={{ justifyContent: 'center' }}>
@@ -115,6 +132,7 @@ export default function ReviewPage() {
               onTransfer={confirmTransfer}
               onRejectTransfer={rejectTransfer}
               onEdit={() => setEditing(t)}
+              swipe={mobile}
             />
           ))}
         </div>
@@ -140,8 +158,10 @@ function ReviewCard({
   onTransfer,
   onRejectTransfer,
   onEdit,
+  swipe,
 }: {
   t: Transaction;
+  swipe?: boolean;
   onApprove: (t: Transaction, categoryId: number | null, remember: boolean) => void;
   onTransfer: (t: Transaction) => void;
   onRejectTransfer: (t: Transaction) => void;
@@ -152,9 +172,39 @@ function ReviewCard({
   const [remember, setRemember] = useState(false);
   const changed = categoryId !== t.suggested_category_id;
   const transferGuess = t.suggested_transfer_id && t.suggested_transfer_account_name;
+  const canSwipe = swipe && (transferGuess || categoryId);
+  const [dx, setDx] = useState(0);
+  const [gone, setGone] = useState(false);
+  const startX = useRef<number | null>(null);
 
-  return (
-    <div className="card review-card">
+  // Swipe right to approve: the satisfying way to clear the inbox on a phone.
+  const onDown = (e: React.PointerEvent) => {
+    if (!canSwipe || (e.target as HTMLElement).closest('select, button, input, label')) return;
+    startX.current = e.clientX;
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onMove = (e: React.PointerEvent) => {
+    if (startX.current === null) return;
+    setDx(Math.max(0, e.clientX - startX.current));
+  };
+  const onUp = () => {
+    if (startX.current === null) return;
+    startX.current = null;
+    if (dx > 110) {
+      setGone(true);
+      setTimeout(() => (transferGuess ? onTransfer(t) : onApprove(t, categoryId, remember)), 180);
+    } else setDx(0);
+  };
+
+  const card = (
+    <div
+      className={`card review-card ${canSwipe ? 'swipe-card' : ''} ${startX.current !== null ? 'dragging' : ''} ${gone ? 'gone' : ''}`}
+      style={canSwipe ? { transform: `translateX(${dx}px)` } : undefined}
+      onPointerDown={onDown}
+      onPointerMove={onMove}
+      onPointerUp={onUp}
+      onPointerCancel={onUp}
+    >
       <div style={{ minWidth: 0 }}>
         <div className="payee ellipsis">{t.payee || t.raw_description || 'Ukjent'}</div>
         <div className="small muted">
@@ -209,6 +259,15 @@ function ReviewCard({
           )}
         </div>
       )}
+    </div>
+  );
+  if (!canSwipe) return card;
+  return (
+    <div className="swipe-wrap">
+      <div className="swipe-bg" style={{ opacity: Math.min(1, dx / 110) }}>
+        <Icon name="check" size={20} /> {transferGuess ? 'Overføring' : 'Godkjenn'}
+      </div>
+      {card}
     </div>
   );
 }
