@@ -3,6 +3,7 @@
  * Spending = money out of budget accounts that isn't a transfer between your own accounts, net of refunds.
  */
 import { all, type DB } from './db.ts';
+import { budgetStart } from './budget.ts';
 import { addMonths, daysInMonth } from '../shared/months.ts';
 
 export interface Overview {
@@ -33,17 +34,17 @@ export interface Overview {
 
 // Every budget line: whole transactions, or their split parts. Transfers between budget accounts are left out;
 // the opening balance isn't real income either.
-const LINES = `
+const lines = (start: string) => `
   WITH lines AS (
     SELECT t.id AS tid, t.date, t.amount, t.category_id, t.payee, t.account_id FROM transactions t
       JOIN accounts a ON a.id = t.account_id
-     WHERE a.on_budget = 1 AND t.payee != 'Startsaldo'
+     WHERE a.on_budget = 1 AND t.payee != 'Startsaldo' AND t.date >= '${start}'
        AND (t.transfer_id IS NULL OR t.category_id IS NOT NULL)
        AND NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id)
     UNION ALL
     SELECT t.id, t.date, s.amount, s.category_id, t.payee, t.account_id FROM splits s
       JOIN transactions t ON t.id = s.transaction_id JOIN accounts a ON a.id = t.account_id
-     WHERE a.on_budget = 1
+     WHERE a.on_budget = 1 AND t.date >= '${start}'
   ), tagged AS (
     SELECT l.*, c.name AS category, g.id AS group_id, g.name AS group_name, COALESCE(g.is_income, 0) AS is_income,
            -- Spending: categorised lines (net of refunds) plus uncategorised money going out. Uncategorised money
@@ -56,6 +57,10 @@ const LINES = `
 const end = (month: string) => `${month}-31`;
 
 export function overview(db: DB, month: string, span: number): Overview {
+  // Before a fresh start ("Start på nytt") nothing counts.
+  const start = budgetStart(db);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) throw new Error('Ugyldig startdato');
+  const LINES = lines(start);
   const startMonth = addMonths(month, -(span - 1));
   const from = `${startMonth}-01`;
   const to = end(month);

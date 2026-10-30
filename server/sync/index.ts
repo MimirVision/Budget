@@ -1,4 +1,5 @@
-import { all, get, run, tx, type DB } from '../db.ts';
+import { all, get, getSetting, run, tx, type DB } from '../db.ts';
+import { addFreshStartOpening, followBankAfterFreshStart } from '../freshstart.ts';
 import { ingest, type IngestResult } from '../ingest.ts';
 import { addDays, todayISO } from '../../shared/months.ts';
 import { enableBanking } from './enablebanking.ts';
@@ -171,6 +172,7 @@ export async function syncConnection(db: DB, connectionId: number, onlyRemoteId?
       if (result.balance !== undefined) {
         run(db, "UPDATE accounts SET bank_balance = ?, bank_balance_at = datetime('now') WHERE id = ?", result.balance, link.account_id);
         if (!last) seedOpeningBalance(db, link.account_id, result.balance);
+        else followBankAfterFreshStart(db, link.account_id);
       }
     } catch (e: any) {
       if (e instanceof ReauthRequired) {
@@ -197,6 +199,11 @@ export async function syncConnection(db: DB, connectionId: number, onlyRemoteId?
  * Add a "Starting balance" so the app's balance matches the bank from day one.
  */
 export function seedOpeningBalance(db: DB, accountId: number, bankBalance: number) {
+  // After a fresh start, a newly linked account starts like the others: one opening on the start date.
+  if (getSetting(db, 'budget_start')) {
+    addFreshStartOpening(db, accountId);
+    return;
+  }
   const sum = get<{ s: number; first: string | null }>(db, 'SELECT COALESCE(SUM(amount), 0) AS s, MIN(date) AS first FROM transactions WHERE account_id = ?', accountId)!;
   const diff = bankBalance - sum.s;
   if (diff === 0) return;

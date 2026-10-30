@@ -1,4 +1,5 @@
 import { all, get, type DB } from './db.ts';
+import { budgetStart } from './budget.ts';
 import { addDays, addMonths, currentMonth, dayDiff, todayISO } from '../shared/months.ts';
 
 export interface Recurring {
@@ -113,9 +114,10 @@ export function cashflowReport(db: DB, months = 12) {
             SUM(CASE WHEN g.is_income = 0 OR g.is_income IS NULL THEN -t.amount ELSE 0 END) AS spending
        FROM transactions t JOIN accounts a ON a.id = t.account_id
        LEFT JOIN categories c ON c.id = t.category_id LEFT JOIN category_groups g ON g.id = c.group_id
-      WHERE a.on_budget = 1 AND t.transfer_id IS NULL AND t.date >= ?
+      WHERE a.on_budget = 1 AND t.transfer_id IS NULL AND t.date >= ? AND t.date >= ? AND t.payee != 'Startsaldo'
       GROUP BY month`,
     `${start}-01`,
+    budgetStart(db),
   );
   const byMonth = new Map(rows.map((r) => [r.month, r]));
   return Array.from({ length: months }, (_, i) => {
