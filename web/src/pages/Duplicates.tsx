@@ -114,11 +114,11 @@ export default function DuplicatesPage() {
     <div className="dup-page">
       <div className="page-head">
         <div>
-          <Link to="/transactions" className="small muted">
+          <Link to="/transactions" className="small muted desktop-only">
             ← Transaksjoner
           </Link>
           <h1>Duplikater</h1>
-          <p className="muted" style={{ margin: 0 }}>
+          <p className="muted page-desc" style={{ margin: 0 }}>
             Transaksjoner som er registrert mer enn én gang. Det du har gjort med en kopi (kategori, notat, kvittering,
             overføring) blir med over når de slås sammen.
           </p>

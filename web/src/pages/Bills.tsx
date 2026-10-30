@@ -107,7 +107,7 @@ export default function BillsPage() {
       <div className="page-head">
         <div>
           <h1>Faste regninger</h1>
-          <p className="muted" style={{ margin: 0 }}>
+          <p className="muted page-desc" style={{ margin: 0 }}>
             Det som kommer hver måned eller hvert år. Hver regning setter et månedlig mål på kategorien sin, så du vet hvor mye
             som må settes av.
           </p>

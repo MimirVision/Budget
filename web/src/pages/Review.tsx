@@ -258,11 +258,11 @@ function ReviewCard({
       ) : (
         <div className="actions">
           <CategorySelect categories={summary?.categories ?? []} value={categoryId} onChange={setCategoryId} amount={t.amount} />
-          <button className="btn primary" disabled={!categoryId} onClick={() => onApprove(t, categoryId, remember)}>
-            <Icon name="check" size={16} /> Godkjenn
+          <button className="btn primary rv-approve" disabled={!categoryId} onClick={() => onApprove(t, categoryId, remember)} aria-label="Godkjenn">
+            <Icon name="check" size={16} /> <span className="hide-phone">Godkjenn</span>
           </button>
-          <button className="btn ghost sm" onClick={onEdit} title="Del opp, overfør eller endre">
-            <Icon name="edit" size={14} /> Mer
+          <button className="btn ghost sm rv-more" onClick={onEdit} title="Del opp, overfør eller endre" aria-label="Mer: del opp, overfør eller endre">
+            <Icon name="edit" size={14} /> <span className="hide-phone">Mer</span>
           </button>
           {categoryId && t.payee && (changed || !t.suggested_category_id) && (
             <label className="check small muted" style={{ flexBasis: '100%' }}>

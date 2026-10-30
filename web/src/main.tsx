@@ -17,11 +17,15 @@ import OverviewPage from './pages/Overview';
 import SettingsPage from './pages/Settings';
 import DuplicatesPage from './pages/Duplicates';
 import BillsPage from './pages/Bills';
+import { PageTransition, PullToRefresh, TopBar } from './mobile';
 
 const PRIMARY = [
   { to: '/', label: 'Budsjett', icon: 'wallet', end: true, hint: 'Planlegg pengene' },
   { to: '/oversikt', label: 'Oversikt', icon: 'pie', hint: 'Se hvor de gikk' },
 ];
+/** Pages reached from "Mer": on the phone they get a back button at the top. */
+const SUB_PAGES = ['/bills', '/accounts', '/settings', '/duplicates'];
+
 const SECONDARY = [
   { to: '/review', label: 'Gjennomgå', icon: 'inbox' },
   { to: '/transactions', label: 'Transaksjoner', icon: 'list' },
@@ -113,7 +117,10 @@ function Layout() {
           </div>
         </aside>
       )}
-      <main className="main">
+      {mobile && <TopBar />}
+      {mobile && <PullToRefresh />}
+      <main className={`main ${mobile && SUB_PAGES.includes(location.pathname) ? 'has-back' : ''}`}>
+        <PageTransition>
         <Routes>
           <Route path="/" element={<BudgetPage />} />
           <Route path="/oversikt" element={<OverviewPage />} />
@@ -126,6 +133,7 @@ function Layout() {
           <Route path="/bills" element={<BillsPage />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
+        </PageTransition>
       </main>
       {mobile && (
         <nav className="tabbar" aria-label="Hovedmeny">
