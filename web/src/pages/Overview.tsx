@@ -20,6 +20,7 @@ interface OverviewData {
   prevIncome: number;
   prevSpending: number;
   pendingIncome: number;
+  historyBefore: string | null;
   groups: Array<{
     id: number | null;
     name: string;
@@ -45,32 +46,6 @@ function periodLabel(month: string, span: number) {
   return `${shortMonth(start)} ${start.slice(0, 4) !== month.slice(0, 4) ? start.slice(0, 4) + ' ' : ''}– ${shortMonth(month)} ${month.slice(0, 4)}`;
 }
 
-/** The period is before "Start på nytt": say so, instead of looking like nothing happened. */
-function BeforeStart({ start, onGo }: { start: string; onGo: (month: string) => void }) {
-  const startMonth = start.slice(0, 7);
-  const date = `${Number(start.slice(8, 10))}. ${monthLabel(startMonth).toLowerCase()}`;
-  const future = startMonth > currentMonth();
-  return (
-    <div className="stack" style={{ gap: 12, alignItems: 'center' }}>
-      <div>
-        Budsjettet ditt starter på nytt {date}, så Oversikten teller bare det som skjer fra da.
-        {future ? ' De første tallene dukker opp her når måneden begynner.' : ''}
-      </div>
-      <div className="row" style={{ gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
-        {!future && (
-          <button className="btn primary sm" onClick={() => onGo(startMonth)}>
-            Gå til {monthLabel(startMonth).split(' ')[0].toLowerCase()}
-          </button>
-        )}
-        <Link className="btn sm" to="/transactions">
-          Se transaksjonene
-        </Link>
-      </div>
-      <div className="faint small">Du kan endre eller angre startdatoen under Innstillinger → Budsjett.</div>
-    </div>
-  );
-}
-
 /** Change against the previous period, phrased plainly ("12 % mer enn forrige måned"). */
 function Delta({ now, prev, prevLabel, goodWhenUp }: { now: number; prev: number; prevLabel: string; goodWhenUp: boolean }) {
   if (!prev) return <span className="delta faint">Ingen data for {prevLabel}</span>;
@@ -92,7 +67,7 @@ export default function OverviewPage() {
   const setMonth = (m: string) => setParams(m === currentMonth() ? {} : { month: m });
   const [data, setData] = useState<OverviewData | null>(null);
   const [worth, setWorth] = useState<WorthRow[]>([]);
-  const { version, summary } = useStore();
+  const { version } = useStore();
   const mobile = useIsMobile();
 
   useEffect(() => {
@@ -140,14 +115,31 @@ export default function OverviewPage() {
   const rate = data.income > 0 ? Math.round((saved / data.income) * 100) : null;
   const empty = data.spending === 0 && data.income === 0;
 
-  const pending = data.pendingIncome > 0 && (
-    <Link to="/review" className="callout info small" style={{ textDecoration: 'none', color: 'inherit' }}>
-      <Icon name="inbox" size={18} />
+  const history = data.historyBefore && (
+    <div className="callout warn small">
+      <Icon name="calendar" size={18} />
       <div>
-        <strong>{kr(data.pendingIncome)}</strong> i innbetalinger mangler kategori og er ikke regnet som inntekt ennå.{' '}
-        <span style={{ color: 'var(--brand-text)', fontWeight: 600 }}>Gå gjennom dem →</span>
+        Historikk fra før budsjettet startet på nytt {Number(data.historyBefore.slice(8, 10))}.{' '}
+        {monthLabel(data.historyBefore.slice(0, 7)).toLowerCase()}. Overføringer mellom egne kontoer og kort uten fullstendig
+        historikk (som TF Bank) kan gjøre noen tall skjeve.
       </div>
-    </Link>
+    </div>
+  );
+  // Before a fresh start nothing is reviewed, so fixing categories happens in Transaksjoner instead.
+  const fixLink = data.historyBefore && month < data.historyBefore.slice(0, 7) ? `/transactions?month=${month}` : '/review';
+  const pending = (
+    <>
+      {history}
+      {data.pendingIncome > 0 && (
+        <Link to={fixLink} className="callout info small" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <Icon name="inbox" size={18} />
+          <div>
+            <strong>{kr(data.pendingIncome)}</strong> i innbetalinger mangler kategori og er ikke regnet som inntekt ennå.{' '}
+            <span style={{ color: 'var(--brand-text)', fontWeight: 600 }}>Gi dem kategori →</span>
+          </div>
+        </Link>
+      )}
+    </>
   );
 
   const tiles = (
@@ -247,11 +239,7 @@ export default function OverviewPage() {
       {empty ? (
         <div className="card empty">
           <div className="emoji">📊</div>
-          {summary?.budgetStart && `${month}-31` < summary.budgetStart ? (
-            <BeforeStart start={summary.budgetStart} onGo={(m) => setMonth(m)} />
-          ) : (
-            <>Ingen inntekter eller utgifter i {periodLabel(month, span).toLowerCase()} ennå.</>
-          )}
+          Ingen inntekter eller utgifter i {periodLabel(month, span).toLowerCase()} ennå.
         </div>
       ) : mobile ? (
         <div className="stack" style={{ gap: 14 }}>

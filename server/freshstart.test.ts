@@ -39,7 +39,9 @@ describe('fresh start', () => {
     expect(nov.income).toBe(0); // the opening balance is money you had, not income
     expect(nov.unreviewed).toBe(0); // October's unreviewed transaction isn't asked about any more
     expect(overview(db, '2026-11', 1).income).toBe(0); // opening balance isn't income
-    expect(overview(db, '2026-10', 1).spending).toBe(0); // before the start nothing counts
+    const october = overview(db, '2026-10', 1);
+    expect(october.spending).toBe(250_000); // history before the start is still shown in Oversikt…
+    expect(october.historyBefore).toBe('2026-11-01'); // …marked as history
   });
 
   it('keeps following the bank right after the start, unless the balance was typed in', () => {
