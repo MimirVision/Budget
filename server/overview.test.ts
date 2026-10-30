@@ -51,4 +51,25 @@ describe('overview', () => {
     expect(sept.historyBefore).toBe('2026-11-01');
     expect(overview(db, '2026-12', 1).historyBefore).toBeNull();
   });
+
+  it('splits fixed bills from everyday spending, per account and weekday', () => {
+    const db = openDb(':memory:');
+    const cat = (n: string) => get<{ id: number }>(db, 'SELECT id FROM categories WHERE name = ?', n)!.id;
+    const a = Number(run(db, "INSERT INTO accounts(name) VALUES ('SB1')").lastInsertRowid);
+    const b = Number(run(db, "INSERT INTO accounts(name) VALUES ('Revolut')").lastInsertRowid);
+    const tx = (acc: number, date: string, amount: number, payee: string, c: string) =>
+      run(db, 'INSERT INTO transactions(account_id, date, amount, payee, category_id, reviewed) VALUES (?, ?, ?, ?, ?, 1)', acc, date, amount, payee, cat(c));
+    tx(a, '2026-09-01', -1_480_000, 'SpareBank 1 Boliglån', 'Boliglån'); // a Tuesday
+    tx(b, '2026-09-04', -50_000, 'Rema 1000', 'Dagligvarer'); // a Friday
+    tx(b, '2026-09-04', -20_000, 'Kiwi', 'Dagligvarer');
+    const o = overview(db, '2026-09', 1);
+    expect(o.fixedSpending).toBe(1_480_000);
+    expect(o.payees.map((p) => p.payee)).toEqual(['Rema 1000', 'Kiwi']); // the mortgage isn't shopping
+    expect(o.largest.every((t) => t.payee !== 'SpareBank 1 Boliglån')).toBe(true);
+    expect(o.accounts.map((x) => [x.name, x.spent])).toEqual([['SB1', 1_480_000], ['Revolut', 70_000]]);
+    expect(o.weekdays[4].total).toBe(70_000); // Friday
+    expect(o.calendar.find((d) => d.date === '2026-09-04')?.spent).toBe(70_000);
+    expect(o.stats).toMatchObject({ days: 30, noSpendDays: 29, purchases: 2 });
+    expect(o.groups.find((g) => g.name === 'Faste utgifter')?.fixed).toBe(true);
+  });
 });
