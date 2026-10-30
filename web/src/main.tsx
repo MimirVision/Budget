@@ -15,6 +15,8 @@ import TransactionsPage from './pages/Transactions';
 import AccountsPage from './pages/Accounts';
 import OverviewPage from './pages/Overview';
 import SettingsPage from './pages/Settings';
+import DuplicatesPage from './pages/Duplicates';
+import BillsPage from './pages/Bills';
 
 const PRIMARY = [
   { to: '/', label: 'Budsjett', icon: 'wallet', end: true, hint: 'Planlegg pengene' },
@@ -23,6 +25,7 @@ const PRIMARY = [
 const SECONDARY = [
   { to: '/review', label: 'Gjennomgå', icon: 'inbox' },
   { to: '/transactions', label: 'Transaksjoner', icon: 'list' },
+  { to: '/bills', label: 'Faste regninger', icon: 'calendar' },
   { to: '/accounts', label: 'Kontoer', icon: 'bank' },
 ];
 
@@ -119,6 +122,8 @@ function Layout() {
           <Route path="/transactions" element={<TransactionsPage />} />
           <Route path="/accounts" element={<AccountsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/duplicates" element={<DuplicatesPage />} />
+          <Route path="/bills" element={<BillsPage />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </main>
@@ -148,6 +153,10 @@ function Layout() {
       {more && (
         <Modal title="Mer" onClose={() => setMore(false)}>
           <div className="more-grid">
+            <Link to="/bills" className="more-tile">
+              <Icon name="calendar" size={24} />
+              Faste regninger
+            </Link>
             <Link to="/accounts" className="more-tile">
               <Icon name="bank" size={24} />
               Kontoer

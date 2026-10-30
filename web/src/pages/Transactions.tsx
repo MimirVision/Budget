@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api, type Transaction } from '../api';
 import { dayLabel, monthLabel, relativeDay } from '../format';
 import { useStore } from '../store';
@@ -53,6 +53,13 @@ export default function TransactionsPage() {
   useEffect(() => {
     load();
   }, [load, version]);
+  const [dupes, setDupes] = useState(0);
+  useEffect(() => {
+    api
+      .get<{ groups: Array<{ rows: unknown[] }> }>('/duplicates')
+      .then((d) => setDupes(d.groups.reduce((n, g) => n + g.rows.length - 1, 0)))
+      .catch(() => setDupes(0));
+  }, [version]);
 
   // Search as you type, but not on every keystroke.
   useEffect(() => {
@@ -153,6 +160,15 @@ export default function TransactionsPage() {
       {category === 'none' && <div className="callout info small" style={{ marginBottom: 12 }}>Viser transaksjoner uten kategori.</div>}
       {month && <div className="small muted" style={{ marginBottom: 8 }}>{monthLabel(month)}</div>}
 
+      {!filtered && dupes > 0 && (
+        <Link to="/duplicates" className="callout warn small" style={{ marginBottom: 12, textDecoration: 'none', color: 'inherit' }}>
+          <Icon name="alert" size={18} />
+          <div>
+            <strong>{dupes} {dupes === 1 ? 'transaksjon ser ut' : 'transaksjoner ser ut'} til å være registrert flere ganger.</strong>{' '}
+            <span style={{ color: 'var(--brand-text)', fontWeight: 600 }}>Se og rydd opp →</span>
+          </div>
+        </Link>
+      )}
       {pending.length > 0 && <PendingList items={pending} />}
       {mobile && rows.length > 0 ? (
         <DayList rows={rows} onOpen={setEditing} />

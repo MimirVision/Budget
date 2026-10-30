@@ -136,6 +136,22 @@ CREATE TABLE IF NOT EXISTS pending (
   description TEXT NOT NULL DEFAULT ''
 );
 
+-- Faste regninger: the bills you know are coming. Saving one sets its category's monthly goal.
+CREATE TABLE IF NOT EXISTS bills (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  amount INTEGER NOT NULL,                     -- øre, what one payment costs (positive)
+  every INTEGER NOT NULL DEFAULT 1,            -- months between payments: 1, 3, 6 or 12
+  due_day INTEGER,                             -- day of the month it's due
+  next_due TEXT,                               -- YYYY-MM-DD, for bills that aren't monthly
+  category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+  match TEXT NOT NULL DEFAULT '',              -- text the bank uses, to see whether it's paid
+  sort INTEGER NOT NULL DEFAULT 0
+);
+
+-- Bank ids of transactions you deleted, so the next sync (which re-reads a week back) doesn't bring them back.
+CREATE TABLE IF NOT EXISTS forgotten_imports (account_id INTEGER NOT NULL, external_id TEXT, import_hash TEXT);
+CREATE INDEX IF NOT EXISTS forgotten_account ON forgotten_imports(account_id);
 CREATE TABLE IF NOT EXISTS attachments (
   id INTEGER PRIMARY KEY,
   transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,

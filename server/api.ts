@@ -2,9 +2,11 @@ import { Hono } from 'hono';
 import { all, get, getSetting, run, setSetting, tx, type DB } from './db.ts';
 import { autoAssign, budgetStart, overspendMode, getBudget, moveMoney, readyToAssign, setAssigned, type AutoAssignMode } from './budget.ts';
 import { applyFreshStart, previewFreshStart, undoFreshStart } from './freshstart.ts';
-import { ingest, linkTransfer, rejectTransferSuggestion, ruleMatches, transferToAccount, unlinkTransfer, withImportHashes } from './ingest.ts';
+import { forgetImport, ingest, linkTransfer, rejectTransferSuggestion, ruleMatches, transferToAccount, unlinkTransfer, withImportHashes } from './ingest.ts';
 import { previewCsv, type CsvMapping } from './import/csv.ts';
 import { overview } from './overview.ts';
+import { addBill, deleteBill, listBills, syncBillTargets, updateBill, type BillInput } from './bills.ts';
+import { dismissDuplicates, findDuplicates, mergeDuplicates } from './duplicates.ts';
 import { cashflowReport, detectRecurring, netWorthReport, spendingReport } from './reports.ts';
 import { callbackUrl, completeConnection, getProvider, linkAccounts, providers, startConnection, syncAll, syncConnection, providerForState } from './sync/index.ts';
 import { addDays, addMonths, currentMonth, todayISO } from '../shared/months.ts';
@@ -242,6 +244,8 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
         run(db, 'UPDATE transactions SET reviewed = 0 WHERE category_id = ?', id);
       }
       run(db, 'UPDATE transactions SET suggested_category_id = NULL WHERE suggested_category_id = ?', id);
+      run(db, 'UPDATE bills SET category_id = ? WHERE category_id = ?', reassign, id);
+      syncBillTargets(db, [reassign]);
       run(db, 'DELETE FROM categories WHERE id = ?', id);
     });
     return c.json({ ok: true });
@@ -318,6 +322,7 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
       run(db, 'DELETE FROM attachments WHERE transaction_id IN (SELECT id FROM transactions WHERE account_id = ?)', id);
       run(db, 'DELETE FROM splits WHERE transaction_id IN (SELECT id FROM transactions WHERE account_id = ?)', id);
       run(db, 'DELETE FROM pending WHERE account_id = ?', id);
+      run(db, 'DELETE FROM forgotten_imports WHERE account_id = ?', id);
       run(db, 'DELETE FROM transactions WHERE account_id = ?', id);
       run(db, 'DELETE FROM accounts WHERE id = ?', id);
     });
@@ -423,6 +428,51 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
     return c.json(shapeTxn(get(db, transactionQuery('t.id = ?'), id)));
   });
 
+  // ---------- Faste regninger ----------
+  api.get('/bills', (c) => c.json(listBills(db)));
+
+  api.post('/bills', async (c) => {
+    const body = await c.req.json();
+    try {
+      // One bill, or several at once ("Legg til alle" from the suggestions).
+      const ids = (Array.isArray(body) ? body.slice(0, 50) : [body]).map((b: BillInput) => addBill(db, b));
+      return c.json({ ids });
+    } catch (e: any) {
+      badRequest(e.message);
+    }
+  });
+
+  api.put('/bills/:id', async (c) => {
+    try {
+      updateBill(db, Number(c.req.param('id')), await c.req.json());
+    } catch (e: any) {
+      badRequest(e.message);
+    }
+    return c.json({ ok: true });
+  });
+
+  api.delete('/bills/:id', (c) => {
+    deleteBill(db, Number(c.req.param('id')));
+    return c.json({ ok: true });
+  });
+
+  // ---------- Duplicates ----------
+  api.get('/duplicates', (c) => c.json(findDuplicates(db)));
+
+  api.post('/duplicates/merge', async (c) => {
+    const { keep, remove } = await c.req.json<{ keep: number; remove: number[] }>();
+    if (!keep || !Array.isArray(remove) || !remove.length) badRequest('Velg hvilken som skal beholdes');
+    mergeDuplicates(db, keep, remove.slice(0, 20).map(Number));
+    return c.json({ ok: true });
+  });
+
+  api.post('/duplicates/dismiss', async (c) => {
+    const { key } = await c.req.json<{ key: string }>();
+    if (!/^\d+(,\d+)+$/.test(key ?? '')) badRequest('Ugyldig gruppe');
+    dismissDuplicates(db, key);
+    return c.json({ ok: true });
+  });
+
   // ---------- Attachments (receipts, warranties) ----------
   // Kept as base64 text: a Durable Object row is at most 2 MB, so files are capped at 1.4 MB (images are shrunk in the browser first).
   const MAX_ATTACHMENT = 1_400_000;
@@ -483,6 +533,7 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
         else run(db, 'UPDATE transactions SET transfer_id = NULL, reviewed = 0 WHERE id = ?', t.transfer_id);
       }
       run(db, 'UPDATE transactions SET suggested_transfer_id = NULL WHERE suggested_transfer_id = ?', id);
+      forgetImport(db, id);
       run(db, 'DELETE FROM attachments WHERE transaction_id = ?', id);
       run(db, 'DELETE FROM splits WHERE transaction_id = ?', id);
       run(db, 'DELETE FROM transactions WHERE id = ?', id);

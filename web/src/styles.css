@@ -1411,7 +1411,7 @@ label.field .help {
 
 .more-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 10px;
 }
 
@@ -2671,4 +2671,159 @@ label.field .help {
   align-items: center;
   color: var(--muted);
   vertical-align: middle;
+}
+
+/* ---------- Duplicates ---------- */
+.dup-page .page-head {
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.dup-group {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.dup-group.maybe {
+  border-style: dashed;
+}
+.dup-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.dup-why {
+  margin: 0;
+}
+.dup-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dup-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+.dup-row.on {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+.dup-row:not(.on) .dup-main {
+  opacity: 0.7;
+}
+.dup-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------- Faste regninger ---------- */
+.bills-page .page-head {
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.bills-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.bills-summary .ov-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+.bills-summary .ov-tile strong {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+.bills-summary .ov-tile.need strong {
+  color: var(--warn);
+}
+.bills-summary .ov-tile.ok strong {
+  color: var(--good);
+}
+.bills-summary .ov-tile .btn {
+  margin-top: 4px;
+}
+.bills-list {
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+.bill-row {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  padding: 12px 18px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.bill-row:last-child {
+  border-bottom: 0;
+}
+.bill-row:hover {
+  background: var(--surface-2);
+}
+.bill-status {
+  display: inline-block;
+  margin-top: 2px;
+  color: var(--muted);
+}
+.bill-status.good {
+  color: var(--good);
+}
+.bill-status.warn {
+  color: var(--warn);
+}
+.warn-text {
+  color: var(--warn);
+}
+.bill-amount {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.bills-suggest {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.bills-suggest .list-item {
+  padding: 10px 0;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+@media (max-width: 720px) {
+  .bills-summary {
+    grid-template-columns: 1fr 1fr;
+  }
+  .bills-summary .ov-tile:last-child {
+    grid-column: 1 / -1;
+  }
+  .bills-summary .ov-tile strong {
+    font-size: 18px;
+  }
+  .bill-row {
+    padding: 12px 14px;
+  }
 }

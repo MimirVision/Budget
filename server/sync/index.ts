@@ -172,7 +172,7 @@ export async function syncConnection(
         data = { ...data, ...result.data };
         run(db, 'UPDATE connections SET data = ? WHERE id = ?', JSON.stringify(data), connectionId);
       }
-      const r = ingest(db, link.account_id, result.transactions, conn.provider);
+      const r = ingest(db, link.account_id, result.transactions, conn.provider, { since });
       if (result.pending) replacePending(db, link.account_id, result.pending);
       for (const k of ['added', 'duplicates', 'matched', 'categorized', 'transfers'] as const) total[k] += r[k];
       total.ids.push(...r.ids);
