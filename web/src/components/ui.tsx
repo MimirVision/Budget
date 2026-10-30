@@ -71,6 +71,7 @@ export function MoneyInput({
   placeholder = '0',
   autoFocus,
   ariaLabel,
+  disabled,
 }: {
   value: number;
   onCommit: (ore: number) => void;
@@ -78,6 +79,7 @@ export function MoneyInput({
   placeholder?: string;
   autoFocus?: boolean;
   ariaLabel?: string;
+  disabled?: boolean;
 }) {
   const [text, setText] = useState(toInput(value));
   const [focused, setFocused] = useState(false);
@@ -101,6 +103,8 @@ export function MoneyInput({
       placeholder={placeholder}
       autoFocus={autoFocus}
       aria-label={ariaLabel}
+      disabled={disabled}
+      title={disabled ? 'Måneden er før budsjettet startet, og kan ikke endres' : undefined}
       onFocus={(e) => {
         setFocused(true);
         setText(toInput(value));

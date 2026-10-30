@@ -164,21 +164,31 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
     return c.json(getBudget(db, month));
   });
 
+  /** Months before "Start på nytt" are history: what's assigned there doesn't count, so changing it would vanish. */
+  const assertEditable = (month: string) => {
+    if (!MONTH.test(month)) badRequest('Måned må se slik ut: 2026-10');
+    const start = budgetStart(db).slice(0, 7);
+    if (month < start) badRequest('Måneden er før budsjettet startet på nytt, og kan ikke endres. Fordel i en senere måned.');
+  };
+
   api.put('/budget/:month/:categoryId', async (c) => {
     const { amount } = await c.req.json();
     if (!Number.isFinite(amount)) badRequest('Beløpet må være et tall');
+    assertEditable(c.req.param('month'));
     setAssigned(db, c.req.param('month'), Number(c.req.param('categoryId')), amount);
     return c.json(getBudget(db, c.req.param('month')));
   });
 
   api.post('/budget/:month/auto', async (c) => {
     const { mode, categoryIds } = await c.req.json<{ mode: AutoAssignMode; categoryIds?: number[] }>();
+    assertEditable(c.req.param('month'));
     const result = autoAssign(db, c.req.param('month'), mode, categoryIds);
     return c.json({ ...result, budget: getBudget(db, c.req.param('month')) });
   });
 
   api.post('/budget/:month/move', async (c) => {
     const { from, to, amount } = await c.req.json<{ from: number | null; to: number | null; amount: number }>();
+    assertEditable(c.req.param('month'));
     if (!(amount > 0)) badRequest('Beløpet må være større enn null');
     moveMoney(db, c.req.param('month'), from, to, amount);
     return c.json(getBudget(db, c.req.param('month')));
