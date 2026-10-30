@@ -5,7 +5,7 @@ import { api, type BudgetMonth, type CategoryRow, type Recurring, type Transacti
 import { dayLabel, kr, monthLabel, relativeDay } from '../format';
 import { useStore } from '../store';
 import { AnimatedMoney, Icon, Modal, Money, MoneyInput, haptic, useToast } from '../components/ui';
-import { addMonths, currentMonth } from '../../../shared/months';
+import { addMonths, currentMonth, todayISO } from '../../../shared/months';
 
 export const CADENCE: Record<Recurring['cadence'], string> = { weekly: 'ukentlig', monthly: 'månedlig', quarterly: 'kvartalsvis', yearly: 'årlig' };
 
@@ -110,6 +110,10 @@ export function CategoryDetail({
   const [moving, setMoving] = useState(false);
   const [editingTarget, setEditingTarget] = useState(false);
   const [recent, setRecent] = useState<Transaction[] | null>(null);
+  const [history, setHistory] = useState<Array<{ month: string; spent: number; assigned: number | null }> | null>(null);
+  useEffect(() => {
+    api.get<typeof history>(`/categories/${cat.id}/history?month=${month}&months=6`).then(setHistory).catch(() => setHistory(null));
+  }, [cat.id, month, cat.activity, cat.assigned]);
 
   useEffect(() => {
     api.get<{ transactions: Transaction[] }>(`/transactions?category=${cat.id}&month=${month}&limit=5`).then((r) => setRecent(r.transactions));
@@ -190,6 +194,8 @@ export function CategoryDetail({
           <Icon name="calendar" size={16} /> {cat.target_type ? 'Endre mål' : 'Sett et mål'}
         </button>
       </div>
+
+      {history && history.some((h) => h.spent > 0 || h.assigned) && <CategoryHistory rows={history} current={month} />}
 
       <div>
         <div className="row" style={{ marginBottom: 4 }}>
@@ -372,7 +378,73 @@ export function TargetEditor({ cat, onClose, onSaved }: { cat: CategoryRow; onCl
   );
 }
 
+interface BillRow {
+  id: number;
+  name: string;
+  amount: number;
+  due: string;
+  category_name: string | null;
+  paid: { date: string; amount: number } | null;
+}
+
+/**
+ * Kommende regninger: your own Faste regninger when you have set them up (with whether they're paid), otherwise
+ * the regular payments found in the history.
+ */
 export function Upcoming({ items }: { items: Recurring[] }) {
+  const { version } = useStore();
+  const [bills, setBills] = useState<BillRow[] | null>(null);
+  useEffect(() => {
+    api
+      .get<{ bills: BillRow[] }>('/bills?light=1')
+      .then((d) => setBills(d.bills))
+      .catch(() => setBills([]));
+  }, [version]);
+  if (bills === null) return null;
+
+  if (bills.length > 0) {
+    const today = todayISO();
+    // Unpaid first, soonest first; paid ones after, so the list says what's still coming.
+    const sorted = [...bills].sort((a, b) => Number(!!a.paid) - Number(!!b.paid) || a.due.localeCompare(b.due)).slice(0, 8);
+    const left = bills.filter((b) => !b.paid);
+    return (
+      <div className="card" style={{ overflow: 'hidden' }}>
+        <div className="card-pad" style={{ paddingBottom: 8 }}>
+          <h3 style={{ marginBottom: 2 }}>Faste regninger</h3>
+          <div className="small muted">
+            {left.length ? (
+              <>
+                {left.length} igjen denne perioden · <Money value={-left.reduce((s, b) => s + b.amount, 0)} />
+              </>
+            ) : (
+              'Alt er betalt denne perioden ✓'
+            )}{' '}
+            ·{' '}
+            <Link to="/bills" style={{ color: 'var(--brand-text)', fontWeight: 600 }}>
+              Se alle →
+            </Link>
+          </div>
+        </div>
+        <div className="list">
+          {sorted.map((b) => (
+            <div key={b.id} className={`list-item ${b.paid ? 'bill-paid' : ''}`} style={{ padding: '9px 18px' }}>
+              <div className="grow">
+                <div className="ellipsis" style={{ fontWeight: 500 }}>
+                  {b.name}
+                </div>
+                <div className={`small ${b.paid ? 'good-text' : b.due < today ? 'warn-text' : 'faint'}`}>
+                  {b.paid ? `Betalt ${dayLabel(b.paid.date)}` : b.due < today ? `Ikke sett ennå (${dayLabel(b.due)})` : relativeDay(b.due)}
+                  {b.category_name ? <span className="faint"> · {b.category_name}</span> : null}
+                </div>
+              </div>
+              <Money value={-b.amount} />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   const soon = items.filter((r) => r.amount < 0).slice(0, 8);
   if (!soon.length) return null;
   const total = soon.reduce((s, r) => s + r.amount, 0);
@@ -383,7 +455,7 @@ export function Upcoming({ items }: { items: Recurring[] }) {
         <div className="small muted">
           Funnet automatisk i historikken · <Money value={total} /> ·{' '}
           <Link to="/bills" style={{ color: 'var(--brand-text)', fontWeight: 600 }}>
-            Faste regninger →
+            Legg dem inn som faste regninger →
           </Link>
         </div>
       </div>
@@ -622,5 +694,45 @@ export function WrapUp({ month, startMonth, onChanged }: { month: string; startM
         </div>
       )}
     </section>
+  );
+}
+
+/** Last six months for one category: bars for what was spent, a tick for what was assigned. */
+function CategoryHistory({ rows, current }: { rows: Array<{ month: string; spent: number; assigned: number | null }>; current: string }) {
+  const [hover, setHover] = useState<string | null>(null);
+  const max = Math.max(1, ...rows.map((r) => Math.max(r.spent, r.assigned ?? 0)));
+  const h = rows.find((r) => r.month === hover) ?? rows.find((r) => r.month === current)!;
+  const avg = Math.round(rows.filter((r) => r.month !== current).reduce((s, r) => s + r.spent, 0) / Math.max(1, rows.length - 1));
+  return (
+    <div className="cat-history">
+      <div className="row small" style={{ marginBottom: 6 }}>
+        <strong className="spacer">Siste 6 måneder</strong>
+        <span className="muted">
+          {monthLabel(h.month).split(' ')[0]}: brukt {kr(h.spent)}
+          {h.assigned !== null ? ` av ${kr(h.assigned)}` : ''}
+        </span>
+      </div>
+      <div className="ch-bars" role="img" aria-label={rows.map((r) => `${monthLabel(r.month)}: brukt ${kr(r.spent)}`).join(', ')}>
+        {rows.map((r) => (
+          <button
+            key={r.month}
+            className={`ch-col ${r.month === current ? 'current' : ''} ${hover === r.month ? 'on' : ''}`}
+            onMouseEnter={() => setHover(r.month)}
+            onMouseLeave={() => setHover(null)}
+            onClick={() => setHover(hover === r.month ? null : r.month)}
+            aria-label={`${monthLabel(r.month)}: brukt ${kr(r.spent)}${r.assigned !== null ? ` av ${kr(r.assigned)}` : ''}`}
+          >
+            <span className="ch-track">
+              <span className={`ch-bar ${r.assigned !== null && r.spent > r.assigned ? 'over' : ''}`} style={{ height: `${(r.spent / max) * 100}%` }} />
+              {r.assigned ? <span className="ch-tick" style={{ bottom: `${(r.assigned / max) * 100}%` }} /> : null}
+            </span>
+            <span className="ch-label">{monthLabel(r.month).slice(0, 3).toLowerCase()}</span>
+          </button>
+        ))}
+      </div>
+      <div className="small faint" style={{ marginTop: 4 }}>
+        Søylen er brukt, streken er fordelt · snitt før denne måneden {kr(avg)}
+      </div>
+    </div>
   );
 }

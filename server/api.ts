@@ -74,6 +74,25 @@ function shapeTxn(r: any) {
   return { ...rest, splits };
 }
 
+/** Deletes a transaction and what hangs off it. A transfer copy the app made goes too; a bank one is unlinked. */
+function deleteTransaction(db: DB, id: number) {
+  const t = get<any>(db, 'SELECT * FROM transactions WHERE id = ?', id);
+  if (!t) return;
+  if (t.transfer_id) {
+    const other = get<any>(db, 'SELECT * FROM transactions WHERE id = ?', t.transfer_id);
+    if (other?.source === 'transfer') {
+      run(db, 'DELETE FROM attachments WHERE transaction_id = ?', other.id);
+      run(db, 'DELETE FROM splits WHERE transaction_id = ?', other.id);
+      run(db, 'DELETE FROM transactions WHERE id = ?', other.id);
+    } else run(db, 'UPDATE transactions SET transfer_id = NULL, reviewed = 0 WHERE id = ?', t.transfer_id);
+  }
+  run(db, 'UPDATE transactions SET suggested_transfer_id = NULL WHERE suggested_transfer_id = ?', id);
+  forgetImport(db, id);
+  run(db, 'DELETE FROM attachments WHERE transaction_id = ?', id);
+  run(db, 'DELETE FROM splits WHERE transaction_id = ?', id);
+  run(db, 'DELETE FROM transactions WHERE id = ?', id);
+}
+
 /** After you categorise a payee once, update the other waiting transactions from the same payee. */
 function propagate(db: DB, payee: string, categoryId: number, amount: number) {
   run(
@@ -163,6 +182,44 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
     if (!(amount > 0)) badRequest('Beløpet må være større enn null');
     moveMoney(db, c.req.param('month'), from, to, amount);
     return c.json(getBudget(db, c.req.param('month')));
+  });
+
+  /** Spent and assigned for one category over the last months, for the little chart in the category panel. */
+  api.get('/categories/:id/history', (c) => {
+    const id = Number(c.req.param('id'));
+    const month = c.req.query('month') ?? currentMonth();
+    if (!MONTH.test(month)) badRequest('Måned må se slik ut: 2026-10');
+    const months = Math.min(12, Math.max(2, Number(c.req.query('months') ?? 6)));
+    const first = addMonths(month, -(months - 1));
+    const spent = new Map(
+      all<{ m: string; v: number }>(
+        db,
+        `SELECT substr(date, 1, 7) AS m, -SUM(amount) AS v FROM (
+           SELECT t.date, t.amount FROM transactions t JOIN accounts a ON a.id = t.account_id
+            WHERE a.on_budget = 1 AND t.category_id = ? AND NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id)
+           UNION ALL
+           SELECT t.date, s.amount FROM splits s JOIN transactions t ON t.id = s.transaction_id JOIN accounts a ON a.id = t.account_id
+            WHERE a.on_budget = 1 AND s.category_id = ?
+         ) WHERE date BETWEEN ? AND ? GROUP BY m`,
+        id,
+        id,
+        `${first}-01`,
+        `${month}-31`,
+      ).map((r) => [r.m, r.v]),
+    );
+    const assigned = new Map(
+      all<{ month: string; amount: number }>(db, 'SELECT month, amount FROM assignments WHERE category_id = ? AND month BETWEEN ? AND ?', id, first, month).map(
+        (r) => [r.month, r.amount],
+      ),
+    );
+    const start = budgetStart(db).slice(0, 7);
+    return c.json(
+      Array.from({ length: months }, (_, i) => {
+        const m = addMonths(first, i);
+        // Assigned before "Start på nytt" no longer counts, so it isn't shown either.
+        return { month: m, spent: Math.max(0, spent.get(m) ?? 0), assigned: m >= start ? assigned.get(m) ?? 0 : null };
+      }),
+    );
   });
 
   // ---------- Categories ----------
@@ -429,7 +486,8 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
   });
 
   // ---------- Faste regninger ----------
-  api.get('/bills', (c) => c.json(listBills(db)));
+  // ?light=1 skips the suggestions (the Budsjett page only needs the list).
+  api.get('/bills', (c) => c.json(listBills(db, undefined, { suggest: c.req.query('light') !== '1' })));
 
   api.post('/bills', async (c) => {
     const body = await c.req.json();
@@ -524,21 +582,39 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
   });
 
   api.delete('/transactions/:id', (c) => {
-    const id = Number(c.req.param('id'));
-    tx(db, () => {
-      const t = get<any>(db, 'SELECT * FROM transactions WHERE id = ?', id);
-      if (t?.transfer_id) {
-        const other = get<any>(db, 'SELECT * FROM transactions WHERE id = ?', t.transfer_id);
-        if (other?.source === 'transfer') run(db, 'DELETE FROM transactions WHERE id = ?', other.id);
-        else run(db, 'UPDATE transactions SET transfer_id = NULL, reviewed = 0 WHERE id = ?', t.transfer_id);
-      }
-      run(db, 'UPDATE transactions SET suggested_transfer_id = NULL WHERE suggested_transfer_id = ?', id);
-      forgetImport(db, id);
-      run(db, 'DELETE FROM attachments WHERE transaction_id = ?', id);
-      run(db, 'DELETE FROM splits WHERE transaction_id = ?', id);
-      run(db, 'DELETE FROM transactions WHERE id = ?', id);
-    });
+    tx(db, () => deleteTransaction(db, Number(c.req.param('id'))));
     return c.json({ ok: true });
+  });
+
+  /**
+   * Several transactions at once (Transaksjoner → Velg): give them a category, mark them as gone through, or delete
+   * them. Transfers are left alone when setting a category, since they don't belong in one.
+   */
+  api.post('/transactions/bulk', async (c) => {
+    const b = await c.req.json<{ ids: number[]; action: 'category' | 'reviewed' | 'delete'; category_id?: number | null }>();
+    // Cloudflare's SQLite allows at most 100 parameters per query, and each request should stay short.
+    const ids = [...new Set((b.ids ?? []).map(Number).filter((n) => Number.isInteger(n) && n > 0))].slice(0, 90);
+    if (!ids.length) badRequest('Velg minst én transaksjon');
+    let changed = 0;
+    let skipped = 0;
+    tx(db, () => {
+      for (const id of ids) {
+        const t = get<any>(db, 'SELECT id, transfer_id, payee, amount FROM transactions WHERE id = ?', id);
+        if (!t) continue;
+        if (b.action === 'delete') deleteTransaction(db, id);
+        else if (b.action === 'reviewed') run(db, 'UPDATE transactions SET reviewed = 1 WHERE id = ?', id);
+        else if (b.action === 'category') {
+          if (t.transfer_id) {
+            skipped++;
+            continue;
+          }
+          run(db, 'UPDATE transactions SET category_id = ?, reviewed = 1 WHERE id = ?', b.category_id ?? null, id);
+          run(db, 'DELETE FROM splits WHERE transaction_id = ?', id);
+        } else badRequest('Ukjent handling');
+        changed++;
+      }
+    });
+    return c.json({ changed, skipped });
   });
 
   /** "Looks good" for everything that has a suggestion. */
