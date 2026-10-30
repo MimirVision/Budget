@@ -32,6 +32,8 @@ const paths: Record<string, string> = {
   wallet: 'M20 7H5a2 2 0 010-4h13v4M3 5v14a2 2 0 002 2h15v-5M20 12h-4a2 2 0 000 4h4z',
   pie: 'M21.2 15.9A10 10 0 118 2.8M22 12A10 10 0 0012 2v10z',
   more: 'M5 12h.01M12 12h.01M19 12h.01',
+  sun: 'M12 17a5 5 0 100-10 5 5 0 000 10zM12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4',
+  moon: 'M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z',
   filter: 'M3 5h18M6 12h12M10 19h4',
   sparkle: 'M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z',
 };
@@ -184,16 +186,50 @@ export function Modal({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    // Don't let the page behind scroll while a sheet is open.
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = overflow;
+    };
   }, [onClose]);
+
+  // On phones the dialog is a bottom sheet: drag it down by its top to close it.
+  const [dy, setDy] = useState(0);
+  const startY = useRef<number | null>(null);
+  const grab = {
+    onPointerDown: (e: React.PointerEvent) => {
+      if (!window.matchMedia('(max-width: 860px)').matches || (e.target as HTMLElement).closest('button')) return;
+      startY.current = e.clientY;
+      e.currentTarget.setPointerCapture(e.pointerId);
+    },
+    onPointerMove: (e: React.PointerEvent) => {
+      if (startY.current !== null) setDy(Math.max(0, e.clientY - startY.current));
+    },
+    onPointerUp: () => {
+      if (startY.current === null) return;
+      startY.current = null;
+      if (dy > 90) onClose();
+      else setDy(0);
+    },
+  };
+
   return (
     <div className="modal-back" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true">
-        <div className="modal-head">
-          <h2>{title}</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Lukk">
-            <Icon name="close" />
-          </button>
+      <div
+        className={`modal ${wide ? 'wide' : ''} ${startY.current !== null ? 'dragging' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        style={dy ? { transform: `translateY(${dy}px)` } : undefined}
+      >
+        <div className="sheet-grab" {...grab} onPointerCancel={grab.onPointerUp}>
+          <div className="modal-head">
+            <h2>{title}</h2>
+            <button className="icon-btn" onClick={onClose} aria-label="Lukk">
+              <Icon name="close" />
+            </button>
+          </div>
         </div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-foot">{footer}</div>}

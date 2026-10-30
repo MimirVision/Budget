@@ -8,6 +8,18 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icon.svg" />
     <title>Budsjett</title>
+    <script>
+      // Apply the saved look before the app loads, so there's no flash of the wrong theme.
+      (function () {
+        var p = {};
+        try { p = JSON.parse(localStorage.getItem('budget.prefs') || '{}'); } catch (e) {}
+        var t = p.theme === 'light' || p.theme === 'dark' ? p.theme : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        var r = document.documentElement;
+        r.dataset.theme = t;
+        r.dataset.accent = p.accent || 'green';
+        r.dataset.density = p.density || 'comfortable';
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { useStore } from '../store';
 import { CategorySelect, Icon, useToast } from '../components/ui';
+import { ACCENTS, usePrefs, type Theme } from '../prefs';
 
 interface ProviderSettings {
   id: string;
@@ -30,15 +31,15 @@ interface Group {
   categories: Array<{ id: number; name: string; hidden: number }>;
 }
 
-const TABS = ['Kategorier', 'Regler', 'Banksynkronisering'] as const;
+const TABS = ['Utseende', 'Kategorier', 'Regler', 'Banksynkronisering'] as const;
 
 export default function SettingsPage() {
-  const [tab, setTab] = useState<(typeof TABS)[number]>('Kategorier');
+  const [tab, setTab] = useState<(typeof TABS)[number]>('Utseende');
   return (
     <>
       <div className="page-head">
         <h1>Innstillinger</h1>
-        <div className="seg">
+        <div className="seg settings-tabs">
           {TABS.map((t) => (
             <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
               {t}
@@ -46,6 +47,7 @@ export default function SettingsPage() {
           ))}
         </div>
       </div>
+      {tab === 'Utseende' && <Appearance />}
       {tab === 'Kategorier' && <Categories />}
       {tab === 'Regler' && <Rules />}
       {tab === 'Banksynkronisering' && <BankSync />}
@@ -479,6 +481,92 @@ function ProviderCard({ p, onSaved }: { p: ProviderSettings; onSaved: () => void
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function Appearance() {
+  const { prefs, set } = usePrefs();
+  const themes: Array<{ id: Theme; label: string; bg: string; fg: string; card: string }> = [
+    { id: 'system', label: 'Følg enheten', bg: 'linear-gradient(90deg, #f6f6f3 50%, #121412 50%)', fg: '#9a9a94', card: '#ffffff' },
+    { id: 'light', label: 'Lyst', bg: '#f6f6f3', fg: '#d6d6d0', card: '#ffffff' },
+    { id: 'dark', label: 'Mørkt', bg: '#121412', fg: '#3a3f3c', card: '#1a1d1b' },
+  ];
+  const Toggle = ({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) => (
+    <button role="switch" aria-checked={on} aria-label={label} className={`toggle ${on ? 'on' : ''}`} onClick={() => onChange(!on)} />
+  );
+  return (
+    <div className="stack">
+      <div className="card card-pad">
+        <h3>Tema</h3>
+        <div className="theme-preview">
+          {themes.map((t) => (
+            <button key={t.id} className={`theme-card ${prefs.theme === t.id ? 'on' : ''}`} onClick={() => set({ theme: t.id })} aria-pressed={prefs.theme === t.id}>
+              <div className="mock" style={{ background: t.bg }}>
+                <span style={{ background: 'var(--brand)', width: '60%' }} />
+                <span style={{ background: t.fg, width: '85%' }} />
+                <span style={{ background: t.fg, width: '45%' }} />
+              </div>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="card card-pad">
+        <h3>Aksentfarge</h3>
+        <div className="accent-swatches" role="radiogroup" aria-label="Aksentfarge">
+          {ACCENTS.map((a) => (
+            <button
+              key={a.id}
+              role="radio"
+              aria-checked={prefs.accent === a.id}
+              aria-label={a.label}
+              title={a.label}
+              className={`accent-swatch ${prefs.accent === a.id ? 'on' : ''}`}
+              style={{ background: a.color }}
+              onClick={() => set({ accent: a.id })}
+            >
+              {prefs.accent === a.id && <Icon name="check" size={18} />}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="card card-pad">
+        <h3 style={{ marginBottom: 0 }}>Visning</h3>
+        <div className="pref-row">
+          <div className="grow">
+            <strong>Kompakt</strong>
+            <div className="small muted">Mindre luft, mer på skjermen.</div>
+          </div>
+          <Toggle label="Kompakt visning" on={prefs.density === 'compact'} onChange={(v) => set({ density: v ? 'compact' : 'comfortable' })} />
+        </div>
+        <div className="pref-row">
+          <div className="grow">
+            <strong>Vis øre</strong>
+            <div className="small muted">Slå av for hele kroner: 1 235 kr i stedet for 1 234,56 kr.</div>
+          </div>
+          <Toggle label="Vis øre" on={prefs.showOre} onChange={(v) => set({ showOre: v })} />
+        </div>
+        <div className="pref-row">
+          <div className="grow">
+            <strong>Startside</strong>
+            <div className="small muted">Hva som vises når du åpner appen.</div>
+          </div>
+          <div className="seg">
+            <button className={prefs.start === 'budget' ? 'on' : ''} onClick={() => set({ start: 'budget' })}>
+              Budsjett
+            </button>
+            <button className={prefs.start === 'overview' ? 'on' : ''} onClick={() => set({ start: 'overview' })}>
+              Oversikt
+            </button>
+          </div>
+        </div>
+      </div>
+      <p className="small faint" style={{ margin: 0 }}>
+        Utseendet lagres på denne enheten, så telefonen og PC-en kan se forskjellige ut.
+      </p>
     </div>
   );
 }

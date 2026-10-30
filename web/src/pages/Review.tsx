@@ -5,6 +5,7 @@ import { dayLabel, kr } from '../format';
 import { useStore } from '../store';
 import { CategorySelect, Icon, Money, Skeleton, haptic, useToast } from '../components/ui';
 import { useIsMobile } from '../hooks';
+import { SyncNow } from '../components/controls';
 import { TransactionEditor } from '../components/TransactionEditor';
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -92,11 +93,14 @@ export default function ReviewPage() {
             {items.length ? `${items.length} ${items.length === 1 ? 'ny transaksjon' : 'nye transaksjoner'} fra bankene og importer` : 'Alt er gjennomgått'}
           </div>
         </div>
+        <div className="row" style={{ flexWrap: 'nowrap' }}>
+        <SyncNow compact />
         {withSuggestion > 0 && (
           <button className="btn primary" onClick={approveAll}>
-            <Icon name="check" size={16} /> Godkjenn {withSuggestion} {withSuggestion === 1 ? 'forslag' : 'forslag'}
+            <Icon name="check" size={16} /> {mobile ? `Godkjenn ${withSuggestion}` : `Godkjenn ${withSuggestion} forslag`}
           </button>
         )}
+        </div>
       </div>
 
       {startCount !== null && startCount > 0 && items.length > 0 && (

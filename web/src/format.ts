@@ -1,4 +1,11 @@
-const nok = new Intl.NumberFormat('nb-NO', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const withOre = new Intl.NumberFormat('nb-NO', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const wholeKroner = new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 0 });
+let nok = withOre;
+
+/** Innstillinger → Utseende: show øre, or round to whole kroner for a calmer look. */
+export function setShowOre(show: boolean) {
+  nok = show ? withOre : wholeKroner;
+}
 
 /** 123456 øre → "1 234,56 kr" (drops ",00"). */
 export function kr(ore: number, opts: { sign?: boolean } = {}): string {

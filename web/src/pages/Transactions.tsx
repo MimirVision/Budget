@@ -88,7 +88,11 @@ export default function TransactionsPage() {
             )}
           </div>
         </div>
-        {!mobile && (
+        {mobile ? (
+          <button className="icon-btn" onClick={() => setEditing('new')} aria-label="Legg til manuelt" title="Legg til manuelt">
+            <Icon name="plus" />
+          </button>
+        ) : (
         <button className="btn primary" onClick={() => setEditing('new')}>
           <Icon name="plus" size={16} /> Ny transaksjon
         </button>
