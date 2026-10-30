@@ -44,7 +44,7 @@ export interface Provider {
   /** Which settings keys are needed, with friendly labels for the setup form. */
   settings: Array<{ key: string; label: string; secret?: boolean; multiline?: boolean; help?: string }>;
   isConfigured(db: DB): boolean;
-  listBanks?(db: DB): Promise<Bank[]>;
+  listBanks?(db: DB, country?: string): Promise<Bank[]>;
   start(db: DB, opts: { bankId?: string; redirectUrl: string; state: string }): Promise<StartResult>;
   complete(
     db: DB,

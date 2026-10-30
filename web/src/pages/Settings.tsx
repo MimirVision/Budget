@@ -381,7 +381,7 @@ const SETUP_STEPS: Record<string, (callback: string) => React.ReactNode> = {
         Legg inn denne som redirect-URL: <code style={{ userSelect: 'all' }}>{callback}</code>
       </li>
       <li>Aktiver applikasjonen ved å koble til egne kontoer (begrenset modus). Du trenger verken firma eller avtale.</li>
-      <li>Lim inn applikasjons-ID-en og innholdet i .pem-filen under.</li>
+      <li>Lim inn applikasjons-ID-en under, og velg .pem-filen med «Velg nøkkelfil».</li>
     </ol>
   ),
   sparebank1: (callback) => (
@@ -435,14 +435,32 @@ function ProviderCard({ p, onSaved }: { p: ProviderSettings; onSaved: () => void
               {s.label}
               {s.help && <span className="help">{s.help}</span>}
               {s.multiline ? (
-                <textarea
-                  className="input"
-                  rows={4}
-                  style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12 }}
-                  placeholder={s.isSet ? '•••••• lagret. Lim inn en ny for å bytte' : '-----BEGIN PRIVATE KEY-----'}
-                  value={values[s.key]}
-                  onChange={(e) => setValues({ ...values, [s.key]: e.target.value })}
-                />
+                <>
+                  {/* On a phone it's much easier to pick the downloaded .pem file than to copy its text. */}
+                  <label className="btn sm" style={{ alignSelf: 'flex-start' }}>
+                    <Icon name="upload" size={14} /> Velg nøkkelfil (.pem)
+                    <input
+                      type="file"
+                      hidden
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const text = await file.text();
+                        if (!text.includes('PRIVATE KEY')) return toast('Det ser ikke ut som en privat nøkkel (.pem)', { error: true });
+                        setValues((v) => ({ ...v, [s.key]: text.trim() }));
+                        toast(`Nøkkel lest fra ${file.name}. Trykk Lagre.`);
+                      }}
+                    />
+                  </label>
+                  <textarea
+                    className="input"
+                    rows={4}
+                    style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12 }}
+                    placeholder={s.isSet ? '•••••• lagret. Velg en ny fil eller lim inn for å bytte' : 'eller lim inn: -----BEGIN PRIVATE KEY-----'}
+                    value={values[s.key]}
+                    onChange={(e) => setValues({ ...values, [s.key]: e.target.value })}
+                  />
+                </>
               ) : (
                 <input
                   className="input"
