@@ -98,6 +98,7 @@ export function CategoryDetail({
   rta,
   onAssign,
   onChanged,
+  readOnly,
 }: {
   cat: CategoryRow;
   month: string;
@@ -105,6 +106,8 @@ export function CategoryDetail({
   rta: number;
   onAssign: (amount: number) => void;
   onChanged: () => Promise<void> | void;
+  /** A month before "Start på nytt": shown, but not changeable. */
+  readOnly?: boolean;
 }) {
   const navigate = useNavigate();
   const toast = useToast();
@@ -149,11 +152,11 @@ export function CategoryDetail({
 
       <label className="field">
         Fordelt i {monthLabel(month).toLowerCase()}
-        <MoneyInput value={cat.assigned} onCommit={assign} className="input big-input" ariaLabel={`Fordelt til ${cat.name}`} />
+        <MoneyInput value={cat.assigned} onCommit={assign} className="input big-input" ariaLabel={`Fordelt til ${cat.name}`} disabled={readOnly} />
       </label>
       <div className="chips">
         {quick.map((q) => (
-          <button key={q.label} className="chip-btn" onClick={() => assign(q.value)}>
+          <button key={q.label} className="chip-btn" onClick={() => assign(q.value)} disabled={readOnly}>
             {q.label}
             {q.hint && <span className="faint"> {q.hint}</span>}
           </button>

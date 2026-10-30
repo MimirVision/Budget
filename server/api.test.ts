@@ -111,3 +111,18 @@ describe('category history', () => {
     ]);
   });
 });
+
+describe('assigning before a fresh start', () => {
+  it('is refused, since it would not count', async () => {
+    const { app, db } = setup();
+    run(db, "INSERT INTO settings(key, value) VALUES ('budget_start', '2026-11-01')");
+    const cat = get<{ id: number }>(db, "SELECT id FROM categories WHERE name = 'Dagligvarer'")!.id;
+    const put = (month: string) =>
+      app.request(`/api/budget/${month}/${cat}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: 50000 }) });
+    expect((await put('2026-10')).status).toBe(400);
+    const ok = await put('2026-11');
+    expect(ok.status).toBe(200);
+    const b = await ok.json();
+    expect(b.groups.flatMap((g: any) => g.categories).find((c: any) => c.id === cat).assigned).toBe(50000);
+  });
+});

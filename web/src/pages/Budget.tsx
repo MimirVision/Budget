@@ -2,7 +2,7 @@
  * Budsjett: where you manage the money. Give every krone a job, see what's left in each category, fix overspending.
  * Desktop: a dense table with a detail panel on the right. Phone: tappable cards with a bottom sheet.
  */
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, type BudgetMonth, type CategoryRow, type Recurring } from '../api';
 import { kr, monthLabel } from '../format';
@@ -34,8 +34,22 @@ export default function BudgetPage() {
   const { summary, refresh, version } = useStore();
   const mobile = useIsMobile();
   const toast = useToast();
+  // Before "Start på nytt" the months are history: what's assigned there no longer counts, so it can't be edited.
+  const startIso = useStore().summary?.budgetStart ?? null;
+  const readOnly = !!startIso && month < startIso.slice(0, 7);
+  const startLabel = startIso ? monthLabel(startIso.slice(0, 7)).split(' ')[0].toLowerCase() : '';
 
-  const load = useCallback(() => api.get<BudgetMonth>(`/budget/${month}`).then(setBudget), [month]);
+  // Every request that brings back the whole budget gets a number; only the newest one may update the screen.
+  // Otherwise a slow, older reply (from an earlier field, or a reload after a sync) can land last and make
+  // what you just typed in "Fordelt" disappear.
+  const seq = useRef(0);
+  const apply = useCallback((n: number, b: BudgetMonth) => {
+    if (n === seq.current) setBudget(b);
+  }, []);
+  const load = useCallback(() => {
+    const n = ++seq.current;
+    return api.get<BudgetMonth>(`/budget/${month}`).then((b) => apply(n, b));
+  }, [month, apply]);
   useEffect(() => {
     load();
   }, [load, version]);
@@ -44,14 +58,48 @@ export default function BudgetPage() {
   }, [version]);
 
   const assign = async (categoryId: number, amount: number) => {
-    setBudget(await api.put<BudgetMonth>(`/budget/${month}/${categoryId}`, { amount }));
-    refresh();
+    if (readOnly) {
+      toast(`Måneder før ${startLabel} er historikk og kan ikke endres. Fordel i ${startLabel} eller senere.`, { error: true });
+      return;
+    }
+    // Show the new number at once, and keep it there while it saves.
+    setBudget((b) => {
+      if (!b) return b;
+      const old = b.groups.flatMap((g) => g.categories).find((c) => c.id === categoryId);
+      if (!old) return b;
+      const diff = amount - old.assigned;
+      return {
+        ...b,
+        readyToAssign: b.readyToAssign - diff,
+        assigned: b.assigned + diff,
+        available: b.available + diff,
+        groups: b.groups.map((g) => ({
+          ...g,
+          categories: g.categories.map((c) => (c.id === categoryId ? { ...c, assigned: amount, available: c.available + diff } : c)),
+        })),
+      };
+    });
+    const n = ++seq.current;
+    try {
+      apply(n, await api.put<BudgetMonth>(`/budget/${month}/${categoryId}`, { amount }));
+      refresh();
+    } catch (e: any) {
+      toast(`Kunne ikke lagre beløpet: ${e.message}. Prøv igjen.`, { error: true });
+      load();
+    }
   };
 
   const auto = async (mode: string, label: string) => {
     const before = budget;
-    const r = await api.post<{ assigned: number; budget: BudgetMonth }>(`/budget/${month}/auto`, { mode });
-    setBudget(r.budget);
+    const n = ++seq.current;
+    let r: { assigned: number; budget: BudgetMonth };
+    try {
+      r = await api.post<{ assigned: number; budget: BudgetMonth }>(`/budget/${month}/auto`, { mode });
+    } catch (e: any) {
+      toast(e.message, { error: true });
+      return;
+    }
+    apply(n, r.budget);
     setAutoOpen(false);
     refresh();
     haptic();
@@ -123,6 +171,7 @@ export default function BudgetPage() {
       all={all}
       rta={budget.readyToAssign}
       onAssign={(a) => assign(current.id, a)}
+      readOnly={readOnly}
       onChanged={async () => {
         await load();
         refresh();
@@ -227,6 +276,7 @@ export default function BudgetPage() {
                               selected={selected === c.id}
                               onSelect={() => setSelected(c.id === selected ? null : c.id)}
                               onAssign={(a) => assign(c.id, a)}
+                              readOnly={readOnly}
                             />
                           ))}
                       </GroupRows>
@@ -403,12 +453,14 @@ function CategoryLine({
   selected,
   onSelect,
   onAssign,
+  readOnly,
 }: {
   c: CategoryRow;
   pace: number;
   selected: boolean;
   onSelect: () => void;
   onAssign: (amount: number) => void;
+  readOnly?: boolean;
 }) {
   const sub = subtitle(c, pace);
   return (
@@ -421,7 +473,13 @@ function CategoryLine({
         <UsageBar c={c} pace={pace} />
       </td>
       <td onClick={(e) => e.stopPropagation()}>
-        <MoneyInput className="assign-input" value={c.assigned} onCommit={(v) => (haptic(), onAssign(v))} ariaLabel={`Fordelt til ${c.name}`} />
+        <MoneyInput
+          className="assign-input"
+          value={c.assigned}
+          onCommit={(v) => (haptic(), onAssign(v))}
+          ariaLabel={`Fordelt til ${c.name}`}
+          disabled={readOnly}
+        />
       </td>
       <td className="num muted">{c.activity ? kr(c.activity) : '–'}</td>
       <td>
