@@ -44,6 +44,8 @@ function kindFromName(name = ''): 'checking' | 'savings' | 'credit' {
 export const enableBanking: Provider = {
   id: 'enablebanking',
   label: 'Enable Banking',
+  // Same as SpareBank 1: the bank returns to the app's front page, which forwards to the API. One URL to register.
+  redirectPath: '/',
   description: 'Kobler til DNB, SpareBank 1, Revolut og de fleste norske og europeiske banker med BankID.',
   settings: [
     { key: 'enablebanking_app_id', label: 'Applikasjons-ID', help: 'Fra kontrollpanelet hos Enable Banking → Applications.' },
