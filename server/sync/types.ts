@@ -39,6 +39,8 @@ export interface Provider {
   id: string;
   label: string;
   description: string;
+  /** Where the bank sends you back after BankID, relative to the app address. Defaults to /api/connections/callback/<id>. */
+  redirectPath?: string;
   /** Which settings keys are needed, with friendly labels for the setup form. */
   settings: Array<{ key: string; label: string; secret?: boolean; multiline?: boolean; help?: string }>;
   isConfigured(db: DB): boolean;
@@ -46,7 +48,7 @@ export interface Provider {
   start(db: DB, opts: { bankId?: string; redirectUrl: string; state: string }): Promise<StartResult>;
   complete(
     db: DB,
-    opts: { code: string; redirectUrl: string; pending: Record<string, any> },
+    opts: { code: string; state: string; redirectUrl: string; pending: Record<string, any> },
   ): Promise<CompleteResult>;
   fetch(
     db: DB,

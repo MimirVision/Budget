@@ -18,7 +18,12 @@ export function getProvider(id: string): Provider {
 }
 
 export const callbackUrl = (publicUrl: string, providerId: string) =>
-  `${publicUrl.replace(/\/$/, '')}/api/connections/callback/${providerId}`;
+  `${publicUrl.replace(/\/$/, '')}${getProvider(providerId).redirectPath ?? `/api/connections/callback/${providerId}`}`;
+
+/** Which provider a BankID round trip belongs to, for banks that return to the app's front page. */
+export function providerForState(db: DB, state: string): string | undefined {
+  return get<{ provider: string }>(db, 'SELECT provider FROM pending_auth WHERE state = ?', state)?.provider;
+}
 
 export async function startConnection(
   db: DB,
@@ -50,7 +55,7 @@ export async function completeConnection(db: DB, providerId: string, code: strin
   run(db, 'DELETE FROM pending_auth WHERE state = ?', state);
   const pendingData = JSON.parse(pending.data);
   const provider = getProvider(providerId);
-  const result = await provider.complete(db, { code, redirectUrl: callbackUrl(publicUrl, providerId), pending: pendingData });
+  const result = await provider.complete(db, { code, state, redirectUrl: callbackUrl(publicUrl, providerId), pending: pendingData });
 
   return tx(db, () => {
     let id: number = pendingData.reconnectId;

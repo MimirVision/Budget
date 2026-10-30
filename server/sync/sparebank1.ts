@@ -1,7 +1,7 @@
 /**
  * SpareBank 1 "Personlig klient" — SpareBank 1's own free API for reading your own accounts.
- * Register at https://developer.sparebank1.no (Personlig klient), set the redirect URL to
- * <PUBLIC_URL>/api/connections/callback/sparebank1, and paste client ID, secret and your bank's
+ * Register at https://developer.sparebank1.no (Personlig klient), set the redirect URL to the app's address
+ * (<PUBLIC_URL>/), and paste client ID, secret and your bank's
  * finInst ID (listed on the same page, e.g. "fid-smn") into Settings.
  *
  * Access tokens last 10 minutes; the refresh token lasts 30 days and is renewed every sync, so as long as
@@ -16,7 +16,8 @@ const API = 'https://api.sparebank1.no';
 const ACCEPT = 'application/vnd.sparebank1.v1+json; charset=utf-8';
 
 async function token(db: DB, form: Record<string, string>) {
-  const res = await fetch(`${AUTH}/oauth/token`, {
+  // Authorisation happens on api-auth, but the token endpoint lives on the API host (per SpareBank 1's docs).
+  const res = await fetch(`${API}/oauth/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -67,6 +68,8 @@ function num(v: any): number {
 export const sparebank1: Provider = {
   id: 'sparebank1',
   label: 'SpareBank 1 (direkte)',
+  // SpareBank 1 clients are registered with the app's front page as redirect URL; the web app forwards it to the API.
+  redirectPath: '/',
   description: 'SpareBank 1 sitt eget gratis API. Fungerer bare for SpareBank 1-banker, som SpareBank 1 Sør-Norge.',
   settings: [
     { key: 'sparebank1_client_id', label: 'Klient-ID', help: 'Fra developer.sparebank1.no → Personlig klient.' },
@@ -92,9 +95,8 @@ export const sparebank1: Provider = {
     return { url: `${AUTH}/oauth/authorize?${qs}` };
   },
 
-  async complete(db, { code, redirectUrl }) {
-    // Their sample code names the field redirect_url; standard OAuth says redirect_uri. Send both.
-    const t = await token(db, { grant_type: 'authorization_code', code, redirect_uri: redirectUrl, redirect_url: redirectUrl });
+  async complete(db, { code, state, redirectUrl }) {
+    const t = await token(db, { grant_type: 'authorization_code', code, state, redirect_uri: redirectUrl });
     const json = await api('/personal/banking/accounts', t.access_token);
     const list: any[] = json.accounts ?? json.list ?? (Array.isArray(json) ? json : []);
     return {
