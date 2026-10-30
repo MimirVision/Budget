@@ -49,13 +49,13 @@ const MERCHANTS: Array<{ re: RegExp; name: string; category?: string; generic?: 
   // Groceries
   { re: /rema\s*1000/i, name: 'Rema 1000', category: 'Dagligvarer' },
   { re: /\bkiwi\b/i, name: 'Kiwi', category: 'Dagligvarer' },
-  { re: /coop\s*extra|\bextra\b/i, name: 'Coop Extra', category: 'Dagligvarer' },
+  { re: /coop\s*extra|^extra\s+\S/i, name: 'Coop Extra', category: 'Dagligvarer' },
   { re: /coop\s*mega/i, name: 'Coop Mega', category: 'Dagligvarer' },
   { re: /coop\s*prix/i, name: 'Coop Prix', category: 'Dagligvarer' },
-  { re: /coop\s*obs|\bobs\b(?!\s*bygg)/i, name: 'Obs', category: 'Dagligvarer' },
+  { re: /coop\s*obs|^obs\s+(?!bygg)\S/i, name: 'Obs', category: 'Dagligvarer' },
   { re: /\bcoop\b/i, name: 'Coop', category: 'Dagligvarer' },
   { re: /\bmeny\b/i, name: 'Meny', category: 'Dagligvarer' },
-  { re: /\bspar\b/i, name: 'Spar', category: 'Dagligvarer' },
+  { re: /eurospar|^spar\s+(?!til\b|konto\b)\S/i, name: 'Spar', category: 'Dagligvarer' },
   { re: /\bjoker\b/i, name: 'Joker', category: 'Dagligvarer' },
   { re: /bunnpris/i, name: 'Bunnpris', category: 'Dagligvarer' },
   { re: /oda\.com|\boda\b/i, name: 'Oda', category: 'Dagligvarer' },
@@ -90,7 +90,7 @@ const MERCHANTS: Array<{ re: RegExp; name: string; category?: string; generic?: 
   { re: /vitusapotek/i, name: 'Vitusapotek', category: 'Hus og apotek' },
   { re: /boots\s*apotek/i, name: 'Boots Apotek', category: 'Hus og apotek' },
   { re: /europris/i, name: 'Europris', category: 'Hus og apotek' },
-  { re: /\bnormal\b/i, name: 'Normal', category: 'Hus og apotek' },
+  { re: /^normal\s+\S/i, name: 'Normal', category: 'Hus og apotek' },
   { re: /clas\s*ohlson/i, name: 'Clas Ohlson', category: 'Hus og apotek' },
   { re: /\bikea\b/i, name: 'IKEA', category: 'Hus og apotek' },
   { re: /\bjysk\b/i, name: 'Jysk', category: 'Hus og apotek' },
@@ -159,8 +159,15 @@ export function stripNoise(raw: string): string {
   return s.replace(/[*:#]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+// Money moving between accounts is never a shop, even if it mentions one ("Overføring til spar").
+const TRANSFER_TEXT = /overføring|overfør|transfer|innbetaling|egen konto|own account/i;
+
 export function matchMerchant(raw: string): { name: string; category?: string; generic?: boolean } | undefined {
-  const m = MERCHANTS.find((x) => x.re.test(raw));
+  if (TRANSFER_TEXT.test(raw)) return undefined;
+  // Short words like "Spar" or "Extra" only count as the shop when they lead the cleaned-up text
+  // ("VISA VARE *1234 SPAR KVADRATUREN" → "SPAR KVADRATUREN"), so ordinary words don't trigger them.
+  const cleaned = stripNoise(raw);
+  const m = MERCHANTS.find((x) => x.re.test(raw) || x.re.test(cleaned));
   return m && { name: m.name, category: m.category, generic: m.generic };
 }
 

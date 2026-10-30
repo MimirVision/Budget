@@ -4,7 +4,7 @@
  */
 import { all, type DB } from './db.ts';
 import { budgetStart } from './budget.ts';
-import { addMonths, daysInMonth } from '../shared/months.ts';
+import { addMonths, daysInMonth, todayISO } from '../shared/months.ts';
 
 export interface Overview {
   from: string;
@@ -143,9 +143,9 @@ export function overview(db: DB, month: string, span: number): Overview {
       );
     const cur = perDay(from, to);
     const before = perDay(prevFrom, prevTo);
-    const today = new Date();
-    const thisMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-    const lastDay = month === thisMonth ? today.getDate() : month > thisMonth ? 0 : daysInMonth(month);
+    const today = todayISO();
+    const thisMonth = today.slice(0, 7);
+    const lastDay = month === thisMonth ? Number(today.slice(8, 10)) : month > thisMonth ? 0 : daysInMonth(month);
     const prevDays = daysInMonth(prevStart);
     let cum = 0;
     let prevCum = 0;

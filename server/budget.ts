@@ -80,6 +80,89 @@ function assignedBy(db: DB, where: string, ...params: any[]): Map<number, number
 
 const endOf = (month: string) => `${month}-31`;
 
+/**
+ * What happens to overspending when a month ends (Innstillinger → Budsjett):
+ * - 'carry' (default): the category stays negative into the next month until you cover it.
+ * - 'reset' (like YNAB): the category starts the new month at 0, and the overspent amount is taken
+ *   from that month's "Klar til fordeling" instead.
+ */
+export type OverspendMode = 'carry' | 'reset';
+export function overspendMode(db: DB): OverspendMode {
+  return getSetting(db, 'overspending') === 'reset' ? 'reset' : 'carry';
+}
+
+/** Per category: month → assigned + activity for that month, from the budget start up to `untilMonth`. */
+function monthlyNet(db: DB, untilMonth: string): Map<number, Map<string, number>> {
+  const start = budgetStart(db);
+  const out = new Map<number, Map<string, number>>();
+  const add = (cat: number, month: string, v: number) => {
+    if (!out.has(cat)) out.set(cat, new Map());
+    const m = out.get(cat)!;
+    m.set(month, (m.get(month) ?? 0) + v);
+  };
+  for (const r of all<{ category_id: number; month: string; total: number }>(
+    db,
+    `SELECT category_id, month, SUM(amount) AS total FROM assignments WHERE month >= ? AND month <= ? GROUP BY category_id, month`,
+    start.slice(0, 7),
+    untilMonth,
+  ))
+    add(r.category_id, r.month, r.total);
+  for (const r of all<{ category_id: number; month: string; total: number }>(
+    db,
+    `SELECT category_id, substr(date, 1, 7) AS month, SUM(amount) AS total FROM (
+       SELECT t.category_id, t.amount, t.date FROM transactions t JOIN accounts a ON a.id = t.account_id
+        WHERE a.on_budget = 1 AND t.category_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id)
+       UNION ALL
+       SELECT s.category_id, s.amount, t.date FROM splits s
+         JOIN transactions t ON t.id = s.transaction_id JOIN accounts a ON a.id = t.account_id
+        WHERE a.on_budget = 1 AND s.category_id IS NOT NULL
+     ) WHERE date >= ? AND date <= ? GROUP BY category_id, month`,
+    start,
+    endOf(untilMonth),
+  ))
+    add(r.category_id, r.month, r.total);
+  return out;
+}
+
+/**
+ * Walks a category month by month in 'reset' mode: only money left over carries forward; a negative end
+ * of month is written off (and reported as overspending, which comes out of "Klar til fordeling").
+ */
+function walkReset(byMonth: Map<string, number> | undefined, untilMonth: string) {
+  const months = [...(byMonth?.keys() ?? [])].filter((m) => m <= untilMonth).sort();
+  let balance = 0;
+  let last: string | null = null;
+  const overspent = new Map<string, number>();
+  for (const m of months) {
+    if (last !== null && balance < 0) overspent.set(last, -balance);
+    // Months with nothing happening in between still reset the balance.
+    balance = Math.max(0, balance) + (byMonth!.get(m) ?? 0);
+    last = m;
+  }
+  if (last !== null && last < untilMonth && balance < 0) {
+    overspent.set(last, -balance);
+    balance = 0;
+  }
+  return { available: last !== null && last < untilMonth ? Math.max(0, balance) : balance, overspent };
+}
+
+/** Overspending from finished months in 'reset' mode: it has been taken out of "Klar til fordeling". */
+function writtenOffOverspending(db: DB): number {
+  if (overspendMode(db) !== 'reset') return 0;
+  const lastFinished = addMonths(currentMonth(), -1);
+  const spendingCats = new Set(
+    all<{ id: number }>(db, 'SELECT c.id FROM categories c JOIN category_groups g ON g.id = c.group_id WHERE g.is_income = 0').map((c) => c.id),
+  );
+  let total = 0;
+  for (const [cat, byMonth] of monthlyNet(db, lastFinished)) {
+    if (!spendingCats.has(cat)) continue;
+    const { overspent } = walkReset(byMonth, currentMonth());
+    for (const [m, v] of overspent) if (m <= lastFinished) total += v;
+  }
+  return total;
+}
+
 export function readyToAssign(db: DB): number {
   const income = get<{ total: number }>(
     db,
@@ -101,7 +184,7 @@ export function readyToAssign(db: DB): number {
        JOIN categories c ON c.id = a.category_id JOIN category_groups g ON g.id = c.group_id WHERE g.is_income = 0 AND a.month >= ?`,
     budgetStart(db).slice(0, 7),
   )!.total;
-  return income - assigned;
+  return income - assigned - writtenOffOverspending(db);
 }
 
 export function computeNeeded(
@@ -145,6 +228,7 @@ export function getBudget(db: DB, month: string): BudgetMonth {
   const activityCum = activityBy(db, 'date <= ?', endOf(month));
   const lastActivity = activityBy(db, 'date BETWEEN ? AND ?', `${prev}-01`, endOf(prev));
   const threeMonths = activityBy(db, 'date BETWEEN ? AND ?', `${addMonths(month, -3)}-01`, endOf(prev));
+  const reset = overspendMode(db) === 'reset' ? monthlyNet(db, month) : null;
 
   let totalAssigned = 0;
   let totalActivity = 0;
@@ -162,7 +246,7 @@ export function getBudget(db: DB, month: string): BudgetMonth {
       note: c.note,
       assigned: assigned.get(c.id) ?? 0,
       activity: activity.get(c.id) ?? 0,
-      available: (assignedCum.get(c.id) ?? 0) + (activityCum.get(c.id) ?? 0),
+      available: reset ? walkReset(reset.get(c.id), month).available : (assignedCum.get(c.id) ?? 0) + (activityCum.get(c.id) ?? 0),
       lastMonthAssigned: lastAssigned.get(c.id) ?? 0,
       lastMonthActivity: lastActivity.get(c.id) ?? 0,
       avgActivity: Math.round((threeMonths.get(c.id) ?? 0) / 3),

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { api, type Split, type Transaction } from '../api';
+import { useEffect, useRef, useState } from 'react';
+import { api, type Attachment, type Split, type Transaction } from '../api';
 import { kr } from '../format';
 import { useStore } from '../store';
 import { CategorySelect, Icon, Modal, MoneyInput, useToast } from './ui';
@@ -228,8 +228,112 @@ export function TransactionEditor({
 
       <label className="field">
         Notat
-        <input className="input" value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="Valgfritt" />
+        <textarea
+          className="input note-input"
+          rows={2}
+          value={memo}
+          onChange={(e) => setMemo(e.target.value)}
+          placeholder="F.eks. hva det var, hvem det gjaldt, garanti til 2028"
+        />
       </label>
+      {txn ? (
+        <Attachments txnId={txn.id} />
+      ) : (
+        <p className="muted small-print">Du kan legge ved kvittering når transaksjonen er lagret.</p>
+      )}
     </Modal>
+  );
+}
+
+/** Shrinks photos so they fit comfortably (receipts stay readable at 1600 px). PDFs and small files pass through. */
+async function prepare(file: File): Promise<{ blob: Blob; name: string }> {
+  if (!file.type.startsWith('image/') || file.type === 'image/gif' || file.size < 400_000) return { blob: file, name: file.name };
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.82));
+    if (!blob) return { blob: file, name: file.name };
+    return { blob, name: file.name.replace(/\.[^.]+$/, '') + '.jpg' };
+  } catch {
+    return { blob: file, name: file.name };
+  }
+}
+
+function sizeLabel(bytes: number) {
+  return bytes < 1_000_000 ? `${Math.max(1, Math.round(bytes / 1000))} kB` : `${(bytes / 1_000_000).toFixed(1).replace('.', ',')} MB`;
+}
+
+function Attachments({ txnId }: { txnId: number }) {
+  const [items, setItems] = useState<Attachment[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const toast = useToast();
+
+  useEffect(() => {
+    api.get<Attachment[]>(`/transactions/${txnId}/attachments`).then(setItems).catch(() => setItems([]));
+  }, [txnId]);
+
+  const add = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setBusy(true);
+    try {
+      for (const f of Array.from(files)) {
+        const { blob, name } = await prepare(f);
+        const a = await api.upload<Attachment>(`/transactions/${txnId}/attachments`, blob, name);
+        setItems((xs) => [...(xs ?? []), a]);
+      }
+    } catch (e: any) {
+      toast(e.message, { error: true });
+    } finally {
+      setBusy(false);
+      if (input.current) input.current.value = '';
+    }
+  };
+
+  const remove = async (a: Attachment) => {
+    if (!confirm(`Fjerne ${a.name}?`)) return;
+    await api.del(`/attachments/${a.id}`);
+    setItems((xs) => (xs ?? []).filter((x) => x.id !== a.id));
+  };
+
+  return (
+    <div className="field">
+      Vedlegg
+      <div className="attachments">
+        {items?.map((a) => (
+          <div key={a.id} className="attachment">
+            <a href={`/api/attachments/${a.id}`} target="_blank" rel="noreferrer" className="attachment-link">
+              {a.mime.startsWith('image/') ? (
+                <img src={`/api/attachments/${a.id}`} alt="" loading="lazy" />
+              ) : (
+                <span className="attachment-icon">PDF</span>
+              )}
+              <span className="attachment-meta">
+                <span className="attachment-name">{a.name}</span>
+                <span className="muted">{sizeLabel(a.size)}</span>
+              </span>
+            </a>
+            <button className="icon-btn" onClick={() => remove(a)} aria-label={`Fjern ${a.name}`}>
+              <Icon name="trash" size={16} />
+            </button>
+          </div>
+        ))}
+        <button className="btn sm" disabled={busy} onClick={() => input.current?.click()}>
+          <Icon name="clip" size={16} /> {busy ? 'Laster opp …' : 'Legg ved kvittering'}
+        </button>
+        <input
+          ref={input}
+          type="file"
+          accept="image/*,application/pdf"
+          multiple
+          hidden
+          onChange={(e) => add(e.target.files)}
+        />
+      </div>
+    </div>
   );
 }

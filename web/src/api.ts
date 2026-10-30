@@ -27,6 +27,7 @@ export interface Summary {
   readyToAssign: number;
   /** First day of the budget after "Start på nytt", or null. */
   budgetStart: string | null;
+  overspending: 'carry' | 'reset';
   unreviewed: number;
   accounts: Account[];
   attention: Array<{ id: number; name: string; provider: string; status: string; expires_at: string | null; last_error: string | null }>;
@@ -98,6 +99,7 @@ export interface Transaction {
   reviewed: number;
   source: string;
   splits: Split[];
+  attachment_count?: number;
 }
 
 export interface Recurring {
@@ -148,4 +150,24 @@ export const api = {
   put: <T>(path: string, body: unknown) => request<T>('PUT', path, body),
   patch: <T>(path: string, body: unknown) => request<T>('PATCH', path, body),
   del: <T>(path: string) => request<T>('DELETE', path),
+  /** Sends a file as the raw request body. */
+  upload: async <T>(path: string, file: Blob, name: string): Promise<T> => {
+    const res = await fetch(`/api${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': file.type, 'X-File-Name': encodeURIComponent(name) },
+      body: file,
+      credentials: 'same-origin',
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new ApiError(json.error ?? `Opplastingen feilet (${res.status})`, res.status);
+    return json as T;
+  },
 };
+
+export interface Attachment {
+  id: number;
+  name: string;
+  mime: string;
+  size: number;
+  created_at: string;
+}

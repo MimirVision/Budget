@@ -1,14 +1,15 @@
 import { Hono } from 'hono';
 import { all, get, getSetting, run, setSetting, tx, type DB } from './db.ts';
-import { autoAssign, budgetStart, getBudget, moveMoney, readyToAssign, setAssigned, type AutoAssignMode } from './budget.ts';
+import { autoAssign, budgetStart, overspendMode, getBudget, moveMoney, readyToAssign, setAssigned, type AutoAssignMode } from './budget.ts';
 import { applyFreshStart, previewFreshStart, undoFreshStart } from './freshstart.ts';
-import { ingest, linkTransfer, ruleMatches, transferToAccount, unlinkTransfer, withImportHashes } from './ingest.ts';
+import { ingest, linkTransfer, rejectTransferSuggestion, ruleMatches, transferToAccount, unlinkTransfer, withImportHashes } from './ingest.ts';
 import { previewCsv, type CsvMapping } from './import/csv.ts';
 import { overview } from './overview.ts';
 import { cashflowReport, detectRecurring, netWorthReport, spendingReport } from './reports.ts';
 import { callbackUrl, completeConnection, getProvider, linkAccounts, providers, startConnection, syncAll, syncConnection, providerForState } from './sync/index.ts';
-import { addDays, currentMonth, todayISO } from '../shared/months.ts';
+import { addDays, addMonths, currentMonth, todayISO } from '../shared/months.ts';
 import { cleanPayee } from './payees.ts';
+import { base64ToBytes, bytesToBase64 } from './webcrypto.ts';
 import type { PsuContext } from './sync/types.ts';
 
 const MONTH = /^\d{4}-\d{2}$/;
@@ -52,7 +53,8 @@ function transactionQuery(where: string) {
            st.date AS suggested_transfer_date, st.payee AS suggested_transfer_payee,
            (SELECT json_group_array(json_object('id', s.id, 'category_id', s.category_id, 'amount', s.amount, 'memo', s.memo,
                                                 'category_name', (SELECT name FROM categories WHERE id = s.category_id)))
-              FROM splits s WHERE s.transaction_id = t.id) AS splits_json
+              FROM splits s WHERE s.transaction_id = t.id) AS splits_json,
+           (SELECT COUNT(*) FROM attachments x WHERE x.transaction_id = t.id) AS attachment_count
       FROM transactions t
       JOIN accounts a ON a.id = t.account_id
       LEFT JOIN categories c ON c.id = t.category_id
@@ -123,6 +125,7 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
       readyToAssign: readyToAssign(db),
       unreviewed: get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM transactions WHERE reviewed = 0 AND date >= ?', budgetStart(db))!.n,
       budgetStart: getSetting(db, 'budget_start') ?? null,
+      overspending: overspendMode(db),
       accounts,
       attention,
       categories: all<any>(
@@ -311,6 +314,10 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
     tx(db, () => {
       // Transfers pointing at this account become normal transactions again.
       run(db, 'UPDATE transactions SET transfer_id = NULL, reviewed = 0 WHERE transfer_id IN (SELECT id FROM transactions WHERE account_id = ?)', id);
+      // Explicit deletes: foreign-key cascades aren't guaranteed on every SQLite host.
+      run(db, 'DELETE FROM attachments WHERE transaction_id IN (SELECT id FROM transactions WHERE account_id = ?)', id);
+      run(db, 'DELETE FROM splits WHERE transaction_id IN (SELECT id FROM transactions WHERE account_id = ?)', id);
+      run(db, 'DELETE FROM pending WHERE account_id = ?', id);
       run(db, 'DELETE FROM transactions WHERE account_id = ?', id);
       run(db, 'DELETE FROM accounts WHERE id = ?', id);
     });
@@ -406,13 +413,64 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
       }
       if (b.reviewed !== undefined) run(db, 'UPDATE transactions SET reviewed = ? WHERE id = ?', b.reviewed ? 1 : 0, id);
     });
-    if (b.transfer_account_id === null) unlinkTransfer(db, id);
+    if (b.reject_transfer) rejectTransferSuggestion(db, id);
+    if (b.transfer_account_id === null) unlinkTransfer(db, id, !!b.restore_suggestion);
     else if (b.transfer_account_id) {
       if (before.transfer_id) unlinkTransfer(db, id);
       transferToAccount(db, id, b.transfer_account_id);
     }
     if (b.transfer_id) linkTransfer(db, id, b.transfer_id);
     return c.json(shapeTxn(get(db, transactionQuery('t.id = ?'), id)));
+  });
+
+  // ---------- Attachments (receipts, warranties) ----------
+  // Kept as base64 text: a Durable Object row is at most 2 MB, so files are capped at 1.4 MB (images are shrunk in the browser first).
+  const MAX_ATTACHMENT = 1_400_000;
+  const ATTACHMENT_TYPES = /^(image\/(jpeg|png|webp|gif|heic)|application\/pdf)$/;
+
+  api.get('/transactions/:id/attachments', (c) =>
+    c.json(
+      all(db, 'SELECT id, name, mime, size, created_at FROM attachments WHERE transaction_id = ? ORDER BY id', Number(c.req.param('id'))),
+    ),
+  );
+
+  api.post('/transactions/:id/attachments', async (c) => {
+    const id = Number(c.req.param('id'));
+    if (!get(db, 'SELECT id FROM transactions WHERE id = ?', id)) return c.json({ error: 'Fant ikke transaksjonen' }, 404);
+    const mime = (c.req.header('content-type') ?? '').split(';')[0].trim();
+    if (!ATTACHMENT_TYPES.test(mime)) badRequest('Bare bilder og PDF kan legges ved');
+    const bytes = new Uint8Array(await c.req.arrayBuffer());
+    if (bytes.length === 0) badRequest('Filen er tom');
+    if (bytes.length > MAX_ATTACHMENT) badRequest('Filen er for stor (maks 1,4 MB)');
+    const name = decodeURIComponent(c.req.header('x-file-name') ?? 'vedlegg').slice(0, 120) || 'vedlegg';
+    const res = run(
+      db,
+      'INSERT INTO attachments (transaction_id, name, mime, size, data) VALUES (?, ?, ?, ?, ?)',
+      id,
+      name,
+      mime,
+      bytes.length,
+      bytesToBase64(bytes),
+    );
+    return c.json(get(db, 'SELECT id, name, mime, size, created_at FROM attachments WHERE id = ?', Number(res.lastInsertRowid)));
+  });
+
+  api.get('/attachments/:id', (c) => {
+    const a = get<any>(db, 'SELECT * FROM attachments WHERE id = ?', Number(c.req.param('id')));
+    if (!a) return c.json({ error: 'Fant ikke vedlegget' }, 404);
+    return new Response(base64ToBytes(a.data), {
+      headers: {
+        'Content-Type': a.mime,
+        'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(a.name)}`,
+        'Cache-Control': 'private, max-age=86400',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    });
+  });
+
+  api.delete('/attachments/:id', (c) => {
+    run(db, 'DELETE FROM attachments WHERE id = ?', Number(c.req.param('id')));
+    return c.json({ ok: true });
   });
 
   api.delete('/transactions/:id', (c) => {
@@ -425,6 +483,8 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
         else run(db, 'UPDATE transactions SET transfer_id = NULL, reviewed = 0 WHERE id = ?', t.transfer_id);
       }
       run(db, 'UPDATE transactions SET suggested_transfer_id = NULL WHERE suggested_transfer_id = ?', id);
+      run(db, 'DELETE FROM attachments WHERE transaction_id = ?', id);
+      run(db, 'DELETE FROM splits WHERE transaction_id = ?', id);
       run(db, 'DELETE FROM transactions WHERE id = ?', id);
     });
     return c.json({ ok: true });
@@ -481,6 +541,7 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
   api.post('/rules', async (c) => {
     const b = await c.req.json();
     if (!b.pattern?.trim()) badRequest('Skriv hvilken tekst regelen skal se etter');
+    if (b.match_type && !['contains', 'starts', 'equals'].includes(b.match_type)) badRequest('Ukjent regeltype');
     const id = run(
       db,
       'INSERT INTO rules(match_type, pattern, category_id, rename_to, account_id) VALUES (?, ?, ?, ?, ?)',
@@ -492,6 +553,25 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
     ).lastInsertRowid;
     if (b.apply_existing) applyRuleToWaiting(db, Number(id));
     return c.json({ id: Number(id) });
+  });
+
+  api.patch('/rules/:id', async (c) => {
+    const id = Number(c.req.param('id'));
+    const b = await c.req.json();
+    if (!b.pattern?.trim()) badRequest('Skriv hvilken tekst regelen skal se etter');
+    if (b.match_type && !['contains', 'starts', 'equals'].includes(b.match_type)) badRequest('Ukjent regeltype');
+    run(
+      db,
+      'UPDATE rules SET match_type = ?, pattern = ?, category_id = ?, rename_to = ?, account_id = ? WHERE id = ?',
+      b.match_type ?? 'contains',
+      b.pattern.trim(),
+      b.category_id ?? null,
+      b.rename_to?.trim() || null,
+      b.account_id ?? null,
+      id,
+    );
+    if (b.apply_existing) applyRuleToWaiting(db, id);
+    return c.json({ ok: true });
   });
 
   api.delete('/rules/:id', (c) => {
@@ -638,7 +718,7 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
 
   api.put('/settings', async (c) => {
     const body = await c.req.json<Record<string, string | null>>();
-    const allowed = new Set(Object.values(providers).flatMap((p) => p.settings.map((s) => s.key)));
+    const allowed = new Set([...Object.values(providers).flatMap((p) => p.settings.map((s) => s.key)), 'overspending']);
     for (const [k, v] of Object.entries(body)) {
       if (!allowed.has(k)) continue;
       setSetting(db, k, typeof v === 'string' ? v.trim() : null);
@@ -651,6 +731,49 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
   api.get('/reports/cashflow', (c) => c.json(cashflowReport(db, Number(c.req.query('months') ?? 12))));
   api.get('/reports/networth', (c) => c.json(netWorthReport(db, Number(c.req.query('months') ?? 12))));
   api.get('/recurring', (c) => c.json(detectRecurring(db)));
+  /** Monthly wrap-up: how a finished month went, and what's left over that could go to savings. */
+  api.get('/wrapup', (c) => {
+    const month = c.req.query('month') ?? addMonths(currentMonth(), -1);
+    if (!MONTH.test(month)) badRequest('Måned må se slik ut: 2026-10');
+    const o = overview(db, month, 1);
+    const b = getBudget(db, month);
+    const now = getBudget(db, currentMonth());
+    const groupOf = new Map(b.groups.flatMap((g) => g.categories.map((c) => [c.id, g.name] as const)));
+    const isSavings = (c: { id: number; target_type: string | null }) =>
+      c.target_type === 'balance' || c.target_type === 'by_date' || /spar|buffer/i.test(groupOf.get(c.id) ?? '');
+    const cats = b.groups.flatMap((g) => g.categories).filter((c) => !c.hidden);
+    // Leftovers are judged on what's still there now, since that's what can be moved.
+    const nowById = new Map(now.groups.flatMap((g) => g.categories).map((c) => [c.id, c]));
+    return c.json({
+      month,
+      income: o.income,
+      spending: o.spending,
+      prevSpending: o.prevSpending,
+      top: o.groups
+        .flatMap((g) => g.categories)
+        .filter((c) => c.id !== null)
+        .sort((x, y) => y.spent - x.spent)
+        .slice(0, 3)
+        .map((c) => ({ name: c.name, spent: c.spent, prevSpent: c.prevSpent })),
+      overspent: cats.filter((c) => c.available < 0).map((c) => ({ id: c.id, name: c.name, amount: -c.available })),
+      leftovers: cats
+        .filter((c) => !isSavings(c) && c.available > 0 && (nowById.get(c.id)?.available ?? 0) > 0)
+        .map((c) => ({ id: c.id, name: c.name, amount: Math.min(c.available, nowById.get(c.id)!.available) })),
+      savings: cats.filter(isSavings).map((c) => ({ id: c.id, name: c.name })),
+    });
+  });
+
+  api.get('/pending', (c) => {
+    const account = c.req.query('account');
+    return c.json(
+      all(
+        db,
+        `SELECT p.*, a.name AS account_name FROM pending p JOIN accounts a ON a.id = p.account_id
+          ${account ? 'WHERE p.account_id = ?' : ''} ORDER BY p.date DESC, p.id DESC`,
+        ...(account ? [Number(account)] : []),
+      ),
+    );
+  });
 
   // ---------- Start på nytt ----------
   api.get('/fresh-start/preview', (c) => {

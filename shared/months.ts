@@ -16,12 +16,14 @@ export function monthDiff(from: string, to: string): number {
   return ty * 12 + tm - (fy * 12 + fm);
 }
 
+const OSLO = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Oslo', year: 'numeric', month: '2-digit', day: '2-digit' });
+
+/**
+ * Today's date in Norway. Always Oslo time, never the machine's: Cloudflare runs on UTC, which would make
+ * the app think it's still yesterday between midnight and 01:00/02:00.
+ */
 export function todayISO(now = new Date()): string {
-  // Local date, not UTC, so a purchase at 00:30 lands on the right day.
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+  return OSLO.format(now); // sv-SE formats as YYYY-MM-DD
 }
 
 export function currentMonth(now = new Date()): string {

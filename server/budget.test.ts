@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { all, get, run, type DB } from './db.ts';
+import { all, get, run, setSetting, type DB } from './db.ts';
 import { openDb } from './db-node.ts';
 import { autoAssign, getBudget, readyToAssign, setAssigned } from './budget.ts';
-import { ingest, linkTransfer, transferToAccount, withImportHashes } from './ingest.ts';
+import { ingest, linkTransfer, rejectTransferSuggestion, transferToAccount, unlinkTransfer, withImportHashes } from './ingest.ts';
 
 let db: DB;
 const cat = (name: string) => get<{ id: number }>(db, 'SELECT id FROM categories WHERE name = ?', name)!.id;
@@ -64,6 +64,23 @@ describe('budget', () => {
     expect(cash).toBe(b.readyToAssign + b.available);
   });
 
+  it('can reset overspending each month and take it from ready-to-assign instead (like YNAB)', () => {
+    const sb1 = account('SpareBank 1');
+    addTx(sb1, '2026-08-01', 1_000_000, 'Lønn');
+    setAssigned(db, '2026-08', cat('Dagligvarer'), 300_000);
+    addTx(sb1, '2026-08-10', -350_000, 'Dagligvarer'); // 500 kr over in August
+    setAssigned(db, '2026-08', cat('Ferie'), 100_000); // 1 000 kr left over, carries
+    setSetting(db, 'overspending', 'reset');
+    expect(row('2026-08', 'Dagligvarer').available).toBe(-50_000); // still visible in its own month
+    expect(row('2026-09', 'Dagligvarer').available).toBe(0); // fresh start in September
+    expect(row('2026-09', 'Ferie').available).toBe(100_000); // leftovers still carry
+    // Ready to assign: 10 000 − 4 000 assigned − 500 written off (August is a finished month).
+    expect(readyToAssign(db)).toBe(1_000_000 - 400_000 - 50_000);
+    setSetting(db, 'overspending', null);
+    expect(row('2026-09', 'Dagligvarer').available).toBe(-50_000);
+    expect(readyToAssign(db)).toBe(600_000);
+  });
+
   it('targets tell you how much is needed', () => {
     run(db, "UPDATE categories SET target_type = 'by_date', target_amount = 1200000, target_date = '2027-03' WHERE id = ?", cat('Ferie'));
     expect(row('2026-10', 'Ferie').needed).toBe(200_000); // 12 000 over 6 months
@@ -123,6 +140,20 @@ describe('ingest', () => {
     expect(r.transfers).toBe(1);
     const t = get<any>(db, "SELECT * FROM transactions WHERE external_id = '2'");
     expect(t.suggested_transfer_id).toBeTruthy();
+  });
+
+  it('remembers "not a transfer" and can undo a confirmed transfer', () => {
+    const sb1 = account('SpareBank 1');
+    const rev = account('Revolut');
+    ingest(db, sb1, [{ date: '2026-10-01', amount: -200_000, description: 'Overføring til Revolut', externalId: '1' }], 'sparebank1');
+    ingest(db, rev, [{ date: '2026-10-02', amount: 200_000, description: 'Top-Up', externalId: '2' }], 'enablebanking');
+    const a = get<any>(db, "SELECT * FROM transactions WHERE external_id = '1'");
+    const b = get<any>(db, "SELECT * FROM transactions WHERE external_id = '2'");
+    linkTransfer(db, a.id, b.id);
+    unlinkTransfer(db, a.id, true);
+    expect(get<any>(db, 'SELECT * FROM transactions WHERE id = ?', a.id)).toMatchObject({ transfer_id: null, suggested_transfer_id: b.id, reviewed: 0 });
+    rejectTransferSuggestion(db, a.id);
+    expect(all<any>(db, 'SELECT suggested_transfer_id FROM transactions').every((t) => t.suggested_transfer_id === null)).toBe(true);
   });
 
   it('matches a manually entered transaction when the bank catches up', () => {

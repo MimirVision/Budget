@@ -109,6 +109,7 @@ export const enableBanking: Provider = {
 
   async fetch(db, _data, remoteId, since, psu) {
     const transactions: RemoteTxn[] = [];
+    const pending: RemoteTxn[] = [];
     let continuation: string | undefined;
     let guard = 0;
     do {
@@ -116,15 +117,15 @@ export const enableBanking: Provider = {
       if (continuation) qs.set('continuation_key', continuation);
       const page = await call(db, 'GET', `/accounts/${encodeURIComponent(remoteId)}/transactions?${qs}`, undefined, psu);
       for (const t of page.transactions ?? []) {
-        // Only booked transactions: pending ones often change amount or disappear.
-        if (t.status && t.status !== 'BOOK') continue;
+        // Pending ones often change amount or disappear, so they're shown as "reservert" but not booked.
+        const isPending = !!t.status && t.status !== 'BOOK';
         const sign = t.credit_debit_indicator === 'DBIT' ? -1 : 1;
         const amount = sign * Math.abs(toOre(t.transaction_amount?.amount ?? 0));
         const counterparty = sign < 0 ? t.creditor?.name : t.debtor?.name;
         const remittance = Array.isArray(t.remittance_information) ? t.remittance_information.join(' ') : t.remittance_information ?? '';
         const date = t.booking_date ?? t.value_date ?? t.transaction_date;
         if (!date) continue;
-        transactions.push({
+        (isPending ? pending : transactions).push({
           externalId:
             t.entry_reference ?? t.transaction_id ?? stableId(JSON.stringify([date, amount, remittance])),
           date: date.slice(0, 10),
@@ -145,7 +146,7 @@ export const enableBanking: Provider = {
     } catch {
       // Balances are a nice-to-have.
     }
-    return { transactions, balance };
+    return { transactions, pending, balance };
   },
 };
 

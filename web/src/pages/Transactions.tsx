@@ -14,6 +14,7 @@ export default function TransactionsPage() {
   const { summary, refresh, version } = useStore();
   const mobile = useIsMobile();
   const [showFilters, setShowFilters] = useState(false);
+  const [pending, setPending] = useState<Pending[]>([]);
   const toast = useToast();
   const [rows, setRows] = useState<Transaction[]>([]);
   const [total, setTotal] = useState(0);
@@ -42,6 +43,10 @@ export default function TransactionsPage() {
       const r = await api.get<{ transactions: Transaction[]; total: number }>(`/transactions?${qs}`);
       setRows((prev) => (offset ? [...prev, ...r.transactions] : r.transactions));
       setTotal(r.total);
+      if (!offset) {
+        // Reserved purchases only make sense in the plain list, not when filtering by category, month or text.
+        setPending(category || month || q ? [] : await api.get<Pending[]>(`/pending${account ? `?account=${account}` : ''}`));
+      }
     },
     [account, category, month, q],
   );
@@ -148,6 +153,7 @@ export default function TransactionsPage() {
       {category === 'none' && <div className="callout info small" style={{ marginBottom: 12 }}>Viser transaksjoner uten kategori.</div>}
       {month && <div className="small muted" style={{ marginBottom: 8 }}>{monthLabel(month)}</div>}
 
+      {pending.length > 0 && <PendingList items={pending} />}
       {mobile && rows.length > 0 ? (
         <DayList rows={rows} onOpen={setEditing} />
       ) : (
@@ -178,6 +184,11 @@ export default function TransactionsPage() {
                     <div className="ellipsis" style={{ fontWeight: 500 }}>
                       {t.payee || t.raw_description}
                       {!t.reviewed && <span className="chip brand" style={{ marginLeft: 6 }}>ny</span>}
+                      {!!t.attachment_count && (
+                        <span className="txn-flags" style={{ marginLeft: 6 }} title={`${t.attachment_count} vedlegg`}>
+                          <Icon name="clip" size={14} />
+                        </span>
+                      )}
                     </div>
                     <div className="small muted ellipsis show-sm">
                       {t.transfer_id
@@ -272,6 +283,11 @@ function DayList({ rows, onOpen }: { rows: Transaction[]; onOpen: (t: Transactio
                     <span className="ellipsis" style={{ display: 'block', fontWeight: 600 }}>
                       {t.payee || t.raw_description}
                       {!t.reviewed && <span className="chip brand" style={{ marginLeft: 6 }}>ny</span>}
+                      {!!t.attachment_count && (
+                        <span className="txn-flags" style={{ marginLeft: 6 }} title={`${t.attachment_count} vedlegg`}>
+                          <Icon name="clip" size={14} />
+                        </span>
+                      )}
                     </span>
                     <span className="small muted ellipsis" style={{ display: 'block' }}>
                       {t.transfer_id
@@ -282,6 +298,11 @@ function DayList({ rows, onOpen }: { rows: Transaction[]; onOpen: (t: Transactio
                       {' · '}
                       {t.account_name}
                     </span>
+                    {t.memo && (
+                      <span className="small faint ellipsis" style={{ display: 'block' }}>
+                        {t.memo}
+                      </span>
+                    )}
                   </span>
                   <span className="tx-amount">
                     <Money value={t.amount} sign />
@@ -293,5 +314,47 @@ function DayList({ rows, onOpen }: { rows: Transaction[]; onOpen: (t: Transactio
         );
       })}
     </div>
+  );
+}
+
+interface Pending {
+  id: number;
+  account_name: string;
+  date: string;
+  amount: number;
+  payee: string;
+  description: string;
+}
+
+/** Card purchases the bank has reserved but not booked yet: visible right away, but not part of the budget. */
+function PendingList({ items }: { items: Pending[] }) {
+  const total = items.reduce((s, p) => s + p.amount, 0);
+  return (
+    <section className="pending" style={{ marginBottom: 14 }}>
+      <div className="day-head">
+        <span>Reservert · ikke bokført ennå</span>
+        <Money value={total} />
+      </div>
+      <div className="card" style={{ overflow: 'hidden' }}>
+        {items.map((p) => (
+          <div key={p.id} className="tx-row pending-row" title={p.description}>
+            <span className="tx-avatar" aria-hidden="true">
+              <Icon name="calendar" size={16} />
+            </span>
+            <span className="tx-main">
+              <span className="ellipsis" style={{ display: 'block', fontWeight: 600 }}>
+                {p.payee || p.description}
+              </span>
+              <span className="small muted ellipsis" style={{ display: 'block' }}>
+                {dayLabel(p.date)} · {p.account_name} · telles når banken bokfører
+              </span>
+            </span>
+            <span className="tx-amount">
+              <Money value={p.amount} />
+            </span>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }

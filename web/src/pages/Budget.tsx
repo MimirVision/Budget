@@ -10,7 +10,7 @@ import { useStore } from '../store';
 import { useIsMobile, useStoredState } from '../hooks';
 import { AnimatedMoney, Icon, Modal, MoneyInput, Skeleton, haptic, useToast } from '../components/ui';
 import { addMonths, currentMonth } from '../../../shared/months';
-import { Attention, AutoAssignMenu, CategoryDetail, Pill, Upcoming, UsageBar, Welcome, subtitle } from './budgetParts';
+import { Attention, AutoAssignMenu, WrapUp, CategoryDetail, Pill, Upcoming, UsageBar, Welcome, subtitle } from './budgetParts';
 
 type Filter = 'all' | 'needs' | 'over' | 'money';
 const FILTERS: Array<{ id: Filter; label: string; test: (c: CategoryRow) => boolean }> = [
@@ -145,6 +145,7 @@ export default function BudgetPage() {
           </button>
         </div>
       )}
+      <WrapUp month={month} startMonth={startMonth} onChanged={() => { load(); refresh(); }} />
       <Attention budget={budget} />
       <Hero budget={budget} onAuto={() => setAutoOpen(true)} />
       <Stats budget={budget} />

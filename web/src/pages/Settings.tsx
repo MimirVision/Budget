@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { useStore } from '../store';
-import { CategorySelect, Icon, Money, MoneyInput, useToast } from '../components/ui';
+import { CategorySelect, Icon, Modal, Money, MoneyInput, useToast } from '../components/ui';
 import { kr, monthLabel } from '../format';
 import { addMonths, currentMonth, todayISO } from '../../../shared/months';
 import { ACCENTS, usePrefs, type Theme } from '../prefs';
@@ -63,6 +63,8 @@ function Categories() {
   const [newGroup, setNewGroup] = useState('');
   const { refresh } = useStore();
   const toast = useToast();
+  const [deleting, setDeleting] = useState<{ id: number; name: string } | null>(null);
+  const { summary } = useStore();
   const load = useCallback(() => api.get<{ groups: Group[] }>('/categories').then((r) => setGroups(r.groups)), []);
   useEffect(() => {
     load();
@@ -146,18 +148,7 @@ function Categories() {
               <button
                 className="icon-btn"
                 aria-label="Slett kategorien"
-                onClick={async () => {
-                  const others = groups.flatMap((x) => x.categories).filter((x) => x.id !== c.id && !x.hidden);
-                  const target = prompt(
-                    `Slette «${c.name}»? Skriv navnet på kategorien som skal få transaksjonene og pengene (la feltet stå tomt for å gjøre dem ukategoriserte):\n\n${others.map((o) => o.name).join(', ')}`,
-                  );
-                  if (target === null) return;
-                  const into = others.find((o) => o.name.toLowerCase() === target.trim().toLowerCase());
-                  if (target.trim() && !into) return toast(`Fant ingen kategori som heter «${target}»`, { error: true });
-                  await api.del(`/categories/${c.id}${into ? `?reassign=${into.id}` : ''}`);
-                  toast(into ? `Slettet. Alt er flyttet til ${into.name}.` : 'Slettet');
-                  after();
-                }}
+                onClick={() => setDeleting(c)}
               >
                 <Icon name="trash" size={16} />
               </button>
@@ -166,6 +157,18 @@ function Categories() {
           <AddCategory groupId={g.id} onAdded={after} />
         </div>
       ))}
+      {deleting && (
+        <DeleteCategory
+          cat={deleting}
+          options={summary?.categories.filter((x) => x.id !== deleting.id && !x.hidden) ?? []}
+          onClose={() => setDeleting(null)}
+          onDone={(text) => {
+            setDeleting(null);
+            toast(text);
+            after();
+          }}
+        />
+      )}
       <form
         className="row"
         onSubmit={async (e) => {
@@ -226,7 +229,15 @@ function Rules() {
   const [matchType, setMatchType] = useState<Rule['match_type']>('contains');
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [renameTo, setRenameTo] = useState('');
+  const [editingId, setEditingId] = useState<number | null>(null);
   const { summary, refresh } = useStore();
+  const clear = () => {
+    setPattern('');
+    setRenameTo('');
+    setCategoryId(null);
+    setMatchType('contains');
+    setEditingId(null);
+  };
   const toast = useToast();
   const load = useCallback(() => api.get<Rule[]>('/rules').then(setRules), []);
   useEffect(() => {
@@ -244,18 +255,18 @@ function Rules() {
         onSubmit={async (e) => {
           e.preventDefault();
           try {
-            await api.post('/rules', { pattern, match_type: matchType, category_id: categoryId, rename_to: renameTo, apply_existing: true });
-            setPattern('');
-            setRenameTo('');
-            setCategoryId(null);
-            toast('Regelen er lagt til og brukt på transaksjoner som venter på gjennomgang');
+            const body = { pattern, match_type: matchType, category_id: categoryId, rename_to: renameTo, apply_existing: true };
+            if (editingId) await api.patch(`/rules/${editingId}`, body);
+            else await api.post('/rules', body);
+            toast(editingId ? 'Regelen er oppdatert' : 'Regelen er lagt til og brukt på transaksjoner som venter på gjennomgang');
+            clear();
             await Promise.all([load(), refresh()]);
           } catch (err: any) {
             toast(err.message, { error: true });
           }
         }}
       >
-        <h3 style={{ margin: 0 }}>Ny regel</h3>
+        <h3 style={{ margin: 0 }}>{editingId ? 'Endre regel' : 'Ny regel'}</h3>
         <div className="row" style={{ alignItems: 'flex-end' }}>
           <label className="field" style={{ flex: '0 1 150px' }}>
             Når teksten
@@ -278,8 +289,13 @@ function Rules() {
             <input className="input" value={renameTo} onChange={(e) => setRenameTo(e.target.value)} placeholder="(valgfritt)" />
           </label>
           <button className="btn primary" disabled={!pattern.trim() || (!categoryId && !renameTo.trim())}>
-            Legg til regel
+            {editingId ? 'Lagre endring' : 'Legg til regel'}
           </button>
+          {editingId && (
+            <button type="button" className="btn ghost" onClick={clear}>
+              Avbryt
+            </button>
+          )}
         </div>
       </form>
       <div className="card">
@@ -300,6 +316,20 @@ function Rules() {
                   {r.rename_to && <> · gi navnet «{r.rename_to}»</>}
                   <div className="small faint">Brukt {r.hits} ganger</div>
                 </div>
+                <button
+                  className="icon-btn"
+                  aria-label="Endre regelen"
+                  onClick={() => {
+                    setEditingId(r.id);
+                    setPattern(r.pattern);
+                    setMatchType(r.match_type);
+                    setCategoryId(r.category_id);
+                    setRenameTo(r.rename_to ?? '');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                >
+                  <Icon name="edit" size={16} />
+                </button>
                 <button
                   className="icon-btn"
                   aria-label="Slett regelen"
@@ -625,8 +655,32 @@ function FreshStart() {
     changed();
   };
 
+  const setOverspending = async (mode: 'carry' | 'reset') => {
+    await api.put('/settings', { overspending: mode === 'carry' ? null : mode });
+    changed();
+    toast(mode === 'reset' ? 'Overforbruk trekkes nå fra neste måneds Klar til fordeling' : 'Overforbruk følger nå med til neste måned');
+  };
+  const mode = summary?.overspending ?? 'carry';
+
   return (
     <div className="stack">
+      <div className="card card-pad stack">
+        <div>
+          <h3 style={{ marginBottom: 4 }}>Overforbruk</h3>
+          <p className="small muted" style={{ margin: 0 }}>Hva skjer når en kategori går i minus og måneden er over?</p>
+        </div>
+        <div className="option-grid">
+          <button className={`option ${mode === 'carry' ? 'on' : ''}`} onClick={() => setOverspending('carry')} aria-pressed={mode === 'carry'}>
+            <strong>Følger med kategorien</strong>
+            <span className="small muted">Kategorien starter neste måned i minus, og du dekker det selv. Overforbruket blir ikke glemt.</span>
+          </button>
+          <button className={`option ${mode === 'reset' ? 'on' : ''}`} onClick={() => setOverspending('reset')} aria-pressed={mode === 'reset'}>
+            <strong>Trekkes fra Klar til fordeling</strong>
+            <span className="small muted">Som i YNAB: alle kategorier starter på 0 eller mer, og overforbruket tas fra neste måneds penger.</span>
+          </button>
+        </div>
+      </div>
+
       {active && (
         <div className="callout good">
           <Icon name="check" size={20} />
@@ -702,5 +756,62 @@ function FreshStart() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Delete a category, choosing where its transactions and money go instead of typing a name. */
+function DeleteCategory({
+  cat,
+  options,
+  onClose,
+  onDone,
+}: {
+  cat: { id: number; name: string };
+  options: Array<{ id: number; name: string; group_name: string; is_income: number }>;
+  onClose: () => void;
+  onDone: (text: string) => void;
+}) {
+  const [target, setTarget] = useState<number | null>(null);
+  const [count, setCount] = useState<number | null>(null);
+  useEffect(() => {
+    api.get<{ total: number }>(`/transactions?category=${cat.id}&limit=1`).then((r) => setCount(r.total));
+  }, [cat.id]);
+  const into = options.find((o) => o.id === target);
+  return (
+    <Modal
+      title={`Slette «${cat.name}»?`}
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn ghost" onClick={onClose}>
+            Avbryt
+          </button>
+          <button
+            className="btn primary danger-fill"
+            onClick={async () => {
+              await api.del(`/categories/${cat.id}${target ? `?reassign=${target}` : ''}`);
+              onDone(into ? `Slettet. Alt er flyttet til ${into.name}.` : `«${cat.name}» er slettet`);
+            }}
+          >
+            Slett kategorien
+          </button>
+        </>
+      }
+    >
+      <p className="muted" style={{ margin: 0 }}>
+        {count === null ? 'Teller transaksjoner…' : count === 0 ? 'Kategorien har ingen transaksjoner.' : `Kategorien har ${count} transaksjoner.`} Hvor skal de, og
+        pengene som er fordelt hit, flyttes?
+      </p>
+      <label className="field">
+        Flytt til
+        <CategorySelect
+          categories={options as any}
+          value={target}
+          onChange={setTarget}
+          placeholder="Ingen: gjør dem ukategoriserte"
+        />
+      </label>
+      {!target && count !== 0 && <div className="small faint">Transaksjonene havner i Gjennomgå igjen, så du kan gi dem en ny kategori.</div>}
+    </Modal>
   );
 }

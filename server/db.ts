@@ -126,6 +126,27 @@ CREATE TABLE IF NOT EXISTS connection_accounts (
   PRIMARY KEY (connection_id, remote_id)
 );
 
+CREATE TABLE IF NOT EXISTS pending (
+  -- Card purchases the bank has reserved but not booked yet. Replaced on every sync, never counted in the budget.
+  id INTEGER PRIMARY KEY,
+  account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  date TEXT NOT NULL,
+  amount INTEGER NOT NULL,
+  payee TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS attachments (
+  id INTEGER PRIMARY KEY,
+  transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  data BLOB NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS attachments_tx ON attachments(transaction_id);
+
 CREATE TABLE IF NOT EXISTS pending_auth (
   state TEXT PRIMARY KEY,
   provider TEXT NOT NULL,
