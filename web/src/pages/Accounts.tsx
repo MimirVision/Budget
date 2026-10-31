@@ -365,7 +365,7 @@ function AddAccount({
             </button>
             <button className="option" onClick={() => setMethod('file')}>
               <strong>📄 Importer en fil</strong>
-              <span className="small muted">Last ned en CSV-fil fra nettbanken og slipp den her. Fint for TF Bank.</span>
+              <span className="small muted">CSV fra nettbanken, eller PDF-kontoutskriften (TF Bank).</span>
             </button>
             <button className="option" onClick={() => setMethod('manual')}>
               <strong>✍️ Før manuelt</strong>
@@ -618,6 +618,27 @@ function ImportWizard({ account, onClose, onDone }: { account: Account; onClose:
   };
 
   const onFile = async (file: File) => {
+    // A PDF statement (TF Bank and others without CSV): read the transactions out of it in the browser.
+    if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+      setBusy(true);
+      try {
+        const { pdfLines, parseStatement, statementCsv } = await import('../pdfStatement');
+        const rows = parseStatement(await pdfLines(file));
+        if (!rows.length) {
+          toast('Fant ingen transaksjoner i PDF-en. Er det en kontoutskrift med dato og beløp på hver linje?', { error: true });
+          return;
+        }
+        const t = statementCsv(rows);
+        setFileName(`${file.name} (${rows.length} transaksjoner funnet)`);
+        setText(t);
+        runPreview(t, { delimiter: ';', headerRow: 0, date: 0, description: 1, amount: 2, dateFormat: 'dmy' });
+      } catch (e: any) {
+        toast(`Kunne ikke lese PDF-en: ${e.message}`, { error: true });
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     const t = await readText(file);
     setFileName(file.name);
     setText(t);
@@ -708,9 +729,16 @@ function ImportWizard({ account, onClose, onDone }: { account: Account; onClose:
             }}
           >
             <Icon name="upload" size={28} />
-            <div style={{ fontWeight: 600, marginTop: 6 }}>Slipp en CSV-fil her, eller klikk for å velge</div>
-            <div className="small">Fungerer med SpareBank 1, DNB, Revolut, TF Bank og de fleste andre banker</div>
-            <input type="file" accept=".csv,.txt,text/csv" hidden onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} />
+            <div style={{ fontWeight: 600, marginTop: 6 }}>
+              {busy ? 'Leser PDF-en…' : 'Slipp en CSV-fil eller PDF-kontoutskrift her, eller klikk for å velge'}
+            </div>
+            <div className="small">CSV fra SpareBank 1, DNB, Revolut og de fleste banker. PDF-kontoutskrift fra TF Bank og andre uten CSV.</div>
+            <input
+              type="file"
+              accept=".csv,.txt,text/csv,.pdf,application/pdf"
+              hidden
+              onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
+            />
           </label>
           <details className="small muted">
             <summary>Hvor finner jeg filen?</summary>
@@ -725,8 +753,8 @@ function ImportWizard({ account, onClose, onDone }: { account: Account; onClose:
                 <strong>Revolut:</strong> Appen → kontoen → ⋯ → Kontoutskrift → Excel/CSV.
               </li>
               <li>
-                <strong>TF Bank:</strong> Min side → kortet → Transaksjoner → Eksporter. Får du bare PDF, legg inn transaksjonene
-                manuelt, eller lim dem inn i et regneark og lagre som CSV.
+                <strong>TF Bank:</strong> Min side → kortet → Fakturaer/kontoutskrifter → last ned PDF-en, og slipp den her. Appen leser
+                transaksjonene ut av den.
               </li>
             </ul>
             Det er trygt å importere samme fil to ganger: duplikater hoppes over automatisk.
