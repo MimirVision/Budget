@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, type Attachment, type Split, type Transaction } from '../api';
-import { kr } from '../format';
+import { dayLabel, kr } from '../format';
 import { useStore } from '../store';
 import { CategorySelect, Icon, Modal, MoneyInput, useToast } from './ui';
 import { todayISO } from '../../../shared/months';
@@ -247,6 +247,7 @@ export function TransactionEditor({
           placeholder="F.eks. hva det var, hvem det gjaldt, garanti til 2028"
         />
       </label>
+      {txn && txn.amount < 0 && !txn.transfer_id && <RefundToggle txn={txn} />}
       {txn ? (
         <Attachments txnId={txn.id} />
       ) : (
@@ -346,5 +347,65 @@ function Attachments({ txnId }: { txnId: number }) {
         />
       </div>
     </div>
+  );
+}
+
+interface RefundRow {
+  id: number;
+  transaction_id: number;
+  amount: number;
+  created_at: string;
+  resolved_transaction_id: number | null;
+  resolved_at: string | null;
+}
+
+/** "Venter penger tilbake": for a return or a cancelled order. The app matches the money when it arrives. */
+function RefundToggle({ txn }: { txn: Transaction }) {
+  const [refund, setRefund] = useState<RefundRow | null | undefined>(undefined);
+  const toast = useToast();
+  const { changed } = useStore();
+  useEffect(() => {
+    api
+      .get<RefundRow[]>('/refunds')
+      .then((list) => setRefund(list.find((r) => r.transaction_id === txn.id) ?? null))
+      .catch(() => setRefund(null));
+  }, [txn.id]);
+  if (refund === undefined) return null;
+  if (refund?.resolved_transaction_id)
+    return <div className="callout good small">Pengene kom tilbake {refund.resolved_at ? dayLabel(refund.resolved_at.slice(0, 10)) : ''} ✓</div>;
+  if (refund)
+    return (
+      <div className="callout info small" style={{ alignItems: 'center' }}>
+        <Icon name="sync" size={16} />
+        <div style={{ flex: 1 }}>
+          Venter {kr(refund.amount)} tilbake. Appen kobler det til automatisk når pengene kommer, og foreslår samme kategori.
+        </div>
+        <button
+          className="btn ghost sm"
+          onClick={async () => {
+            await api.del(`/refunds/${refund.id}`);
+            setRefund(null);
+            changed();
+          }}
+        >
+          Avbryt
+        </button>
+      </div>
+    );
+  return (
+    <button
+      className="btn sm"
+      style={{ alignSelf: 'flex-start' }}
+      onClick={async () => {
+        await api.post(`/transactions/${txn.id}/refund`, {});
+        toast('Appen holder øye med pengene som skal tilbake');
+        setRefund({ id: 0, transaction_id: txn.id, amount: -txn.amount, created_at: new Date().toISOString(), resolved_transaction_id: null, resolved_at: null });
+        changed();
+        // Fetch the real row, so "Avbryt" has its id.
+        api.get<RefundRow[]>('/refunds').then((list) => setRefund(list.find((r) => r.transaction_id === txn.id) ?? null));
+      }}
+    >
+      <Icon name="sync" size={15} /> Venter penger tilbake (retur)
+    </button>
   );
 }

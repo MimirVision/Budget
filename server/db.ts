@@ -149,6 +149,17 @@ CREATE TABLE IF NOT EXISTS bills (
   sort INTEGER NOT NULL DEFAULT 0
 );
 
+-- Refunds you're waiting for (a return, a cancelled order): matched automatically when the money comes back.
+CREATE TABLE IF NOT EXISTS refunds (
+  id INTEGER PRIMARY KEY,
+  transaction_id INTEGER NOT NULL,             -- the purchase
+  amount INTEGER NOT NULL,                     -- øre expected back (positive)
+  payee TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  resolved_transaction_id INTEGER,             -- the money coming back
+  resolved_at TEXT
+);
+
 -- Bank ids of transactions you deleted, so the next sync (which re-reads a week back) doesn't bring them back.
 CREATE TABLE IF NOT EXISTS forgotten_imports (account_id INTEGER NOT NULL, external_id TEXT, import_hash TEXT);
 CREATE INDEX IF NOT EXISTS forgotten_account ON forgotten_imports(account_id);
@@ -171,9 +182,24 @@ CREATE TABLE IF NOT EXISTS pending_auth (
 );
 `;
 
+/** Columns added after the first version. ALTER fails if the column is already there, which is fine. */
+const MIGRATIONS = [
+  // Kortregning: the category that holds the money for paying a credit card.
+  'ALTER TABLE categories ADD COLUMN card_account_id INTEGER',
+  // Which day of the month the card bill is due.
+  'ALTER TABLE accounts ADD COLUMN due_day INTEGER',
+];
+
 export function initSchema(db: DB) {
   // One statement at a time: not every SQLite host accepts several in one call.
   for (const statement of SCHEMA.split(';')) if (statement.trim()) db.exec(statement);
+  for (const m of MIGRATIONS) {
+    try {
+      db.exec(m);
+    } catch {
+      // Already migrated.
+    }
+  }
   seedDefaults(db);
 }
 

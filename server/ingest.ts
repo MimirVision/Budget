@@ -6,6 +6,7 @@
 import { all, get, run, tx, type DB } from './db.ts';
 import { cleanPayee, matchMerchant } from './payees.ts';
 import { addDays, dayDiff } from '../shared/months.ts';
+import { matchRefunds } from './refunds.ts';
 
 export interface IncomingTxn {
   date: string;
@@ -388,6 +389,9 @@ export function ingest(db: DB, accountId: number, incoming: IncomingTxn[], sourc
     }
 
     for (const [id, n] of ruleHits) run(db, 'UPDATE rules SET hits = hits + ? WHERE id = ?', n, id);
+
+    // Money coming back for a purchase marked "venter refusjon".
+    matchRefunds(db, inserted.map((t) => ({ ...t, payee: undefined })));
 
     // Transfers: the other half sits in another account with the opposite amount, a few days apart.
     if (result.ids.length) {

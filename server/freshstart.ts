@@ -19,7 +19,7 @@ export interface OpeningPreview {
 
 const SOURCE = 'freshstart';
 
-function incomeCategory(db: DB): number | null {
+export function incomeCategory(db: DB): number | null {
   return (
     get<{ id: number }>(
       db,

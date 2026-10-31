@@ -185,6 +185,7 @@ export default function TransactionsPage() {
           </div>
         </Link>
       )}
+      {!filtered && <RefundList />}
       {pending.length > 0 && <PendingList items={pending} />}
       {mobile && rows.length > 0 ? (
         <DayList rows={rows} onOpen={open} selecting={selecting} selected={selected} />
@@ -526,6 +527,38 @@ function BulkBar({
           <Icon name="trash" size={15} /> Slett
         </button>
       </div>
+    </div>
+  );
+}
+
+/** Purchases waiting for money back, oldest first. Over two weeks gets a nudge. */
+function RefundList() {
+  const { version } = useStore();
+  const [items, setItems] = useState<Array<{ id: number; payee: string; amount: number; days: number; purchase_date: string; resolved_transaction_id: number | null }>>([]);
+  useEffect(() => {
+    api
+      .get<typeof items>('/refunds')
+      .then((r) => setItems(r.filter((x) => !x.resolved_transaction_id)))
+      .catch(() => setItems([]));
+  }, [version]);
+  if (!items.length) return null;
+  return (
+    <div className="card refund-list" style={{ marginBottom: 12 }}>
+      <div className="card-pad" style={{ paddingBottom: 6 }}>
+        <strong>Venter penger tilbake</strong>
+      </div>
+      {items.map((r) => (
+        <div key={r.id} className="list-item" style={{ padding: '8px 18px' }}>
+          <div className="grow">
+            <div style={{ fontWeight: 550 }}>{r.payee}</div>
+            <div className={`small ${r.days > 14 ? 'warn-text' : 'muted'}`}>
+              Kjøpt {dayLabel(r.purchase_date)} · venter i {r.days} {r.days === 1 ? 'dag' : 'dager'}
+              {r.days > 14 ? '. Lenge siden: verdt å purre?' : ''}
+            </div>
+          </div>
+          <Money value={r.amount} />
+        </div>
+      ))}
     </div>
   );
 }

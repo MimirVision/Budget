@@ -39,6 +39,13 @@ export function UsageBar({ c, pace }: { c: CategoryRow; pace: number }) {
 }
 
 export function subtitle(c: CategoryRow, pace: number): { text: string; tone?: 'warn' | 'good' | 'bad' } | null {
+  if (c.card) {
+    if (c.card.owed <= 0) return { text: 'Kortet er nedbetalt', tone: 'good' };
+    const due = c.card.dueDay ? ` · forfaller ${c.card.dueDay}.` : '';
+    return c.needed > 0
+      ? { text: `Skylder ${kr(c.card.owed)} · mangler ${kr(c.needed)}${due}`, tone: 'warn' }
+      : { text: `Skylder ${kr(c.card.owed)} · dekket ✓${due}`, tone: 'good' };
+  }
   if (c.available < 0) return { text: `Overforbruk ${kr(-c.available)}`, tone: 'bad' };
   const t = targetText(c);
   if (t) return t;
@@ -504,6 +511,15 @@ export function Attention({ budget }: { budget: BudgetMonth }) {
     else if (c.expires_at)
       items.push({ tone: 'warn', text: <>Koblingen til {c.name} utløper {relativeDay(c.expires_at.slice(0, 10)).toLowerCase()}. <Link to="/accounts">Forny den</Link> så synkroniseringen ikke stopper.</> });
   }
+  for (const r of summary?.lateRefunds ?? [])
+    items.push({
+      tone: 'warn',
+      text: (
+        <>
+          {r.payee} har ikke betalt tilbake {kr(r.amount)} ennå ({r.days} dager). <Link to="/transactions">Se ventende refusjoner</Link>
+        </>
+      ),
+    });
   for (const st of summary?.stale ?? []) {
     items.push({
       tone: 'warn',
@@ -941,5 +957,129 @@ export function Payday({ budget, month, onChanged }: { budget: BudgetMonth; mont
         )}
       </div>
     </section>
+  );
+}
+
+/** Kortregninger: what each card owes, how much of it is set aside, and one tap to cover the rest. */
+export function CardBills({ budget, onCover }: { budget: BudgetMonth; onCover: (c: CategoryRow) => void }) {
+  const pots = budget.groups.flatMap((g) => g.categories).filter((c) => c.card && !c.hidden);
+  if (!pots.length) return null;
+  return (
+    <div className="card" style={{ overflow: 'hidden' }}>
+      <div className="card-pad" style={{ paddingBottom: 8 }}>
+        <h3 style={{ marginBottom: 2 }}>Kortregninger</h3>
+        <div className="small muted">Det dere handler med kortene, settes av her automatisk</div>
+      </div>
+      <div className="list">
+        {pots.map((c) => {
+          const name = c.name.replace(/^Kortregning\s+/, '');
+          const pct = c.card!.owed > 0 ? Math.min(100, Math.max(0, (c.available / c.card!.owed) * 100)) : 100;
+          return (
+            <div key={c.id} className="list-item card-bill" style={{ padding: '10px 18px' }}>
+              <div className="grow" style={{ minWidth: 0 }}>
+                <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}>
+                  <strong className="ellipsis">{name}</strong>
+                  <Money value={-c.card!.owed} />
+                </div>
+                <div className="bar" style={{ margin: '6px 0 4px' }}>
+                  <div className="fill" style={{ width: `${pct}%`, background: c.needed > 0 ? 'var(--warn)' : 'var(--good)' }} />
+                </div>
+                <div className="small muted">
+                  {c.card!.owed <= 0
+                    ? 'Nedbetalt ✓'
+                    : c.needed > 0
+                      ? `${kr(Math.max(0, c.available))} satt av · mangler ${kr(c.needed)}`
+                      : `Hele regningen er satt av ✓`}
+                  {c.card!.dueDay && c.card!.owed > 0 ? ` · forfaller ${c.card!.dueDay}.` : ''}
+                </div>
+              </div>
+              {c.needed > 0 && (
+                <button className="btn sm" onClick={() => onCover(c)}>
+                  Dekk {kr(c.needed)}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+interface TipData {
+  key: string;
+  kind: 'price' | 'power' | 'pay';
+  title: string;
+  text: string;
+  action?: { label: string; type: 'target' | 'move'; categoryId: number; amount: number };
+}
+
+const TIP_ICON: Record<TipData['kind'], string> = { price: '🏷️', power: '⚡', pay: '🎁' };
+
+/** Smart tips (price increases, winter power, holiday pay): each can be acted on in one tap, or dismissed for good. */
+export function Tips({ month, onChanged }: { month: string; onChanged: () => void }) {
+  const { version } = useStore();
+  const toast = useToast();
+  const [tips, setTips] = useState<TipData[]>([]);
+  const [gone, setGone] = useState<string[]>([]);
+  useEffect(() => {
+    if (month !== currentMonth()) return setTips([]);
+    api.get<TipData[]>('/tips').then(setTips).catch(() => setTips([]));
+  }, [month, version]);
+  const hidden = (k: string) => {
+    if (gone.includes(k)) return true;
+    try {
+      return localStorage.getItem(`tip.${k}`) === '1';
+    } catch {
+      return false;
+    }
+  };
+  const dismiss = (k: string) => {
+    try {
+      localStorage.setItem(`tip.${k}`, '1');
+    } catch {
+      /* private mode */
+    }
+    setGone((g) => [...g, k]);
+  };
+  const shown = tips.filter((t) => !hidden(t.key));
+  if (!shown.length) return null;
+
+  const act = async (t: TipData) => {
+    const a = t.action!;
+    try {
+      if (a.type === 'target') await api.patch(`/categories/${a.categoryId}`, { target_type: 'monthly', target_amount: a.amount });
+      else await api.post(`/budget/${month}/move`, { from: null, to: a.categoryId, amount: a.amount });
+      haptic();
+      toast('Gjort ✓');
+      dismiss(t.key);
+      onChanged();
+    } catch (e: any) {
+      toast(e.message, { error: true });
+    }
+  };
+
+  return (
+    <div className="tips">
+      {shown.map((t) => (
+        <div key={t.key} className={`card tip tip-${t.kind}`}>
+          <span className="tip-icon" aria-hidden>
+            {TIP_ICON[t.kind]}
+          </span>
+          <div className="grow" style={{ minWidth: 0 }}>
+            <strong>{t.title}</strong>
+            <div className="small muted">{t.text}</div>
+            {t.action && (
+              <button className="btn sm primary" style={{ marginTop: 8 }} onClick={() => act(t)}>
+                {t.action.label}
+              </button>
+            )}
+          </div>
+          <button className="icon-btn" onClick={() => dismiss(t.key)} aria-label="Skjul tipset">
+            <Icon name="close" size={16} />
+          </button>
+        </div>
+      ))}
+    </div>
   );
 }
