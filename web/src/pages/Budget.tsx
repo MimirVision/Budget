@@ -10,7 +10,7 @@ import { useStore } from '../store';
 import { useIsMobile, useStoredState } from '../hooks';
 import { AnimatedMoney, Icon, Modal, MoneyInput, Skeleton, haptic, useToast } from '../components/ui';
 import { addMonths, currentMonth } from '../../../shared/months';
-import { Attention, AutoAssignMenu, Payday, WrapUp, CategoryDetail, Pill, Upcoming, UsageBar, Welcome, subtitle } from './budgetParts';
+import { Attention, AutoAssignMenu, CardBills, Payday, Tips, WrapUp, CategoryDetail, Pill, Upcoming, UsageBar, Welcome, subtitle } from './budgetParts';
 
 type Filter = 'all' | 'needs' | 'over' | 'money';
 const FILTERS: Array<{ id: Filter; label: string; test: (c: CategoryRow) => boolean }> = [
@@ -206,6 +206,7 @@ export default function BudgetPage() {
       )}
       <WrapUp month={month} startMonth={startMonth} onChanged={() => { load(); refresh(); }} />
       <Payday budget={budget} month={month} onChanged={() => { load(); refresh(); }} />
+      <Tips month={month} onChanged={() => { load(); refresh(); }} />
       <Attention budget={budget} />
       <Hero budget={budget} onAuto={() => setAutoOpen(true)} />
       <Stats budget={budget} />
@@ -242,6 +243,7 @@ export default function BudgetPage() {
               );
             })}
             {groups.length === 0 && <div className="empty small">Ingen kategorier her. 🎉</div>}
+            <CardBills budget={budget} onCover={(c) => assign(c.id, c.assigned + c.needed)} />
             <Upcoming items={recurring} />
           </div>
           {current && (
@@ -318,6 +320,7 @@ export default function BudgetPage() {
                     rett i Fordelt, som <code>1500+300</code>.
                   </div>
                 </div>
+                <CardBills budget={budget} onCover={(c) => assign(c.id, c.assigned + c.needed)} />
                 <Upcoming items={recurring} />
               </>
             )}

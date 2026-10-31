@@ -36,7 +36,7 @@ function describeResult(r: IngestResult) {
 }
 
 export default function AccountsPage() {
-  const { summary, refresh } = useStore();
+  const { summary, refresh, changed } = useStore();
   const [connections, setConnections] = useState<Connection[]>([]);
   const [params, setParams] = useSearchParams();
   const [adding, setAdding] = useState(false);
@@ -145,6 +145,28 @@ export default function AccountsPage() {
         </div>
       )}
 
+      {open
+        .filter((a) => a.kind === 'credit' && !a.on_budget)
+        .map((a) => (
+          <div key={`card-${a.id}`} className="callout info" style={{ marginBottom: 12 }}>
+            <Icon name="wallet" size={20} />
+            <div style={{ flex: 1 }}>
+              <strong>{a.name} er ikke med i budsjettet.</strong> Flytt det inn, så får det en Kortregning-kategori: alt dere handler med
+              kortet settes av automatisk, så regningen alltid er dekket når den kommer.
+            </div>
+            <button
+              className="btn sm primary"
+              onClick={async () => {
+                await api.patch(`/accounts/${a.id}`, { on_budget: true });
+                toast(`${a.name} er med i budsjettet. Se Kortregning ${a.name} under Kredittkort i Budsjett.`);
+                await refresh();
+                changed();
+              }}
+            >
+              Flytt til budsjettet
+            </button>
+          </div>
+        ))}
       {[
         { title: 'Budsjettkontoer', sub: 'Pengene dere bruker av: brukskonto, Revolut, kredittkort', items: open.filter((a) => a.on_budget) },
         { title: 'Oppfølgingskontoer', sub: 'Boliglån, sparing og investeringer dere følger med på, men ikke budsjetterer fra', items: open.filter((a) => !a.on_budget) },
@@ -933,6 +955,7 @@ function EditAccount({ account, onClose, onSaved }: { account: Account; onClose:
   const [name, setName] = useState(account.name);
   const [kind, setKind] = useState(account.kind);
   const [onBudget, setOnBudget] = useState(!!account.on_budget);
+  const [dueDay, setDueDay] = useState<number | null>(account.due_day ?? null);
   const [reconcile, setReconcile] = useState<number | null>(null);
   const toast = useToast();
 
@@ -941,6 +964,7 @@ function EditAccount({ account, onClose, onSaved }: { account: Account; onClose:
       name,
       kind,
       on_budget: onBudget,
+      due_day: kind === 'credit' ? dueDay : null,
       ...(reconcile !== null ? { reconcileTo: reconcile } : {}),
     });
     if (reconcile !== null && reconcile !== account.balance) toast(`La til en justering på ${kr(reconcile - account.balance)}. Gå gjennom den for å gi den en kategori.`);
@@ -996,6 +1020,30 @@ function EditAccount({ account, onClose, onSaved }: { account: Account; onClose:
       <label className="check">
         <input type="checkbox" checked={onBudget} onChange={(e) => setOnBudget(e.target.checked)} /> Bruk i budsjettet
       </label>
+      {kind === 'credit' && (
+        <>
+          {!onBudget && (
+            <div className="callout info small">
+              <Icon name="wallet" size={18} />
+              <div>
+                Med kortet i budsjettet får det en <strong>Kortregning</strong>-kategori: når dere handler med kortet, flyttes pengene fra
+                kategorien dit, så regningen alltid er dekket når den kommer.
+              </div>
+            </div>
+          )}
+          <label className="field">
+            Regningen forfaller
+            <select className="select" value={dueDay ?? ''} onChange={(e) => setDueDay(e.target.value ? Number(e.target.value) : null)}>
+              <option value="">Vet ikke</option>
+              {Array.from({ length: 31 }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={n}>
+                  {n}. i måneden
+                </option>
+              ))}
+            </select>
+          </label>
+        </>
+      )}
       <label className="field">
         Rett saldo
         <span className="help">

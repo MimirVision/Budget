@@ -3792,3 +3792,30 @@ kbd {
 .kb-cats kbd {
   margin-right: 2px;
 }
+
+/* ---------- Smart tips ---------- */
+.tips {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tip {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-left: 3px solid var(--series-1);
+}
+.tip-price {
+  border-left-color: var(--warn);
+}
+.tip-pay {
+  border-left-color: var(--good);
+}
+.tip-icon {
+  font-size: 20px;
+  line-height: 1.2;
+}
+.card-bill .bar {
+  height: 6px;
+}

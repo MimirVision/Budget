@@ -26,6 +26,8 @@ export interface CategoryRow {
   avgActivity: number; // average monthly spending over the last 3 months
   needed: number; // how much more to assign this month to stay on target
   targetProgress: number | null; // 0..1
+  /** Set on a Kortregning category: the card it pays, what's owed on it, and the day the bill is due. */
+  card?: { accountId: number; owed: number; dueDay: number | null };
 }
 
 export interface BudgetMonth {
@@ -49,6 +51,52 @@ export function budgetStart(db: DB): string {
   return getSetting(db, 'budget_start') ?? '0000-01-01';
 }
 
+/**
+ * Kortregning (credit card payment pots, the YNAB way). Each credit card on the budget has a category that holds
+ * the money for its bill:
+ *  - a purchase on the card takes money from its category (as usual) and moves the same amount into the pot,
+ *  - paying the card (a transfer into it) takes the money out of the pot again.
+ * Both are simply "minus the amount on the card", so the pot always equals what the budget has set aside.
+ */
+const CARD_POT_LINES = `
+       UNION ALL
+       SELECT pc.id AS category_id, -t.amount AS amount, t.date FROM transactions t
+         JOIN accounts a ON a.id = t.account_id AND a.on_budget = 1
+         JOIN categories pc ON pc.card_account_id = a.id
+         LEFT JOIN categories c ON c.id = t.category_id LEFT JOIN category_groups g ON g.id = c.group_id
+        WHERE (
+          (t.transfer_id IS NULL AND t.category_id IS NOT NULL AND t.category_id != pc.id AND COALESCE(g.is_income, 0) = 0)
+          OR (t.transfer_id IS NULL AND EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id))
+          OR (t.transfer_id IS NOT NULL AND t.amount > 0)
+        )`;
+
+/** Makes sure every credit card on the budget has its Kortregning category, in a "Kredittkort" group. */
+export function ensureCardPots(db: DB) {
+  const cards = all<{ id: number; name: string; on_budget: number; closed: number; pot: number | null; hidden: number | null }>(
+    db,
+    `SELECT a.id, a.name, a.on_budget, a.closed, c.id AS pot, c.hidden FROM accounts a
+       LEFT JOIN categories c ON c.card_account_id = a.id WHERE a.kind = 'credit'`,
+  );
+  const want = cards.filter((c) => c.on_budget && !c.closed);
+  if (!want.some((c) => !c.pot) && !cards.some((c) => c.pot && !!c.hidden === !!(c.on_budget && !c.closed))) return;
+  tx(db, () => {
+    let group = get<{ id: number }>(db, "SELECT id FROM category_groups WHERE name = 'Kredittkort' AND is_income = 0")?.id;
+    for (const c of cards) {
+      const active = !!(c.on_budget && !c.closed);
+      if (!c.pot && active) {
+        if (!group)
+          group = Number(
+            run(db, "INSERT INTO category_groups(name, sort) VALUES ('Kredittkort', (SELECT COALESCE(MIN(sort), 0) - 1 FROM category_groups))").lastInsertRowid,
+          );
+        run(db, 'INSERT INTO categories(group_id, name, sort, card_account_id) VALUES (?, ?, 0, ?)', group, `Kortregning ${c.name}`, c.id);
+      } else if (c.pot) {
+        // A card taken off the budget (or closed) hides its pot; back on the budget, it shows again.
+        run(db, 'UPDATE categories SET hidden = ? WHERE id = ?', active ? 0 : 1, c.pot);
+      }
+    }
+  });
+}
+
 /** Sum of category activity per category for a set of months, counting splits and ignoring transfers. */
 function activityBy(db: DB, where: string, ...params: any[]): Map<number, number> {
   const rows = all<{ category_id: number; total: number }>(
@@ -61,6 +109,7 @@ function activityBy(db: DB, where: string, ...params: any[]): Map<number, number
        SELECT s.category_id, s.amount, t.date FROM splits s
          JOIN transactions t ON t.id = s.transaction_id JOIN accounts a ON a.id = t.account_id
         WHERE a.on_budget = 1 AND s.category_id IS NOT NULL
+       ${CARD_POT_LINES}
      ) WHERE date >= ? AND ${where} GROUP BY category_id`,
     budgetStart(db),
     ...params,
@@ -117,6 +166,7 @@ function monthlyNet(db: DB, untilMonth: string): Map<number, Map<string, number>
        SELECT s.category_id, s.amount, t.date FROM splits s
          JOIN transactions t ON t.id = s.transaction_id JOIN accounts a ON a.id = t.account_id
         WHERE a.on_budget = 1 AND s.category_id IS NOT NULL
+       ${CARD_POT_LINES}
      ) WHERE date >= ? AND date <= ? GROUP BY category_id, month`,
     start,
     endOf(untilMonth),
@@ -215,6 +265,7 @@ export function computeNeeded(
 }
 
 export function getBudget(db: DB, month: string): BudgetMonth {
+  ensureCardPots(db);
   const groups = all<any>(db, 'SELECT * FROM category_groups WHERE is_income = 0 ORDER BY sort, id');
   const cats = all<any>(
     db,
@@ -229,6 +280,17 @@ export function getBudget(db: DB, month: string): BudgetMonth {
   const lastActivity = activityBy(db, 'date BETWEEN ? AND ?', `${prev}-01`, endOf(prev));
   const threeMonths = activityBy(db, 'date BETWEEN ? AND ?', `${addMonths(month, -3)}-01`, endOf(prev));
   const reset = overspendMode(db) === 'reset' ? monthlyNet(db, month) : null;
+  // What's owed on each card with a Kortregning pot, as of the end of this month.
+  const cards = new Map(
+    all<{ pot: number; account_id: number; owed: number; due_day: number | null }>(
+      db,
+      `SELECT pc.id AS pot, a.id AS account_id, a.due_day,
+              -COALESCE((SELECT SUM(t.amount) FROM transactions t WHERE t.account_id = a.id AND t.date >= ? AND t.date <= ?), 0) AS owed
+         FROM categories pc JOIN accounts a ON a.id = pc.card_account_id`,
+      budgetStart(db),
+      endOf(month),
+    ).map((r) => [r.pot, { accountId: r.account_id, owed: Math.max(0, r.owed), dueDay: r.due_day }]),
+  );
 
   let totalAssigned = 0;
   let totalActivity = 0;
@@ -256,6 +318,13 @@ export function getBudget(db: DB, month: string): BudgetMonth {
     const t = computeNeeded(row, month);
     row.needed = t.needed;
     row.targetProgress = t.progress;
+    const card = cards.get(c.id);
+    if (card) {
+      // The pot's goal is the whole card bill: what's owed and not yet set aside is what's needed.
+      row.card = card;
+      row.needed = Math.max(0, card.owed - row.available);
+      row.targetProgress = card.owed > 0 ? Math.max(0, Math.min(1, row.available / card.owed)) : 1;
+    }
     totalAssigned += row.assigned;
     totalActivity += row.activity;
     totalAvailable += row.available;
@@ -336,6 +405,8 @@ export function autoAssign(db: DB, month: string, mode: AutoAssignMode, category
         setAssigned(db, month, c.id, 0);
         continue;
       }
+      // Card pots fill themselves from spending; only "Fyll opp målene" tops them up to the whole card bill.
+      if (c.card && mode !== 'targets') continue;
       if (mode === 'targets') want = c.needed;
       else if (mode === 'last_month_assigned') want = c.lastMonthAssigned - c.assigned;
       else if (mode === 'last_month_spent') want = -c.lastMonthActivity - c.assigned;

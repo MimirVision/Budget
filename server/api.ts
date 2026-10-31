@@ -1,11 +1,12 @@
 import { Hono } from 'hono';
 import { all, get, getSetting, run, setSetting, tx, type DB } from './db.ts';
 import { autoAssign, budgetStart, overspendMode, getBudget, moveMoney, readyToAssign, setAssigned, type AutoAssignMode } from './budget.ts';
-import { applyFreshStart, previewFreshStart, undoFreshStart } from './freshstart.ts';
+import { applyFreshStart, incomeCategory, previewFreshStart, undoFreshStart } from './freshstart.ts';
 import { forgetImport, ingest, linkTransfer, rejectTransferSuggestion, ruleMatches, transferToAccount, unlinkTransfer, withImportHashes } from './ingest.ts';
 import { previewCsv, type CsvMapping } from './import/csv.ts';
 import { overview } from './overview.ts';
-import { payday, syncHealth } from './insights.ts';
+import { payday, syncHealth, tips } from './insights.ts';
+import { expectRefund, listRefunds } from './refunds.ts';
 import { addBill, deleteBill, listBills, syncBillTargets, updateBill, type BillInput } from './bills.ts';
 import { dismissDuplicates, findDuplicates, mergeDuplicates } from './duplicates.ts';
 import { cashflowReport, detectRecurring, netWorthReport, spendingReport } from './reports.ts';
@@ -94,6 +95,8 @@ function deleteTransaction(db: DB, id: number, keep: Deleted = emptyDeleted()): 
     keep.splits.push(...all<any>(db, 'SELECT * FROM splits WHERE transaction_id = ?', row.id));
     keep.attachments.push(...all<any>(db, 'SELECT * FROM attachments WHERE transaction_id = ?', row.id));
     run(db, 'UPDATE transactions SET suggested_transfer_id = NULL WHERE suggested_transfer_id = ?', row.id);
+    run(db, 'DELETE FROM refunds WHERE transaction_id = ?', row.id);
+    run(db, 'UPDATE refunds SET resolved_transaction_id = NULL, resolved_at = NULL WHERE resolved_transaction_id = ?', row.id);
     forgetImport(db, row.id);
     run(db, 'DELETE FROM attachments WHERE transaction_id = ?', row.id);
     run(db, 'DELETE FROM splits WHERE transaction_id = ?', row.id);
@@ -194,6 +197,9 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
       budgetStart: getSetting(db, 'budget_start') ?? null,
       overspending: overspendMode(db),
       stale: syncHealth(db),
+      lateRefunds: listRefunds(db)
+        .filter((r) => !r.resolved_transaction_id && r.days > 14)
+        .map((r) => ({ id: r.id, payee: r.payee, amount: r.amount, days: r.days })),
       accounts,
       attention,
       categories: all<any>(
@@ -420,11 +426,24 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
   api.patch('/accounts/:id', async (c) => {
     const id = Number(c.req.param('id'));
     const body = await c.req.json();
-    for (const f of ['name', 'kind', 'institution', 'on_budget', 'closed'] as const) {
+    for (const f of ['name', 'kind', 'institution', 'on_budget', 'closed', 'due_day'] as const) {
       if (body[f] === undefined) continue;
-      const value = f === 'on_budget' || f === 'closed' ? (body[f] ? 1 : 0) : body[f];
+      const value =
+        f === 'on_budget' || f === 'closed'
+          ? body[f] ? 1 : 0
+          : f === 'due_day'
+            ? body[f] ? Math.min(31, Math.max(1, Math.round(Number(body[f])))) : null
+            : body[f];
       run(db, `UPDATE accounts SET ${f} = ? WHERE id = ?`, value, id);
     }
+    // An opening balance from "Start på nytt" counts against Klar til fordeling only on a budget account.
+    if (body.on_budget !== undefined)
+      run(
+        db,
+        "UPDATE transactions SET category_id = ? WHERE account_id = ? AND source = 'freshstart'",
+        body.on_budget ? incomeCategory(db) : null,
+        id,
+      );
     if (body.move) moveSort(db, 'accounts', id, body.move, '1 = 1 OR ? IS NULL', id);
     // Fix the balance so it matches the bank ("reconcile").
     if (body.reconcileTo !== undefined) {
@@ -585,6 +604,24 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
 
   api.delete('/bills/:id', (c) => {
     deleteBill(db, Number(c.req.param('id')));
+    return c.json({ ok: true });
+  });
+
+  // ---------- Smart tips and refunds ----------
+  api.get('/tips', (c) => c.json(tips(db)));
+
+  api.get('/refunds', (c) => c.json(listRefunds(db)));
+  api.post('/transactions/:id/refund', async (c) => {
+    const { amount } = await c.req.json<{ amount?: number }>().catch(() => ({ amount: undefined }));
+    try {
+      const id = expectRefund(db, Number(c.req.param('id')), amount);
+      return c.json({ id });
+    } catch (e: any) {
+      badRequest(e.message);
+    }
+  });
+  api.delete('/refunds/:id', (c) => {
+    run(db, 'DELETE FROM refunds WHERE id = ?', Number(c.req.param('id')));
     return c.json({ ok: true });
   });
 

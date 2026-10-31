@@ -12,6 +12,7 @@ export interface Account {
   connection_id: number | null;
   connection_status: string | null;
   last_sync_at: string | null;
+  due_day?: number | null;
 }
 
 export interface CategoryOption {
@@ -30,6 +31,8 @@ export interface Summary {
   /** First day of the budget after "Start på nytt", or null. */
   budgetStart: string | null;
   /** Banks that have gone quiet, or whose automatic sync hasn't run. */
+  /** Refunds waiting for more than two weeks. */
+  lateRefunds?: Array<{ id: number; payee: string; amount: number; days: number }>;
   stale?: Array<{ accountId: number; name: string; days: number; usual: number; kind: 'quiet' | 'nosync'; lastSyncAt: string | null }>;
   overspending: 'carry' | 'reset';
   unreviewed: number;
@@ -55,6 +58,7 @@ export interface CategoryRow {
   avgActivity: number;
   needed: number;
   targetProgress: number | null;
+  card?: { accountId: number; owed: number; dueDay: number | null };
 }
 
 export interface BudgetMonth {
