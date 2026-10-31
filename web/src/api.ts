@@ -21,12 +21,16 @@ export interface CategoryOption {
   group_id: number;
   group_name: string;
   is_income: number;
+  /** How often it was used the last 90 days, for "Mest brukt" at the top of the picker. */
+  uses?: number;
 }
 
 export interface Summary {
   readyToAssign: number;
   /** First day of the budget after "Start på nytt", or null. */
   budgetStart: string | null;
+  /** Banks that have gone quiet, or whose automatic sync hasn't run. */
+  stale?: Array<{ accountId: number; name: string; days: number; usual: number; kind: 'quiet' | 'nosync'; lastSyncAt: string | null }>;
   overspending: 'carry' | 'reset';
   unreviewed: number;
   accounts: Account[];
