@@ -230,11 +230,19 @@ export function CategoryDetail({
           rta={rta}
           month={month}
           onClose={() => setMoving(false)}
-          onDone={async (text) => {
+          onDone={async (text, undo) => {
             setMoving(false);
             haptic();
             await onChanged();
-            toast(text);
+            toast(text, {
+              action: {
+                label: 'Angre',
+                run: async () => {
+                  await undo();
+                  await onChanged();
+                },
+              },
+            });
           }}
         />
       )}
@@ -265,7 +273,7 @@ export function MoveMoney({
   rta: number;
   month: string;
   onClose: () => void;
-  onDone: (text: string) => void;
+  onDone: (text: string, undo: () => Promise<void>) => void;
 }) {
   const needsMoney = cat.available < 0 || cat.needed > 0;
   const [direction, setDirection] = useState<'in' | 'out'>(needsMoney ? 'in' : 'out');
@@ -290,7 +298,9 @@ export function MoveMoney({
               const o = other === 'rta' ? null : Number(other);
               const body = direction === 'in' ? { from: o, to: cat.id, amount } : { from: cat.id, to: o, amount };
               await api.post(`/budget/${month}/move`, body);
-              onDone(direction === 'in' ? `Flyttet ${kr(amount)} fra ${otherName} til ${cat.name}` : `Flyttet ${kr(amount)} fra ${cat.name} til ${otherName}`);
+              onDone(direction === 'in' ? `Flyttet ${kr(amount)} fra ${otherName} til ${cat.name}` : `Flyttet ${kr(amount)} fra ${cat.name} til ${otherName}`, async () => {
+                await api.post(`/budget/${month}/move`, { from: body.to, to: body.from, amount: body.amount });
+              });
             }}
           >
             Flytt {kr(amount)}
@@ -493,6 +503,23 @@ export function Attention({ budget }: { budget: BudgetMonth }) {
     else if (c.status === 'linking') items.push({ tone: 'info', text: <>Fullfør oppsettet av {c.name}: <Link to={`/accounts?link=${c.id}`}>velg hvilke kontoer som skal synkroniseres</Link>.</> });
     else if (c.expires_at)
       items.push({ tone: 'warn', text: <>Koblingen til {c.name} utløper {relativeDay(c.expires_at.slice(0, 10)).toLowerCase()}. <Link to="/accounts">Forny den</Link> så synkroniseringen ikke stopper.</> });
+  }
+  for (const st of summary?.stale ?? []) {
+    items.push({
+      tone: 'warn',
+      text:
+        st.kind === 'nosync' ? (
+          <>
+            Den automatiske synkroniseringen av {st.name} har ikke kjørt siden {relativeDay(st.lastSyncAt!.slice(0, 10)).toLowerCase()}.{' '}
+            <Link to="/accounts">Synkroniser nå</Link>
+          </>
+        ) : (
+          <>
+            {st.name} har ikke fått nye transaksjoner på {st.days} dager (vanligvis {st.usual === 1 ? 'hver dag' : `hver ${st.usual}. dag`}). Kanskje
+            koblingen har stoppet? <Link to="/accounts">Sjekk og synkroniser</Link>
+          </>
+        ),
+    });
   }
   if (budget.unreviewed > 0)
     items.push({
@@ -782,5 +809,137 @@ function CategoryHistory({ rows, current }: { rows: Array<{ month: string; spent
         Søylen er brukt, streken er fordelt · snitt før denne måneden {kr(avg)}
       </div>
     </div>
+  );
+}
+
+interface PaydayInfo {
+  id: number;
+  date: string;
+  amount: number;
+  payee: string;
+  reviewed: number;
+  category_id: number | null;
+  suggested_category_id: number | null;
+  category_name: string | null;
+}
+
+/**
+ * Lønningsdag: when the salary has just come in, offer to give it a job in one tap. Fixed bills first, then the
+ * other goals, and show what's left. Can be undone.
+ */
+export function Payday({ budget, month, onChanged }: { budget: BudgetMonth; month: string; onChanged: () => void }) {
+  const { version } = useStore();
+  const toast = useToast();
+  const [pay, setPay] = useState<PaydayInfo | null>(null);
+  const [billCats, setBillCats] = useState<number[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [hidden, setHidden] = useState<string | null>(null);
+  useEffect(() => {
+    if (month !== currentMonth()) return;
+    api.get<PaydayInfo | null>('/payday').then(setPay).catch(() => setPay(null));
+    api
+      .get<{ bills: Array<{ category_id: number | null }> }>('/bills?light=1')
+      .then((d) => setBillCats([...new Set(d.bills.map((b) => b.category_id).filter((x): x is number => !!x))]))
+      .catch(() => setBillCats([]));
+  }, [month, version]);
+
+  const key = pay ? `payday.${pay.id}` : '';
+  const dismissed = (() => {
+    try {
+      return !!key && (hidden === key || localStorage.getItem(key) === '1');
+    } catch {
+      return hidden === key;
+    }
+  })();
+  if (!pay || dismissed || month !== currentMonth()) return null;
+
+  const cats = budget.groups.flatMap((g) => g.categories).filter((c) => !c.hidden);
+  const billsNeed = cats.filter((c) => billCats.includes(c.id)).reduce((s, c) => s + c.needed, 0);
+  const goalsNeed = cats.filter((c) => !billCats.includes(c.id)).reduce((s, c) => s + c.needed, 0);
+  // "Klar til fordeling" only counts income with a category. A salary still waiting in Gjennomgå gets its
+  // suggested category when you tap "Fordel lønna", so it's added here.
+  const pool = budget.readyToAssign + (!pay.category_id && pay.suggested_category_id ? pay.amount : 0);
+  const toBills = Math.min(billsNeed, Math.max(0, pool));
+  const toGoals = Math.min(goalsNeed, Math.max(0, pool - toBills));
+  const left = pool - toBills - toGoals;
+  const dismiss = () => {
+    try {
+      localStorage.setItem(key, '1');
+    } catch {
+      /* private mode */
+    }
+    setHidden(key);
+  };
+
+  const go = async () => {
+    setBusy(true);
+    const before = Object.fromEntries(cats.map((c) => [c.id, c.assigned]));
+    try {
+      if (!pay.reviewed) {
+        const cat = pay.category_id ?? pay.suggested_category_id;
+        if (cat) await api.patch(`/transactions/${pay.id}`, { category_id: cat, reviewed: true });
+      }
+      if (billCats.length) await api.post(`/budget/${month}/auto`, { mode: 'targets', categoryIds: billCats });
+      const r = await api.post<{ assigned: number }>(`/budget/${month}/auto`, { mode: 'targets' });
+      haptic();
+      dismiss();
+      onChanged();
+      toast(`Lønna er fordelt: ${kr(toBills)} til regninger og ${kr(r.assigned)} til mål.`, {
+        action: {
+          label: 'Angre',
+          run: async () => {
+            await api.post(`/budget/${month}/restore`, { assigned: before });
+            onChanged();
+          },
+        },
+      });
+    } catch (e: any) {
+      toast(e.message, { error: true });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="card payday">
+      <div className="payday-head">
+        <span className="payday-icon" aria-hidden>
+          💰
+        </span>
+        <div className="grow" style={{ minWidth: 0 }}>
+          <strong>Lønna er kommet: {kr(pay.amount)}</strong>
+          <div className="small muted ellipsis">
+            {pay.payee} · {relativeDay(pay.date).toLowerCase()}
+            {!pay.reviewed && pay.category_name ? ` · godkjennes som ${pay.category_name}` : ''}
+          </div>
+        </div>
+        <button className="icon-btn" onClick={dismiss} aria-label="Skjul">
+          <Icon name="close" size={18} />
+        </button>
+      </div>
+      <div className="payday-steps">
+        <div>
+          <span className="muted small">1. Faste regninger</span>
+          <strong>{kr(toBills)}</strong>
+        </div>
+        <div>
+          <span className="muted small">2. Mål</span>
+          <strong>{kr(toGoals)}</strong>
+        </div>
+        <div>
+          <span className="muted small">3. Igjen å fordele</span>
+          <strong className={left < 0 ? 'neg' : ''}>{kr(left)}</strong>
+        </div>
+      </div>
+      <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
+        {billsNeed + goalsNeed === 0 ? (
+          <span className="small muted">Alle regninger og mål er dekket. Resten kan du fordele som du vil.</span>
+        ) : (
+          <button className="btn primary" disabled={busy} onClick={go}>
+            {busy ? 'Fordeler…' : 'Fordel lønna'}
+          </button>
+        )}
+      </div>
+    </section>
   );
 }

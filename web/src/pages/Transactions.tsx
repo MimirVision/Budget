@@ -291,11 +291,20 @@ export default function TransactionsPage() {
 
       {selecting && (
         <BulkBar
+          rows={rows}
           ids={selected}
           visible={rows.map((t) => t.id)}
           onSelectAll={() => setSelected(rows.map((t) => t.id))}
-          onDone={async (msg) => {
-            toast(msg);
+          onDone={async (msg, undo) => {
+            toast(msg, undo && {
+              action: {
+                label: 'Angre',
+                run: async () => {
+                  await undo();
+                  await Promise.all([load(), refresh()]);
+                },
+              },
+            });
             stopSelecting();
             await Promise.all([load(), refresh()]);
           }}
@@ -444,38 +453,47 @@ function PendingList({ items }: { items: Pending[] }) {
 
 /** The bar that appears while choosing: what to do with the ticked transactions. */
 function BulkBar({
+  rows,
   ids,
   visible,
   onSelectAll,
   onDone,
 }: {
+  rows: Transaction[];
   ids: number[];
   visible: number[];
   onSelectAll: () => void;
-  onDone: (message: string) => void;
+  onDone: (message: string, undo?: () => Promise<void>) => void;
 }) {
   const { summary } = useStore();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const run = async (action: 'category' | 'reviewed' | 'delete', categoryId?: number | null) => {
     if (!ids.length) return;
-    if (action === 'delete' && !confirm(`Slette ${ids.length} transaksjoner? Det kan ikke angres.`)) return;
+    if (action === 'delete' && !confirm(`Slette ${ids.length} transaksjoner?`)) return;
     setBusy(true);
     try {
       let changed = 0;
       let skipped = 0;
+      const deleted: unknown[] = [];
+      // What they were before, so "Angre" can put it back.
+      const before = rows.filter((t) => ids.includes(t.id)).map((t) => ({ id: t.id, category_id: t.category_id, reviewed: t.reviewed }));
       // In chunks: each request stays small (Cloudflare's free plan).
       for (let i = 0; i < ids.length; i += 90) {
-        const r = await api.post<{ changed: number; skipped: number }>('/transactions/bulk', {
+        const r = await api.post<{ changed: number; skipped: number; deleted?: unknown }>('/transactions/bulk', {
           ids: ids.slice(i, i + 90),
           action,
           category_id: categoryId,
         });
         changed += r.changed;
         skipped += r.skipped;
+        if (r.deleted) deleted.push(r.deleted);
       }
       const verb = action === 'delete' ? 'Slettet' : action === 'reviewed' ? 'Godkjente' : 'Oppdaterte';
-      onDone(`${verb} ${changed} transaksjoner${skipped ? ` (${skipped} overføringer hoppet over)` : ''}`);
+      onDone(`${verb} ${changed} transaksjoner${skipped ? ` (${skipped} overføringer hoppet over)` : ''}`, async () => {
+        if (action === 'delete') for (const d of deleted) await api.post('/transactions/restore', { deleted: d });
+        else for (let i = 0; i < before.length; i += 90) await api.post('/transactions/bulk-restore', { items: before.slice(i, i + 90) });
+      });
     } catch (e: any) {
       toast(e.message, { error: true });
     } finally {

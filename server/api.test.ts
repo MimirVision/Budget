@@ -126,3 +126,26 @@ describe('assigning before a fresh start', () => {
     expect(b.groups.flatMap((g: any) => g.categories).find((c: any) => c.id === cat).assigned).toBe(50000);
   });
 });
+
+describe('undo delete', () => {
+  it('puts a deleted transaction back with its split, receipt and transfer link', async () => {
+    const { app, db, txn } = setup();
+    const acc2 = Number(run(db, "INSERT INTO accounts(name) VALUES ('Revolut')").lastInsertRowid);
+    const other = Number(run(db, "INSERT INTO transactions(account_id, date, amount, payee, source) VALUES (?, '2026-10-02', 30000, 'Fra SB1', 'enablebanking')", acc2).lastInsertRowid);
+    run(db, 'UPDATE transactions SET transfer_id = ?, external_id = ? WHERE id = ?', other, 'ext-1', txn);
+    run(db, 'UPDATE transactions SET transfer_id = ? WHERE id = ?', txn, other);
+    run(db, "INSERT INTO splits(transaction_id, category_id, amount) VALUES (?, NULL, -30000)", txn);
+    await app.request(`/api/transactions/${txn}/attachments`, { method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: new Uint8Array([1, 2, 3]) });
+
+    const { deleted } = await (await app.request(`/api/transactions/${txn}`, { method: 'DELETE' })).json();
+    expect(get(db, 'SELECT id FROM transactions WHERE id = ?', txn)).toBeUndefined();
+    expect(get<any>(db, 'SELECT transfer_id FROM transactions WHERE id = ?', other).transfer_id).toBeNull();
+
+    await app.request('/api/transactions/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deleted }) });
+    expect(get<any>(db, 'SELECT payee, external_id, transfer_id FROM transactions WHERE id = ?', txn)).toEqual({ payee: 'Elkjøp', external_id: 'ext-1', transfer_id: other });
+    expect(get<any>(db, 'SELECT transfer_id FROM transactions WHERE id = ?', other).transfer_id).toBe(txn);
+    expect(get<any>(db, 'SELECT COUNT(*) AS n FROM splits WHERE transaction_id = ?', txn).n).toBe(1);
+    expect(get<any>(db, 'SELECT COUNT(*) AS n FROM attachments WHERE transaction_id = ?', txn).n).toBe(1);
+    expect(get<any>(db, 'SELECT COUNT(*) AS n FROM forgotten_imports').n).toBe(0); // the sync knows it again
+  });
+});

@@ -10,7 +10,7 @@ import { useStore } from '../store';
 import { useIsMobile, useStoredState } from '../hooks';
 import { AnimatedMoney, Icon, Modal, MoneyInput, Skeleton, haptic, useToast } from '../components/ui';
 import { addMonths, currentMonth } from '../../../shared/months';
-import { Attention, AutoAssignMenu, WrapUp, CategoryDetail, Pill, Upcoming, UsageBar, Welcome, subtitle } from './budgetParts';
+import { Attention, AutoAssignMenu, Payday, WrapUp, CategoryDetail, Pill, Upcoming, UsageBar, Welcome, subtitle } from './budgetParts';
 
 type Filter = 'all' | 'needs' | 'over' | 'money';
 const FILTERS: Array<{ id: Filter; label: string; test: (c: CategoryRow) => boolean }> = [
@@ -91,6 +91,15 @@ export default function BudgetPage() {
 
   const auto = async (mode: string, label: string) => {
     const before = budget;
+    const undo = before && {
+      label: 'Angre',
+      run: async () => {
+        const assigned = Object.fromEntries(before.groups.flatMap((g) => g.categories).map((c) => [c.id, c.assigned]));
+        await api.post(`/budget/${month}/restore`, { assigned });
+        load();
+        refresh();
+      },
+    };
     const n = ++seq.current;
     let r: { assigned: number; budget: BudgetMonth };
     try {
@@ -105,7 +114,8 @@ export default function BudgetPage() {
     haptic();
     if (mode !== 'reset' && r.assigned === 0) {
       toast(before && before.readyToAssign <= 0 ? 'Ingenting igjen å fordele. Klar til fordeling er tom.' : 'Ingenting mangler, kategoriene er allerede dekket.');
-    } else if (mode !== 'reset') toast(`${label}: fordelte ${kr(r.assigned)}`);
+    } else if (mode !== 'reset') toast(`${label}: fordelte ${kr(r.assigned)}`, undo ? { action: undo } : undefined);
+    else if (undo) toast('Fordelingen er nullstilt', { action: undo });
   };
 
   // After «Start på nytt» in a coming month, open the budget on that month.
@@ -195,6 +205,7 @@ export default function BudgetPage() {
         </div>
       )}
       <WrapUp month={month} startMonth={startMonth} onChanged={() => { load(); refresh(); }} />
+      <Payday budget={budget} month={month} onChanged={() => { load(); refresh(); }} />
       <Attention budget={budget} />
       <Hero budget={budget} onAuto={() => setAutoOpen(true)} />
       <Stats budget={budget} />

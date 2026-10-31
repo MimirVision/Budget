@@ -5,6 +5,7 @@ import { applyFreshStart, previewFreshStart, undoFreshStart } from './freshstart
 import { forgetImport, ingest, linkTransfer, rejectTransferSuggestion, ruleMatches, transferToAccount, unlinkTransfer, withImportHashes } from './ingest.ts';
 import { previewCsv, type CsvMapping } from './import/csv.ts';
 import { overview } from './overview.ts';
+import { payday, syncHealth } from './insights.ts';
 import { addBill, deleteBill, listBills, syncBillTargets, updateBill, type BillInput } from './bills.ts';
 import { dismissDuplicates, findDuplicates, mergeDuplicates } from './duplicates.ts';
 import { cashflowReport, detectRecurring, netWorthReport, spendingReport } from './reports.ts';
@@ -74,23 +75,68 @@ function shapeTxn(r: any) {
   return { ...rest, splits };
 }
 
+/** Everything needed to put deleted transactions back (Angre). */
+interface Deleted {
+  transactions: any[];
+  splits: any[];
+  attachments: any[];
+  /** Bank transactions that were linked as the other half of a transfer: [id, the deleted one it pointed to]. */
+  unlinked: Array<[number, number]>;
+}
+const emptyDeleted = (): Deleted => ({ transactions: [], splits: [], attachments: [], unlinked: [] });
+
 /** Deletes a transaction and what hangs off it. A transfer copy the app made goes too; a bank one is unlinked. */
-function deleteTransaction(db: DB, id: number) {
+function deleteTransaction(db: DB, id: number, keep: Deleted = emptyDeleted()): Deleted {
   const t = get<any>(db, 'SELECT * FROM transactions WHERE id = ?', id);
-  if (!t) return;
+  if (!t) return keep;
+  const remove = (row: any) => {
+    keep.transactions.push(row);
+    keep.splits.push(...all<any>(db, 'SELECT * FROM splits WHERE transaction_id = ?', row.id));
+    keep.attachments.push(...all<any>(db, 'SELECT * FROM attachments WHERE transaction_id = ?', row.id));
+    run(db, 'UPDATE transactions SET suggested_transfer_id = NULL WHERE suggested_transfer_id = ?', row.id);
+    forgetImport(db, row.id);
+    run(db, 'DELETE FROM attachments WHERE transaction_id = ?', row.id);
+    run(db, 'DELETE FROM splits WHERE transaction_id = ?', row.id);
+    run(db, 'DELETE FROM transactions WHERE id = ?', row.id);
+  };
   if (t.transfer_id) {
     const other = get<any>(db, 'SELECT * FROM transactions WHERE id = ?', t.transfer_id);
-    if (other?.source === 'transfer') {
-      run(db, 'DELETE FROM attachments WHERE transaction_id = ?', other.id);
-      run(db, 'DELETE FROM splits WHERE transaction_id = ?', other.id);
-      run(db, 'DELETE FROM transactions WHERE id = ?', other.id);
-    } else run(db, 'UPDATE transactions SET transfer_id = NULL, reviewed = 0 WHERE id = ?', t.transfer_id);
+    if (other?.source === 'transfer') remove(other);
+    else if (other) {
+      keep.unlinked.push([other.id, id]);
+      run(db, 'UPDATE transactions SET transfer_id = NULL, reviewed = 0 WHERE id = ?', other.id);
+    }
   }
-  run(db, 'UPDATE transactions SET suggested_transfer_id = NULL WHERE suggested_transfer_id = ?', id);
-  forgetImport(db, id);
-  run(db, 'DELETE FROM attachments WHERE transaction_id = ?', id);
-  run(db, 'DELETE FROM splits WHERE transaction_id = ?', id);
-  run(db, 'DELETE FROM transactions WHERE id = ?', id);
+  remove(t);
+  return keep;
+}
+
+/** Puts back what deleteTransaction removed, with the same ids, and lets the bank sync know them again. */
+function restoreDeleted(db: DB, d: Deleted) {
+  const cols = (row: any) => Object.keys(row).filter((k) => /^[a-z_]+$/.test(k));
+  tx(db, () => {
+    for (const row of d.transactions) {
+      if (get(db, 'SELECT id FROM transactions WHERE id = ?', row.id)) continue;
+      const c = cols(row);
+      run(db, `INSERT INTO transactions(${c.join(', ')}) VALUES (${c.map(() => '?').join(', ')})`, ...c.map((k) => row[k]));
+      run(
+        db,
+        'DELETE FROM forgotten_imports WHERE account_id = ? AND (external_id = ? OR import_hash = ?)',
+        row.account_id,
+        row.external_id ?? '\u0000',
+        row.import_hash ?? '\u0000',
+      );
+    }
+    for (const row of d.splits) {
+      const c = cols(row);
+      run(db, `INSERT OR IGNORE INTO splits(${c.join(', ')}) VALUES (${c.map(() => '?').join(', ')})`, ...c.map((k) => row[k]));
+    }
+    for (const row of d.attachments) {
+      const c = cols(row);
+      run(db, `INSERT OR IGNORE INTO attachments(${c.join(', ')}) VALUES (${c.map(() => '?').join(', ')})`, ...c.map((k) => row[k]));
+    }
+    for (const [other, id] of d.unlinked) run(db, 'UPDATE transactions SET transfer_id = ?, reviewed = 1 WHERE id = ?', id, other);
+  });
 }
 
 /** After you categorise a payee once, update the other waiting transactions from the same payee. */
@@ -147,14 +193,32 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
       unreviewed: get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM transactions WHERE reviewed = 0 AND date >= ?', budgetStart(db))!.n,
       budgetStart: getSetting(db, 'budget_start') ?? null,
       overspending: overspendMode(db),
+      stale: syncHealth(db),
       accounts,
       attention,
       categories: all<any>(
         db,
-        `SELECT c.id, c.name, c.hidden, g.id AS group_id, g.name AS group_name, g.is_income FROM categories c
-           JOIN category_groups g ON g.id = c.group_id ORDER BY g.is_income DESC, g.sort, c.sort, c.id`,
+        `SELECT c.id, c.name, c.hidden, g.id AS group_id, g.name AS group_name, g.is_income,
+                (SELECT COUNT(*) FROM transactions t WHERE t.category_id = c.id AND t.date >= ?) AS uses
+           FROM categories c JOIN category_groups g ON g.id = c.group_id ORDER BY g.is_income DESC, g.sort, c.sort, c.id`,
+        addDays(todayISO(), -90),
       ),
     });
+  });
+
+  /** The salary that just came in, if any: the Budsjett page offers to fill the budget from it. */
+  api.get('/payday', (c) => c.json(payday(db)));
+
+  /** Put back what was assigned before (Angre after Autofordel). */
+  api.post('/budget/:month/restore', async (c) => {
+    const month = c.req.param('month');
+    assertEditable(month);
+    const { assigned } = await c.req.json<{ assigned: Record<string, number> }>();
+    const entries = Object.entries(assigned ?? {}).slice(0, 200);
+    tx(db, () => {
+      for (const [id, amount] of entries) if (Number.isFinite(amount)) setAssigned(db, month, Number(id), amount);
+    });
+    return c.json(getBudget(db, month));
   });
 
   // ---------- Budget ----------
@@ -592,7 +656,29 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
   });
 
   api.delete('/transactions/:id', (c) => {
-    tx(db, () => deleteTransaction(db, Number(c.req.param('id'))));
+    let deleted = emptyDeleted();
+    tx(db, () => {
+      deleted = deleteTransaction(db, Number(c.req.param('id')));
+    });
+    // Sent back so "Angre" can restore it exactly.
+    return c.json({ ok: true, deleted });
+  });
+
+  /** Angre after deleting: put the transactions back as they were. */
+  api.post('/transactions/restore', async (c) => {
+    const { deleted } = await c.req.json<{ deleted: Deleted }>();
+    if (!deleted || !Array.isArray(deleted.transactions)) badRequest('Ingenting å angre');
+    restoreDeleted(db, deleted);
+    return c.json({ ok: true });
+  });
+
+  /** Angre after a bulk change: put each transaction's category and reviewed state back. */
+  api.post('/transactions/bulk-restore', async (c) => {
+    const { items } = await c.req.json<{ items: Array<{ id: number; category_id: number | null; reviewed: number }> }>();
+    tx(db, () => {
+      for (const it of (items ?? []).slice(0, 90))
+        run(db, 'UPDATE transactions SET category_id = ?, reviewed = ? WHERE id = ?', it.category_id ?? null, it.reviewed ? 1 : 0, Number(it.id));
+    });
     return c.json({ ok: true });
   });
 
@@ -607,11 +693,12 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
     if (!ids.length) badRequest('Velg minst én transaksjon');
     let changed = 0;
     let skipped = 0;
+    const deleted = emptyDeleted();
     tx(db, () => {
       for (const id of ids) {
         const t = get<any>(db, 'SELECT id, transfer_id, payee, amount FROM transactions WHERE id = ?', id);
         if (!t) continue;
-        if (b.action === 'delete') deleteTransaction(db, id);
+        if (b.action === 'delete') deleteTransaction(db, id, deleted);
         else if (b.action === 'reviewed') run(db, 'UPDATE transactions SET reviewed = 1 WHERE id = ?', id);
         else if (b.action === 'category') {
           if (t.transfer_id) {
@@ -624,7 +711,7 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
         changed++;
       }
     });
-    return c.json({ changed, skipped });
+    return c.json({ changed, skipped, deleted: b.action === 'delete' ? deleted : undefined });
   });
 
   /** "Looks good" for everything that has a suggestion. */

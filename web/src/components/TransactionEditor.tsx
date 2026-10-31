@@ -85,11 +85,22 @@ export function TransactionEditor({
     }
   };
 
+  const { changed } = useStore();
   const remove = async () => {
-    if (!txn || !confirm('Slette denne transaksjonen?')) return;
-    await api.del(`/transactions/${txn.id}`);
+    if (!txn) return;
+    // No "are you sure?": deleting is instant, and "Angre" in the message puts it back.
+    const r = await api.del<{ deleted: unknown }>(`/transactions/${txn.id}`);
     await refresh();
     onSaved();
+    toast(`Slettet ${txn.payee || 'transaksjonen'}`, {
+      action: {
+        label: 'Angre',
+        run: async () => {
+          await api.post('/transactions/restore', { deleted: r.deleted });
+          changed();
+        },
+      },
+    });
   };
 
   return (

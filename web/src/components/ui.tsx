@@ -153,6 +153,15 @@ export function CategorySelect({
     return 0;
   });
   for (const c of sorted) groups.set(c.group_name, [...(groups.get(c.group_name) ?? []), c]);
+  // The five you use most (for the right direction of money), so the usual choice is at the top of the list.
+  const incoming = amount !== undefined && amount > 0;
+  const top =
+    visible.length > 8
+      ? visible
+          .filter((c) => !c.hidden && (c.uses ?? 0) > 0 && (amount === undefined || !!c.is_income === incoming))
+          .sort((a, b) => (b.uses ?? 0) - (a.uses ?? 0))
+          .slice(0, 5)
+      : [];
   return (
     <select className={className} value={value ?? ''} onChange={(e) => {
         const v = e.target.value;
@@ -160,6 +169,15 @@ export function CategorySelect({
         onChange(v === '' ? null : Number.isNaN(Number(v)) ? (v as unknown as number) : Number(v));
       }}>
       <option value="">{placeholder}</option>
+      {top.length > 0 && (
+        <optgroup label="Mest brukt">
+          {top.map((c) => (
+            <option key={`top-${c.id}`} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </optgroup>
+      )}
       {[...groups].map(([group, cats]) => (
         <optgroup key={group} label={cats[0].is_income ? `${group} → Klar til fordeling` : group}>
           {cats.map((c) => (
@@ -258,7 +276,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const push = useCallback((text: string, opts: { error?: boolean; action?: Toast['action'] } = {}) => {
     const id = nextId.current++;
     setToasts((t) => [...t, { id, text, ...opts }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), opts.error ? 7000 : 4000);
+    // Longer when there is an "Angre" to reach for.
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), opts.error ? 7000 : opts.action ? 8000 : 4000);
   }, []);
   return (
     <ToastContext.Provider value={push}>

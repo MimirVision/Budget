@@ -4,7 +4,7 @@ import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useLocation, use
 import './styles.css';
 import { api } from './api';
 import { StoreProvider, useStore } from './store';
-import { AnimatedMoney, Icon, Modal, Money, ToastProvider, haptic } from './components/ui';
+import { AnimatedMoney, Icon, Modal, Money, ToastProvider, haptic, useToast } from './components/ui';
 import { PrefsProvider, usePrefs } from './prefs';
 import { SyncNow, ThemeSegment, ThemeToggle } from './components/controls';
 import { TransactionEditor } from './components/TransactionEditor';
@@ -20,6 +20,7 @@ import BillsPage from './pages/Bills';
 import { PageTransition, PullToRefresh, TopBar } from './mobile';
 import { AppVersion } from './version';
 import { InstallButton } from './install';
+import { CommandPalette } from './palette';
 
 const PRIMARY = [
   { to: '/', label: 'Budsjett', icon: 'wallet', end: true, hint: 'Planlegg pengene' },
@@ -37,6 +38,7 @@ const SECONDARY = [
 
 function Layout() {
   const { summary, changed } = useStore();
+  const toast = useToast();
   const mobile = useIsMobile();
   const [adding, setAdding] = useState(false);
   const [more, setMore] = useState(false);
@@ -72,6 +74,11 @@ function Layout() {
           <div className="brand">
             <img src="/icon.svg" alt="" /> Budsjett
           </div>
+          <button className="side-search" onClick={() => window.dispatchEvent(new Event('budget:palette'))}>
+            <Icon name="search" size={16} />
+            <span className="spacer">Søk</span>
+            <kbd>{navigator.platform.startsWith('Mac') ? '⌘' : 'Ctrl'} K</kbd>
+          </button>
           <button className="btn ghost side-add" onClick={() => setAdding(true)}>
             <Icon name="plus" size={16} /> Legg til manuelt
           </button>
@@ -120,6 +127,18 @@ function Layout() {
           </div>
         </aside>
       )}
+      <CommandPalette
+        onAdd={() => setAdding(true)}
+        onSync={async () => {
+          try {
+            const r = await api.post<Array<{ added?: number; error?: string }>>('/connections/sync-all');
+            toast(`${r.reduce((n, x) => n + (x.added ?? 0), 0)} nye transaksjoner`);
+            changed();
+          } catch (e: any) {
+            toast(e.message, { error: true });
+          }
+        }}
+      />
       {mobile && <TopBar />}
       {mobile && <PullToRefresh />}
       <main className={`main ${mobile && SUB_PAGES.includes(location.pathname) ? 'has-back' : ''}`}>

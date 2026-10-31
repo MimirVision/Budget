@@ -22,6 +22,8 @@ export default function ReviewPage() {
   const { summary, refresh, version } = useStore();
   const mobile = useIsMobile();
   const toast = useToast();
+  // PC: the card you're on, moved with ↑/↓ (or J/K); the card itself handles Enter, E and 1–5.
+  const [focus, setFocus] = useState(0);
 
   const load = useCallback(async () => {
     const r = await api.get<{ transactions: Transaction[] }>('/transactions?review=1&limit=500');
@@ -89,6 +91,23 @@ export default function ReviewPage() {
     await after();
   };
 
+  useEffect(() => {
+    if (mobile) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement;
+      if (el.closest('input, textarea, select, .modal-back, .palette-back') || e.ctrlKey || e.metaKey || e.altKey) return;
+      const n = items?.length ?? 0;
+      if (e.key === 'ArrowDown' || e.key === 'j') (e.preventDefault(), setFocus((f) => Math.min(n - 1, f + 1)));
+      if (e.key === 'ArrowUp' || e.key === 'k') (e.preventDefault(), setFocus((f) => Math.max(0, f - 1)));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mobile, items?.length]);
+  // Stay on the same spot when the card you were on is approved and leaves the list.
+  useEffect(() => {
+    if (items && focus > items.length - 1) setFocus(Math.max(0, items.length - 1));
+  }, [items, focus]);
+
   if (!items || !summary) return <Skeleton rows={6} />;
   const done = startCount ? startCount - items.length : 0;
   const withSuggestion = items.filter((t) => t.suggested_category_id || (t.suggested_transfer_id && t.suggested_transfer_account_name)).length;
@@ -117,7 +136,14 @@ export default function ReviewPage() {
           <div className="review-progress" aria-label={`${done} av ${startCount} gjennomgått`}>
             <div style={{ width: `${(done / startCount) * 100}%` }} />
           </div>
-          {mobile && <div className="swipe-hint">Sveip til høyre for å godkjenne →</div>}
+          {mobile ? (
+            <div className="swipe-hint">Sveip til høyre for å godkjenne →</div>
+          ) : (
+            <div className="swipe-hint keys-hint">
+              <kbd>↑</kbd> <kbd>↓</kbd> flytt · <kbd>Enter</kbd> godkjenn · <kbd>1</kbd>–<kbd>5</kbd> mest brukte kategorier · <kbd>E</kbd> endre ·{' '}
+              <kbd>T</kbd>/<kbd>N</kbd> overføring ja/nei
+            </div>
+          )}
         </>
       )}
 
@@ -137,10 +163,12 @@ export default function ReviewPage() {
         </div>
       ) : (
         <div className="stack" style={{ gap: 10 }}>
-          {items.map((t) => (
+          {items.map((t, i) => (
             <ReviewCard
               key={t.id}
               t={t}
+              focused={!mobile && i === focus}
+              onFocusMe={() => setFocus(i)}
               onApprove={approve}
               onTransfer={confirmTransfer}
               onRejectTransfer={rejectTransfer}
@@ -172,9 +200,13 @@ function ReviewCard({
   onRejectTransfer,
   onEdit,
   swipe,
+  focused,
+  onFocusMe,
 }: {
   t: Transaction;
   swipe?: boolean;
+  focused?: boolean;
+  onFocusMe?: () => void;
   onApprove: (t: Transaction, categoryId: number | null, remember: boolean) => void;
   onTransfer: (t: Transaction) => void;
   onRejectTransfer: (t: Transaction) => void;
@@ -189,6 +221,31 @@ function ReviewCard({
   const [dx, setDx] = useState(0);
   const [gone, setGone] = useState(false);
   const startX = useRef<number | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  // The five categories you use most, for the number keys.
+  const top = (summary?.categories ?? [])
+    .filter((c) => !c.hidden && (c.uses ?? 0) > 0 && !!c.is_income === t.amount > 0)
+    .sort((a, b) => (b.uses ?? 0) - (a.uses ?? 0))
+    .slice(0, 5);
+  useEffect(() => {
+    if (!focused) return;
+    ref.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement;
+      if (el.closest('input, textarea, select, .modal-back, .palette-back') || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (transferGuess) {
+        if (e.key === 't' || e.key === 'Enter') (e.preventDefault(), onTransfer(t));
+        if (e.key === 'n') (e.preventDefault(), onRejectTransfer(t));
+      } else {
+        if (e.key === 'Enter' && categoryId) (e.preventDefault(), onApprove(t, categoryId, remember));
+        const n = Number(e.key);
+        if (n >= 1 && n <= top.length) (e.preventDefault(), setCategoryId(top[n - 1].id));
+      }
+      if (e.key === 'e') (e.preventDefault(), onEdit());
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   // Swipe right to approve: the satisfying way to clear the inbox on a phone.
   const onDown = (e: React.PointerEvent) => {
@@ -211,7 +268,9 @@ function ReviewCard({
 
   const card = (
     <div
-      className={`card review-card ${canSwipe ? 'swipe-card' : ''} ${startX.current !== null ? 'dragging' : ''} ${gone ? 'gone' : ''}`}
+      ref={ref}
+      className={`card review-card ${canSwipe ? 'swipe-card' : ''} ${startX.current !== null ? 'dragging' : ''} ${gone ? 'gone' : ''} ${focused ? 'kb-focus' : ''}`}
+      onMouseDown={onFocusMe}
       style={canSwipe ? { transform: `translateX(${dx}px)` } : undefined}
       onPointerDown={onDown}
       onPointerMove={onMove}
@@ -258,6 +317,15 @@ function ReviewCard({
       ) : (
         <div className="actions">
           <CategorySelect categories={summary?.categories ?? []} value={categoryId} onChange={setCategoryId} amount={t.amount} />
+          {focused && top.length > 0 && (
+            <div className="kb-cats small" style={{ flexBasis: '100%' }}>
+              {top.map((c, n) => (
+                <button key={c.id} className={`chip-btn ${categoryId === c.id ? 'on' : ''}`} onClick={() => setCategoryId(c.id)}>
+                  <kbd>{n + 1}</kbd> {c.name}
+                </button>
+              ))}
+            </div>
+          )}
           <button className="btn primary rv-approve" disabled={!categoryId} onClick={() => onApprove(t, categoryId, remember)} aria-label="Godkjenn">
             <Icon name="check" size={16} /> <span className="hide-phone">Godkjenn</span>
           </button>
