@@ -4330,3 +4330,15 @@ kbd {
 .acc-row:active {
   background: var(--surface-2);
 }
+
+/* The grid is at least a screen tall; without this, a short page (Oversikt on the 1st of the month, an empty
+   Gjennomgå) stretched the top bar's row and pushed the content halfway down the screen. */
+.app {
+  align-content: start;
+}
+.ov-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
