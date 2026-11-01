@@ -188,6 +188,16 @@ const MIGRATIONS = [
   'ALTER TABLE categories ADD COLUMN card_account_id INTEGER',
   // Which day of the month the card bill is due.
   'ALTER TABLE accounts ADD COLUMN due_day INTEGER',
+  // Credit card terms (Kredittkort page).
+  // statement_day: the day the billing period closes (31 = month end). interest_rate: nominal yearly, in
+  // hundredths of a percent. credit_limit: øre. free_days: "up to N interest-free days", as the bank says it.
+  // min_pay_pct / min_pay_kr: minimum payment, a share of the bill (hundredths of a percent) but at least this (øre).
+  'ALTER TABLE accounts ADD COLUMN statement_day INTEGER',
+  'ALTER TABLE accounts ADD COLUMN interest_rate INTEGER',
+  'ALTER TABLE accounts ADD COLUMN credit_limit INTEGER',
+  'ALTER TABLE accounts ADD COLUMN free_days INTEGER',
+  'ALTER TABLE accounts ADD COLUMN min_pay_pct INTEGER',
+  'ALTER TABLE accounts ADD COLUMN min_pay_kr INTEGER',
 ];
 
 export function initSchema(db: DB) {

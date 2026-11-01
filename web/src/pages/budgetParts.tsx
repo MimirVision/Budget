@@ -511,6 +511,29 @@ export function Attention({ budget }: { budget: BudgetMonth }) {
     else if (c.expires_at)
       items.push({ tone: 'warn', text: <>Koblingen til {c.name} utløper {relativeDay(c.expires_at.slice(0, 10)).toLowerCase()}. <Link to="/accounts">Forny den</Link> så synkroniseringen ikke stopper.</> });
   }
+  for (const c of summary?.cardAlerts ?? [])
+    items.push(
+      c.status === 'overdue'
+        ? {
+            tone: 'bad',
+            text: (
+              <>
+                {c.name}: {kr(c.left)} av regningen er ikke betalt (forfalt {dayLabel(c.due)}). Det påløper renter
+                {c.interestPerMonth ? `, ca. ${kr(c.interestPerMonth)} i måneden` : ''}. <Link to="/cards">Se kortet</Link>
+              </>
+            ),
+          }
+        : {
+            tone: 'warn',
+            text: (
+              <>
+                {c.name}-regningen på {kr(c.left)} forfaller {c.days === 0 ? 'i dag' : c.days === 1 ? 'i morgen' : `om ${c.days} dager`}
+                {c.pot !== null ? (c.pot >= c.left ? '. Pengene er satt av ✓' : `. Satt av: ${kr(Math.max(0, c.pot))}`) : ''}.{' '}
+                <Link to="/cards">Se kortet</Link>
+              </>
+            ),
+          },
+    );
   for (const r of summary?.lateRefunds ?? [])
     items.push({
       tone: 'warn',
@@ -968,7 +991,12 @@ export function CardBills({ budget, onCover }: { budget: BudgetMonth; onCover: (
     <div className="card" style={{ overflow: 'hidden' }}>
       <div className="card-pad" style={{ paddingBottom: 8 }}>
         <h3 style={{ marginBottom: 2 }}>Kortregninger</h3>
-        <div className="small muted">Det dere handler med kortene, settes av her automatisk</div>
+        <div className="small muted">
+          Det dere handler med kortene, settes av her automatisk ·{' '}
+          <Link to="/cards" style={{ color: 'var(--brand-text)', fontWeight: 600 }}>
+            Kredittkort →
+          </Link>
+        </div>
       </div>
       <div className="list">
         {pots.map((c) => {

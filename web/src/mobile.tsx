@@ -14,6 +14,7 @@ const TITLES: Record<string, { title: string; sub?: boolean }> = {
   '/review': { title: 'Gjennomgå' },
   '/transactions': { title: 'Transaksjoner' },
   '/bills': { title: 'Faste regninger', sub: true },
+  '/cards': { title: 'Kredittkort', sub: true },
   '/accounts': { title: 'Kontoer', sub: true },
   '/settings': { title: 'Innstillinger', sub: true },
   '/duplicates': { title: 'Duplikater', sub: true },

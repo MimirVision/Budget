@@ -31,6 +31,8 @@ export interface Summary {
   /** First day of the budget after "Start på nytt", or null. */
   budgetStart: string | null;
   /** Banks that have gone quiet, or whose automatic sync hasn't run. */
+  /** Card bills due within five days, or not paid in full. */
+  cardAlerts?: Array<{ id: number; name: string; status: 'due' | 'overdue'; left: number; due: string; days: number; interestPerMonth: number | null; pot: number | null }>;
   /** Refunds waiting for more than two weeks. */
   lateRefunds?: Array<{ id: number; payee: string; amount: number; days: number }>;
   stale?: Array<{ accountId: number; name: string; days: number; usual: number; kind: 'quiet' | 'nosync'; lastSyncAt: string | null }>;
