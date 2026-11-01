@@ -52,6 +52,27 @@ export interface CardOverview extends CardTerms {
   periods: Period[];
   /** Payments (and refunds) into the card, newest first, with what each one paid down. */
   payments: Payment[];
+  /** Purchases still (partly) unpaid, plus recently paid ones, with how long each has before interest. */
+  purchases: Purchase[];
+}
+
+export interface Purchase {
+  id: number;
+  date: string;
+  payee: string;
+  amount: number;
+  /** Still unpaid of this purchase (payments go to the oldest purchases first). */
+  left: number;
+  /** Must be paid by this date to stay interest-free: the due date of its bill. */
+  due: string;
+  /** Days from today to `due` (negative when past). */
+  daysLeft: number;
+  /** Interest-free days this purchase got in total (purchase date to due date). */
+  freeDays: number;
+  status: 'paid' | 'free' | 'overdue';
+  /** Interest so far if overdue, or what one month late would cost if it isn't paid in time. */
+  interest: number | null;
+  billed: boolean;
 }
 
 export interface Period {
@@ -111,9 +132,27 @@ function ledger(db: DB, c: CardTerms & { id: number }, start: string, today: str
     }
     return buckets.get(close)!;
   };
-  for (const r of rows) if (r.amount < 0) bucketFor(r.date).charged += -r.amount;
+  // Each period's purchases in date order, so a payment can say which purchases it paid for.
+  const charges = new Map<string, Array<{ id: number; date: string; payee: string; amount: number; left: number }>>();
+  for (const r of rows)
+    if (r.amount < 0) {
+      const b = bucketFor(r.date);
+      b.charged += -r.amount;
+      charges.set(b.closes, [...(charges.get(b.closes) ?? []), { id: r.id, date: r.date, payee: r.payee || r.raw_description, amount: -r.amount, left: -r.amount }]);
+    }
   const ordered = [...buckets.values()].sort((a, b) => a.closes.localeCompare(b.closes));
   for (const b of ordered) b.left = b.charged;
+  const payBucket = (b: Period, amount: number) => {
+    b.left -= amount;
+    b.paid += amount;
+    let rest = amount;
+    for (const ch of charges.get(b.closes) ?? []) {
+      if (rest <= 0) break;
+      const take = Math.min(rest, ch.left);
+      ch.left -= take;
+      rest -= take;
+    }
+  };
 
   const payments: Payment[] = [];
   let credit = 0;
@@ -125,8 +164,7 @@ function ledger(db: DB, c: CardTerms & { id: number }, start: string, today: str
       if (rest <= 0) break;
       if (b.left <= 0) continue;
       const take = Math.min(rest, b.left);
-      b.left -= take;
-      b.paid += take;
+      payBucket(b, take);
       rest -= take;
       covered.push({ label: b.closes >= today ? 'nye kjøp (ikke fakturert ennå)' : b.label, amount: take });
     }
@@ -137,8 +175,7 @@ function ledger(db: DB, c: CardTerms & { id: number }, start: string, today: str
   for (const b of ordered) {
     if (credit <= 0) break;
     const take = Math.min(credit, b.left);
-    b.left -= take;
-    b.paid += take;
+    payBucket(b, take);
     credit -= take;
   }
   for (const b of ordered) b.status = b.closes >= today ? 'open' : b.left <= 0 ? 'paid' : today > b.due ? 'overdue' : 'due';
@@ -152,7 +189,40 @@ function ledger(db: DB, c: CardTerms & { id: number }, start: string, today: str
           .reduce((s, b) => s + (b.left * (c.interest_rate! / 10000) * dayDiff(b.from, today)) / 365, 0),
       )
     : null;
+  // Every purchase with what's left of it, its deadline and what being late costs.
+  const rate = c.interest_rate ? c.interest_rate / 10000 : null;
+  const purchases: Purchase[] = [];
+  for (const b of ordered)
+    for (const ch of charges.get(b.closes) ?? []) {
+      const daysLeft = dayDiff(today, b.due);
+      const status: Purchase['status'] = ch.left <= 0 ? 'paid' : daysLeft < 0 ? 'overdue' : 'free';
+      // Norwegian cards charge interest from the purchase date when the bill isn't paid in full.
+      const interest =
+        rate && ch.left > 0
+          ? Math.round((ch.left * rate * (status === 'overdue' ? dayDiff(ch.date, today) : dayDiff(ch.date, b.due) + 30)) / 365)
+          : null;
+      if (status === 'paid' && dayDiff(ch.date, today) > 45) continue;
+      purchases.push({
+        id: ch.id,
+        date: ch.date,
+        payee: ch.payee,
+        amount: ch.amount,
+        left: Math.max(0, ch.left),
+        due: b.due,
+        daysLeft,
+        freeDays: dayDiff(ch.date, b.due),
+        status,
+        interest,
+        billed: b.closes < today,
+      });
+    }
+  // Most urgent first: overdue, then the soonest deadline; paid ones last, newest first.
+  purchases.sort((a, b) =>
+    a.status === 'paid' && b.status === 'paid' ? b.date.localeCompare(a.date) : a.status === 'paid' ? 1 : b.status === 'paid' ? -1 : a.daysLeft - b.daysLeft || a.date.localeCompare(b.date),
+  );
+
   return {
+    purchases: purchases.slice(0, 60),
     periods: ordered.slice().reverse().slice(0, 8),
     payments: payments.reverse().slice(0, 10),
     breakdown: { overdue: sum('overdue'), nextBill: sum('due'), unbilled: sum('open'), credit, accruedInterest },

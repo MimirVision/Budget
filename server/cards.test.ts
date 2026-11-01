@@ -118,4 +118,22 @@ describe('Kredittkort', () => {
     expect(c.payments[0]).toMatchObject({ extra: 50000 });
     expect(c.owed).toBe(0);
   });
+
+  it('shows each purchase with its interest-free days left, paying the oldest purchases first', () => {
+    const { db, tx } = setup();
+    tx('2026-10-05', -100000, 'Elkjøp');
+    tx('2026-10-25', -50000, 'Kiwi');
+    tx('2026-11-04', -20000, 'Rema');
+    tx('2026-11-08', 120000, 'Innbetaling'); // all of Elkjøp, 200 of Kiwi
+    const [c] = cardOverview(db, '2026-11-10');
+    const by = Object.fromEntries(c.purchases.map((p) => [p.payee, p]));
+    expect(by.Elkjøp).toMatchObject({ status: 'paid', left: 0 });
+    expect(by.Kiwi).toMatchObject({ status: 'free', left: 30000, due: '2026-11-20', daysLeft: 10, freeDays: 26, billed: true });
+    expect(by.Rema).toMatchObject({ status: 'free', left: 20000, due: '2026-12-20', daysLeft: 40, billed: false });
+    expect(c.purchases.map((p) => p.payee)).toEqual(['Kiwi', 'Rema', 'Elkjøp']); // most urgent first, paid last
+    expect(by.Kiwi.interest).toBeGreaterThan(0); // what being a month late would cost
+
+    const [late] = cardOverview(db, '2026-11-25');
+    expect(late.purchases[0]).toMatchObject({ payee: 'Kiwi', status: 'overdue', daysLeft: -5 });
+  });
 });
