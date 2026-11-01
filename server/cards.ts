@@ -46,6 +46,117 @@ export interface CardOverview extends CardTerms {
   cashThisYear: { total: number; count: number };
   /** Set aside in the Kortregning pot (cards on the budget). */
   pot: number | null;
+  /** What's owed, split by how urgent it is. */
+  breakdown: { overdue: number; nextBill: number; unbilled: number; credit: number; accruedInterest: number | null };
+  /** Billing periods, newest first: charged, paid down, left. */
+  periods: Period[];
+  /** Payments (and refunds) into the card, newest first, with what each one paid down. */
+  payments: Payment[];
+}
+
+export interface Period {
+  from: string;
+  closes: string;
+  due: string;
+  label: string;
+  charged: number;
+  paid: number;
+  left: number;
+  status: 'open' | 'paid' | 'due' | 'overdue';
+}
+
+export interface Payment {
+  id: number;
+  date: string;
+  amount: number;
+  kind: 'payment' | 'refund';
+  text: string;
+  covered: Array<{ label: string; amount: number }>;
+  /** More than was owed: money left on the card. */
+  extra: number;
+}
+
+const MONTHS = ['januar', 'februar', 'mars', 'april', 'mai', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'desember'];
+
+/**
+ * The card's ledger: every purchase lands in the billing period it was made in, and every payment (or refund)
+ * pays down the oldest unpaid period first, the way the banks apply payments. That shows what each payment
+ * covered and what's actually still owed, and how urgent it is.
+ */
+function ledger(db: DB, c: CardTerms & { id: number }, start: string, today: string) {
+  const rows = all<{ id: number; date: string; amount: number; payee: string; raw_description: string; transfer_id: number | null }>(
+    db,
+    'SELECT id, date, amount, payee, raw_description, transfer_id FROM transactions WHERE account_id = ? AND date >= ? AND date <= ? ORDER BY date, id',
+    c.id,
+    start,
+    today,
+  );
+  const buckets = new Map<string, Period>();
+  const bucketFor = (date: string) => {
+    // The close of the period `date` belongs to (a close day is still in its period).
+    const { next: close, before } = closesAround(date, c.statement_day);
+    if (!buckets.has(close)) {
+      const prev = before(close);
+      const monthEnd = !c.statement_day || c.statement_day >= 28;
+      buckets.set(close, {
+        from: addDays(prev, 1),
+        closes: close,
+        due: dueFor(close, prev, c).due,
+        label: monthEnd ? `${MONTHS[Number(close.slice(5, 7)) - 1]}-regningen` : `regningen ${Number(close.slice(8, 10))}. ${MONTHS[Number(close.slice(5, 7)) - 1]}`,
+        charged: 0,
+        paid: 0,
+        left: 0,
+        status: 'open',
+      });
+    }
+    return buckets.get(close)!;
+  };
+  for (const r of rows) if (r.amount < 0) bucketFor(r.date).charged += -r.amount;
+  const ordered = [...buckets.values()].sort((a, b) => a.closes.localeCompare(b.closes));
+  for (const b of ordered) b.left = b.charged;
+
+  const payments: Payment[] = [];
+  let credit = 0;
+  for (const r of rows.filter((x) => x.amount > 0)) {
+    const isPayment = !!r.transfer_id || /innbetal|betaling|payment|overføring|nedbetal/i.test(`${r.payee} ${r.raw_description}`);
+    let rest = r.amount;
+    const covered: Payment['covered'] = [];
+    for (const b of ordered) {
+      if (rest <= 0) break;
+      if (b.left <= 0) continue;
+      const take = Math.min(rest, b.left);
+      b.left -= take;
+      b.paid += take;
+      rest -= take;
+      covered.push({ label: b.closes >= today ? 'nye kjøp (ikke fakturert ennå)' : b.label, amount: take });
+    }
+    credit += rest;
+    payments.push({ id: r.id, date: r.date, amount: r.amount, kind: isPayment ? 'payment' : 'refund', text: r.payee || r.raw_description, covered, extra: rest });
+  }
+  // Charges after an overpayment use up the money left on the card.
+  for (const b of ordered) {
+    if (credit <= 0) break;
+    const take = Math.min(credit, b.left);
+    b.left -= take;
+    b.paid += take;
+    credit -= take;
+  }
+  for (const b of ordered) b.status = b.closes >= today ? 'open' : b.left <= 0 ? 'paid' : today > b.due ? 'overdue' : 'due';
+
+  const sum = (st: Period['status']) => ordered.filter((b) => b.status === st).reduce((s, b) => s + b.left, 0);
+  // Interest on what's overdue, from the start of each period (Norwegian cards charge from the purchase date).
+  const accruedInterest = c.interest_rate
+    ? Math.round(
+        ordered
+          .filter((b) => b.status === 'overdue')
+          .reduce((s, b) => s + (b.left * (c.interest_rate! / 10000) * dayDiff(b.from, today)) / 365, 0),
+      )
+    : null;
+  return {
+    periods: ordered.slice().reverse().slice(0, 8),
+    payments: payments.reverse().slice(0, 10),
+    breakdown: { overdue: sum('overdue'), nextBill: sum('due'), unbilled: sum('open'), credit, accruedInterest },
+  };
 }
 
 const clampDay = (month: string, day: number) => `${month}-${String(Math.min(day, daysInMonth(month))).padStart(2, '0')}`;
@@ -97,10 +208,14 @@ export function cardOverview(db: DB, today = todayISO()): CardOverview[] {
     const lastDue = dueFor(last, prev, c);
     const nextDue = dueFor(next, last, c);
 
-    const billed = Math.max(0, owedAt(last));
-    const paid = get<{ s: number }>(db, 'SELECT COALESCE(SUM(amount), 0) AS s FROM transactions WHERE account_id = ? AND amount > 0 AND date > ? AND date <= ?', c.id, last, today)!.s;
-    const left = Math.max(0, billed - paid);
-    const status: CardOverview['statement']['status'] = billed <= 0 ? 'none' : left <= 0 ? 'paid' : today > lastDue.due ? 'overdue' : 'due';
+    const book = ledger(db, c, start, today);
+    // The last closed bill: what was charged in it, and how much of it (plus anything older) is still unpaid.
+    const lastPeriod = book.periods.find((p) => p.closes === last);
+    const billed = lastPeriod?.charged ?? 0;
+    const left = book.breakdown.overdue + book.breakdown.nextBill;
+    const paid = lastPeriod?.paid ?? 0;
+    const status: CardOverview['statement']['status'] =
+      book.breakdown.overdue > 0 ? 'overdue' : book.breakdown.nextBill > 0 ? 'due' : billed > 0 ? 'paid' : 'none';
 
     const pct = c.min_pay_pct ?? 300; // 3 % is common in Norway, but the card's own terms win
     const minKr = c.min_pay_kr ?? 30000;
@@ -155,7 +270,7 @@ export function cardOverview(db: DB, today = todayISO()): CardOverview[] {
       configured: !!(c.interest_rate && (c.due_day || c.free_days)),
       owed,
       available: c.credit_limit ? c.credit_limit - owed : null,
-      statement: { closed: last, due: lastDue.due, amount: billed, paid: Math.min(paid, billed), left, status, minimum, dueIsEstimate: lastDue.estimate },
+      statement: { closed: last, due: lastDue.due, amount: billed, paid, left, status, minimum, dueIsEstimate: lastDue.estimate },
       current: { from: addDays(last, 1), closes: next, spent, due: nextDue.due },
       freeToday,
       freeMax,
@@ -165,6 +280,7 @@ export function cardOverview(db: DB, today = todayISO()): CardOverview[] {
       feesThisYear: { total: fees.reduce((s, r) => s - r.amount, 0), items: fees.slice(0, 5).map((r) => ({ date: r.date, payee: r.payee || r.raw_description, amount: -r.amount })) },
       cashThisYear: { total: cash.reduce((s, r) => s - r.amount, 0), count: cash.length },
       pot: potAvailable,
+      ...book,
     };
   });
 }
