@@ -34,6 +34,9 @@ interface Card {
   feesThisYear: { total: number; items: Array<{ date: string; payee: string; amount: number }> };
   cashThisYear: { total: number; count: number };
   pot: number | null;
+  breakdown: { overdue: number; nextBill: number; unbilled: number; credit: number; accruedInterest: number | null };
+  periods: Array<{ from: string; closes: string; due: string; label: string; charged: number; paid: number; left: number; status: 'open' | 'paid' | 'due' | 'overdue' }>;
+  payments: Array<{ id: number; date: string; amount: number; kind: 'payment' | 'refund'; text: string; covered: Array<{ label: string; amount: number }>; extra: number }>;
 }
 
 const pct = (hundredths: number | null) => (hundredths === null ? '' : (hundredths / 100).toLocaleString('nb-NO', { maximumFractionDigits: 2 }));
@@ -161,6 +164,9 @@ function CardPanel({ c, onEdit }: { c: Card; onEdit: () => void }) {
           {c.pot >= c.owed ? ' (dekker alt kortet skylder ✓)' : ` (mangler ${kr(c.owed - Math.max(0, c.pot))})`}
         </div>
       )}
+
+      <OwedBreakdown c={c} />
+      <PaymentHistory c={c} />
 
       {used !== null && (
         <div className="cc-limit">
@@ -321,5 +327,122 @@ function TermsEditor({ card, onClose, onSaved }: { card: Card; onClose: () => vo
         </label>
       </div>
     </Modal>
+  );
+}
+
+/** Hva dere faktisk skylder: one bar split by how urgent it is. */
+function OwedBreakdown({ c }: { c: Card }) {
+  const b = c.breakdown;
+  const parts = [
+    { key: 'overdue', label: 'Forfalt', value: b.overdue, color: 'var(--bad)', hint: b.accruedInterest ? `+ ca. ${kr(b.accruedInterest)} i renter så langt` : 'renter påløper' },
+    { key: 'next', label: 'Neste regning', value: b.nextBill, color: 'var(--warn)', hint: `betales innen ${dayLabel(c.statement.due)}` },
+    { key: 'unbilled', label: 'Ikke fakturert ennå', value: b.unbilled, color: 'var(--series-1)', hint: `kommer på regningen ${dayLabel(c.current.due)}` },
+  ].filter((p) => p.value > 0);
+  const total = parts.reduce((s, p) => s + p.value, 0);
+  if (total <= 0 && b.credit <= 0) return <div className="small good-text">Kortet er nedbetalt. Dere skylder ingenting ✓</div>;
+  return (
+    <div className="owed">
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <strong>Hva dere skylder</strong>
+        <strong className="num">{kr(total)}</strong>
+      </div>
+      {total > 0 && (
+        <div className="owed-bar" role="img" aria-label={parts.map((p) => `${p.label} ${kr(p.value)}`).join(', ')}>
+          {parts.map((p) => (
+            <span key={p.key} style={{ flexBasis: `${(p.value / total) * 100}%`, background: p.color }} title={`${p.label}: ${kr(p.value)}`} />
+          ))}
+        </div>
+      )}
+      <div className="owed-legend small">
+        {parts.map((p) => (
+          <div key={p.key}>
+            <span className="swatch" style={{ background: p.color }} />
+            <span>
+              {p.label} <strong className="num">{kr(p.value)}</strong> <span className="faint">· {p.hint}</span>
+            </span>
+          </div>
+        ))}
+        {b.credit > 0 && (
+          <div>
+            <span className="swatch" style={{ background: 'var(--good)' }} />
+            <span>
+              Til gode på kortet <strong className="num">{kr(b.credit)}</strong> <span className="faint">· betalt inn mer enn dere skyldte</span>
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Innbetalinger: what each payment paid down, and the billing periods behind it. */
+function PaymentHistory({ c }: { c: Card }) {
+  const [periods, setPeriods] = useState(false);
+  if (!c.payments.length && !c.periods.length) return null;
+  const list = (parts: Array<{ label: string; amount: number }>) =>
+    parts.map((p, i) => (
+      <span key={i}>
+        {i > 0 ? (i === parts.length - 1 ? ' og ' : ', ') : ''}
+        {kr(p.amount)} av {p.label}
+      </span>
+    ));
+  return (
+    <div className="cc-history">
+      {c.payments.length > 0 && (
+        <>
+          <strong className="small">Innbetalinger og hva de dekket</strong>
+          <div className="list compact">
+            {c.payments.slice(0, 5).map((p) => (
+              <div key={p.id} className="list-item" style={{ alignItems: 'flex-start' }}>
+                <div className="grow" style={{ minWidth: 0 }}>
+                  <div className="small" style={{ fontWeight: 550 }}>
+                    {dayLabel(p.date)} · {p.kind === 'refund' ? `Refusjon: ${p.text}` : 'Innbetaling'}
+                  </div>
+                  <div className="small muted">
+                    {p.covered.length ? <>Dekket {list(p.covered)}</> : 'Kortet var allerede nedbetalt'}
+                    {p.extra > 0 ? `${p.covered.length ? ', og ' : ': '}${kr(p.extra)} ble til gode` : ''}.
+                  </div>
+                </div>
+                <span className="num good-text">+{kr(p.amount)}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      <button className="link-btn" onClick={() => setPeriods((v) => !v)}>
+        {periods ? 'Skjul regninger per periode' : 'Vis regninger per periode'}
+      </button>
+      {periods && (
+        <table className="table cc-periods small">
+          <thead>
+            <tr>
+              <th>Regning</th>
+              <th className="right">Belastet</th>
+              <th className="right">Betalt</th>
+              <th className="right">Igjen</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {c.periods.map((p) => (
+              <tr key={p.closes}>
+                <td>
+                  {p.label.replace(/^./, (x) => x.toUpperCase())}
+                  <div className="faint">forfall {dayLabel(p.due)}</div>
+                </td>
+                <td className="right num">{kr(p.charged)}</td>
+                <td className="right num">{kr(p.paid)}</td>
+                <td className="right num">{kr(p.left)}</td>
+                <td>
+                  <span className={`chip ${p.status === 'paid' ? 'brand' : ''} ${p.status === 'overdue' ? 'bad-chip' : ''}`}>
+                    {p.status === 'open' ? 'Pågår' : p.status === 'paid' ? 'Betalt ✓' : p.status === 'due' ? 'Ikke forfalt' : 'Forfalt'}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }

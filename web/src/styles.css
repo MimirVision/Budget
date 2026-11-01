@@ -3915,3 +3915,54 @@ kbd {
     font-size: 17px;
   }
 }
+.owed {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.owed-bar {
+  display: flex;
+  gap: 2px;
+  height: 12px;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.owed-bar span {
+  min-width: 4px;
+}
+.owed-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.owed-legend > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.owed-legend .swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+  transform: translateY(1px);
+}
+.cc-history {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+.cc-history .list {
+  width: 100%;
+}
+.cc-periods {
+  width: 100%;
+}
+.chip.bad-chip {
+  background: var(--bad-soft);
+  color: var(--bad);
+}

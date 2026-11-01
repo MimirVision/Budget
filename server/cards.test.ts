@@ -68,4 +68,54 @@ describe('Kredittkort', () => {
     expect(cardOverview(db, '2026-11-16')[0].statement.status).toBe('paid');
     expect(cardAlerts(db, '2026-11-16')).toEqual([]);
   });
+
+  it('pays down the oldest bill first and says what each payment covered', () => {
+    const { db, tx } = setup();
+    tx('2026-09-10', -300000, 'Elkjøp'); // september bill: 3 000
+    tx('2026-10-10', -200000, 'Kiwi'); // october bill: 2 000
+    tx('2026-11-03', -100000, 'Rema'); // not billed yet: 1 000
+    tx('2026-10-15', 350000, 'Innbetaling'); // all of september + 500 of october
+    tx('2026-11-12', 200000, 'Innbetaling'); // rest of october + 500 of the new purchases
+    const [c] = cardOverview(db, '2026-11-14');
+    expect(c.payments.map((p) => p.covered)).toEqual([
+      [
+        { label: 'oktober-regningen', amount: 150000 },
+        { label: 'nye kjøp (ikke fakturert ennå)', amount: 50000 },
+      ],
+      [
+        { label: 'september-regningen', amount: 300000 },
+        { label: 'oktober-regningen', amount: 50000 },
+      ],
+    ]);
+    expect(c.periods.map((p) => [p.label, p.charged, p.left, p.status])).toEqual([
+      ['november-regningen', 100000, 50000, 'open'],
+      ['oktober-regningen', 200000, 0, 'paid'],
+      ['september-regningen', 300000, 0, 'paid'],
+    ]);
+    expect(c.breakdown).toMatchObject({ overdue: 0, nextBill: 0, unbilled: 50000, credit: 0 });
+    expect(c.statement.status).toBe('paid');
+    expect(c.owed).toBe(50000);
+  });
+
+  it('splits what is owed into overdue, next bill and not billed yet, with interest on the overdue part', () => {
+    const { db, tx } = setup();
+    tx('2026-09-10', -300000, 'Elkjøp');
+    tx('2026-10-10', -200000, 'Kiwi');
+    tx('2026-11-03', -100000, 'Rema');
+    tx('2026-10-15', 100000, 'Innbetaling'); // only part of september
+    const [c] = cardOverview(db, '2026-11-14');
+    expect(c.breakdown).toMatchObject({ overdue: 200000, nextBill: 200000, unbilled: 100000, credit: 0 });
+    expect(c.breakdown.accruedInterest).toBeGreaterThan(0);
+    expect(c.statement).toMatchObject({ status: 'overdue', left: 400000 });
+  });
+
+  it('keeps an overpayment as money on the card', () => {
+    const { db, tx } = setup();
+    tx('2026-10-10', -100000, 'Kiwi');
+    tx('2026-11-05', 150000, 'Innbetaling');
+    const [c] = cardOverview(db, '2026-11-06');
+    expect(c.breakdown.credit).toBe(50000);
+    expect(c.payments[0]).toMatchObject({ extra: 50000 });
+    expect(c.owed).toBe(0);
+  });
 });
