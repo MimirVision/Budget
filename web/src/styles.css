@@ -3819,3 +3819,99 @@ kbd {
 .card-bill .bar {
   height: 6px;
 }
+
+/* ---------- Kredittkort ---------- */
+.cc {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.cc-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cc-chip {
+  width: 42px;
+  height: 30px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  background: var(--brand-soft);
+  font-size: 18px;
+  flex: none;
+}
+.cc-setup {
+  border: 0;
+  width: 100%;
+  font: inherit;
+  cursor: pointer;
+  color: inherit;
+}
+.cc-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.cc-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.cc-tile strong {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+.cc-tile.good {
+  background: var(--good-soft);
+}
+.cc-tile.warn {
+  background: var(--warn-soft);
+}
+.cc-tile.bad {
+  background: var(--bad-soft);
+}
+.cc-tile.bad strong {
+  color: var(--bad);
+}
+.cc-line {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.cc-limit .bar {
+  margin-top: 6px;
+}
+.cc-trap {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px dashed var(--warn);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cc-tips {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+}
+.cc-tips strong {
+  color: var(--text);
+}
+@media (max-width: 860px) {
+  .cc-tiles {
+    grid-template-columns: 1fr 1fr;
+  }
+  .cc-tiles .cc-tile:first-child {
+    grid-column: 1 / -1;
+  }
+  .cc-tile strong {
+    font-size: 17px;
+  }
+}

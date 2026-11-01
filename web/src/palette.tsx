@@ -74,6 +74,7 @@ export function CommandPalette({ onAdd, onSync }: { onAdd: () => void; onSync: (
       { key: 'p-review', label: 'Gjennomgå', icon: 'inbox', run: go('/review') },
       { key: 'p-tx', label: 'Transaksjoner', icon: 'list', run: go('/transactions') },
       { key: 'p-bills', label: 'Faste regninger', icon: 'calendar', run: go('/bills') },
+      { key: 'p-cards', label: 'Kredittkort', icon: 'wallet', run: go('/cards') },
       { key: 'p-acc', label: 'Kontoer', icon: 'bank', run: go('/accounts') },
       { key: 'p-set', label: 'Innstillinger', icon: 'settings', run: go('/settings') },
       { key: 'p-dup', label: 'Duplikater', icon: 'alert', run: go('/duplicates') },

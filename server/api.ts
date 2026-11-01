@@ -6,6 +6,7 @@ import { forgetImport, ingest, linkTransfer, rejectTransferSuggestion, ruleMatch
 import { previewCsv, type CsvMapping } from './import/csv.ts';
 import { overview } from './overview.ts';
 import { payday, syncHealth, tips } from './insights.ts';
+import { cardAlerts, cardOverview } from './cards.ts';
 import { expectRefund, listRefunds } from './refunds.ts';
 import { addBill, deleteBill, listBills, syncBillTargets, updateBill, type BillInput } from './bills.ts';
 import { dismissDuplicates, findDuplicates, mergeDuplicates } from './duplicates.ts';
@@ -197,6 +198,7 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
       budgetStart: getSetting(db, 'budget_start') ?? null,
       overspending: overspendMode(db),
       stale: syncHealth(db),
+      cardAlerts: cardAlerts(db),
       lateRefunds: listRefunds(db)
         .filter((r) => !r.resolved_transaction_id && r.days > 14)
         .map((r) => ({ id: r.id, payee: r.payee, amount: r.amount, days: r.days })),
@@ -426,14 +428,19 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
   api.patch('/accounts/:id', async (c) => {
     const id = Number(c.req.param('id'));
     const body = await c.req.json();
-    for (const f of ['name', 'kind', 'institution', 'on_budget', 'closed', 'due_day'] as const) {
+    const DAY = ['due_day', 'statement_day'];
+    const NUMBER = ['interest_rate', 'credit_limit', 'free_days', 'min_pay_pct', 'min_pay_kr'];
+    for (const f of ['name', 'kind', 'institution', 'on_budget', 'closed', ...DAY, ...NUMBER] as const) {
       if (body[f] === undefined) continue;
+      const n = Number(body[f]);
       const value =
         f === 'on_budget' || f === 'closed'
           ? body[f] ? 1 : 0
-          : f === 'due_day'
-            ? body[f] ? Math.min(31, Math.max(1, Math.round(Number(body[f])))) : null
-            : body[f];
+          : DAY.includes(f)
+            ? body[f] ? Math.min(31, Math.max(1, Math.round(n))) : null
+            : NUMBER.includes(f)
+              ? body[f] === null || body[f] === '' || !Number.isFinite(n) || n < 0 ? null : Math.round(n)
+              : body[f];
       run(db, `UPDATE accounts SET ${f} = ? WHERE id = ?`, value, id);
     }
     // An opening balance from "Start på nytt" counts against Klar til fordeling only on a budget account.
@@ -624,6 +631,9 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
     run(db, 'DELETE FROM refunds WHERE id = ?', Number(c.req.param('id')));
     return c.json({ ok: true });
   });
+
+  // ---------- Kredittkort ----------
+  api.get('/cards', (c) => c.json(cardOverview(db)));
 
   // ---------- Duplicates ----------
   api.get('/duplicates', (c) => c.json(findDuplicates(db)));
