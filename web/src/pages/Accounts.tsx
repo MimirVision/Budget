@@ -4,6 +4,7 @@ import { api, type Account, type IngestResult } from '../api';
 import { dayLabel, kr, timeAgo } from '../format';
 import { useStore } from '../store';
 import { Icon, Modal, Money, MoneyInput, useToast } from '../components/ui';
+import { useIsMobile } from '../hooks';
 
 interface Connection {
   id: number;
@@ -45,6 +46,9 @@ export default function AccountsPage() {
   const [syncing, setSyncing] = useState<number | 'all' | null>(null);
   const toast = useToast();
   const navigate = useNavigate();
+  // Phone: tap an account for its actions, instead of buttons under every row.
+  const mobile = useIsMobile();
+  const [menu, setMenu] = useState<Account | null>(null);
 
   const loadConnections = useCallback(() => api.get<Connection[]>('/connections').then(setConnections), []);
   useEffect(() => {
@@ -181,11 +185,21 @@ export default function AccountsPage() {
               {g.items.map((a) => {
                 const conn = connections.find((c) => c.id === a.connection_id);
                 return (
-                  <div key={a.id} className="list-item" style={{ flexWrap: 'wrap' }}>
-                    <div className="grow" style={{ minWidth: 180 }}>
-                      <Link to={`/transactions?account=${a.id}`} style={{ fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}>
-                        {a.name}
-                      </Link>
+                  <div
+                    key={a.id}
+                    className={`list-item ${mobile ? 'acc-row' : ''}`}
+                    style={{ flexWrap: mobile ? 'nowrap' : 'wrap' }}
+                    onClick={mobile ? (e) => !(e.target as HTMLElement).closest('a, button') && setMenu(a) : undefined}
+                    role={mobile ? 'button' : undefined}
+                  >
+                    <div className="grow" style={{ minWidth: mobile ? 0 : 180 }}>
+                      {mobile ? (
+                        <div style={{ fontWeight: 600 }}>{a.name}</div>
+                      ) : (
+                        <Link to={`/transactions?account=${a.id}`} style={{ fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}>
+                          {a.name}
+                        </Link>
+                      )}
                       <div className="small muted">
                         {KIND_LABEL[a.kind] ?? a.kind}
                         {a.institution ? ` · ${a.institution}` : ''}
@@ -217,6 +231,15 @@ export default function AccountsPage() {
                         </div>
                       )}
                     </div>
+                    {mobile ? (
+                      conn && conn.status !== 'active' ? (
+                        <button className="btn sm primary" onClick={() => reconnect(conn)}>
+                          Koble til
+                        </button>
+                      ) : (
+                        <Icon name="right" size={18} />
+                      )
+                    ) : (
                     <div className="row" style={{ gap: 4 }}>
                       {conn && conn.status === 'active' && (
                         <button className="btn sm" onClick={() => sync(conn.id)} disabled={syncing !== null}>
@@ -235,6 +258,7 @@ export default function AccountsPage() {
                         <Icon name="edit" size={16} />
                       </button>
                     </div>
+                    )}
                   </div>
                 );
               })}
@@ -322,6 +346,46 @@ export default function AccountsPage() {
         />
       )}
       {editing && <EditAccount account={editing} onClose={() => setEditing(null)} onSaved={() => (setEditing(null), refresh())} />}
+      {menu && (() => {
+        const conn = connections.find((c) => c.id === menu.connection_id);
+        const close = () => setMenu(null);
+        return (
+          <Modal title={menu.name} onClose={close}>
+            <div className="small muted" style={{ marginTop: -6 }}>
+              Saldo <Money value={menu.balance} />
+              {menu.bank_balance !== null && menu.bank_balance !== menu.balance ? ` · banken sier ${kr(menu.bank_balance)}` : ''}
+            </div>
+            <div className="sheet-actions">
+              <button className="sheet-action" onClick={() => (close(), navigate(`/transactions?account=${menu.id}`))}>
+                <Icon name="list" size={18} /> Se transaksjoner
+              </button>
+              {conn && conn.status === 'active' && (
+                <button className="sheet-action" onClick={() => (close(), sync(conn.id))} disabled={syncing !== null}>
+                  <Icon name="sync" size={18} /> Synkroniser nå
+                  <span className="spacer" />
+                  <span className="small faint">{timeAgo(conn.last_sync_at)}</span>
+                </button>
+              )}
+              {conn && conn.status !== 'active' && (
+                <button className="sheet-action" onClick={() => (close(), reconnect(conn))}>
+                  <Icon name="bank" size={18} /> Koble til på nytt med BankID
+                </button>
+              )}
+              <button className="sheet-action" onClick={() => (close(), setImportInto(menu))}>
+                <Icon name="upload" size={18} /> Importer CSV eller PDF
+              </button>
+              {menu.kind === 'credit' && (
+                <button className="sheet-action" onClick={() => (close(), navigate('/cards'))}>
+                  <Icon name="wallet" size={18} /> Kredittkort-oversikt
+                </button>
+              )}
+              <button className="sheet-action" onClick={() => (close(), setEditing(menu))}>
+                <Icon name="edit" size={18} /> Endre, rett saldo eller avslutt
+              </button>
+            </div>
+          </Modal>
+        );
+      })()}
       {linking && (
         <LinkAccounts
           connection={linking}
