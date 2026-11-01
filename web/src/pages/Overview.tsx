@@ -94,7 +94,10 @@ export default function OverviewPage() {
   const [editing, setEditing] = useState(false);
 
   const prevLabel = SPANS.find((s) => s.span === span)!.prev;
-  const insights = useMemo(() => (data ? buildInsights(data, prevLabel) : []), [data, prevLabel]);
+  const insights = useMemo(
+    () => (data ? buildInsights(data, prevLabel, span === 1 && month === currentMonth() && Number(todayISO().slice(8, 10)) < 25) : []),
+    [data, prevLabel, span, month],
+  );
 
   const head = (
     <div className="page-head">
@@ -144,6 +147,10 @@ export default function OverviewPage() {
 
   const saved = data.income - data.spending;
   const rate = data.income > 0 ? Math.round((saved / data.income) * 100) : null;
+  // The month we're in isn't over: compare with the same day last month, not with all of it.
+  const running = span === 1 && month === currentMonth();
+  const dayNow = Number(todayISO().slice(8, 10));
+  const prevSameDay = running ? data.daily[dayNow - 1]?.prevCum ?? null : null;
   const empty = data.spending === 0 && data.income === 0;
 
   const history = data.historyBefore && (
@@ -178,19 +185,27 @@ export default function OverviewPage() {
       <div className="card ov-tile">
         <span className="ov-label">Brukt</span>
         <AnimatedMoney value={data.spending} className="ov-value" />
-        <Delta now={data.spending} prev={data.prevSpending} prevLabel={prevLabel} goodWhenUp={false} />
+        {running && prevSameDay !== null ? (
+          <Delta now={data.spending} prev={prevSameDay} prevLabel={`samme dag ${prevLabel}`} goodWhenUp={false} />
+        ) : (
+          <Delta now={data.spending} prev={data.prevSpending} prevLabel={prevLabel} goodWhenUp={false} />
+        )}
       </div>
       <div className="card ov-tile">
         <span className="ov-label">Inntekt</span>
         <AnimatedMoney value={data.income} className="ov-value" />
-        <Delta now={data.income} prev={data.prevIncome} prevLabel={prevLabel} goodWhenUp />
+        {running && data.income === 0 ? (
+          <span className="delta faint">Ingen inntekt ennå denne måneden</span>
+        ) : (
+          <Delta now={data.income} prev={data.prevIncome} prevLabel={prevLabel} goodWhenUp />
+        )}
       </div>
-      {data.income === 0 && data.pendingIncome > 0 ? (
+      {data.income === 0 && (data.pendingIncome > 0 || running) ? (
         // Salary not reviewed yet: "spent more than you earned" would be a false alarm.
         <div className="card ov-tile">
           <span className="ov-label">Til overs</span>
           <span className="ov-value faint">–</span>
-          <span className="delta faint">Gå gjennom innbetalingene først</span>
+          <span className="delta faint">{data.pendingIncome > 0 ? 'Gå gjennom innbetalingene først' : 'Venter på inntekt'}</span>
         </div>
       ) : (
         <div className={`card ov-tile ${saved >= 0 ? 'good' : 'bad'}`}>
@@ -292,9 +307,28 @@ export default function OverviewPage() {
     <>
       {head}
       {empty ? (
-        <div className="card empty">
+        <div className="card empty ov-empty">
           <div className="emoji">📊</div>
-          Ingen inntekter eller utgifter i {periodLabel(month, span).toLowerCase()} ennå.
+          <div>
+            {month === currentMonth() && span === 1
+              ? `${monthLabel(month).split(' ')[0]} har så vidt begynt, så det er ingenting å vise ennå.`
+              : `Ingen inntekter eller utgifter i ${periodLabel(month, span).toLowerCase()}.`}
+          </div>
+          <div className="row" style={{ justifyContent: 'center', gap: 8 }}>
+            <button className="btn primary sm" onClick={() => setMonth(addMonths(month, -span))}>
+              Se {span === 1 ? monthLabel(addMonths(month, -1)).split(' ')[0].toLowerCase() : 'perioden før'}
+            </button>
+            {span === 1 && (
+              <button className="btn sm" onClick={() => setSpan(3)}>
+                Siste 3 måneder
+              </button>
+            )}
+            {month !== currentMonth() && (
+              <button className="btn ghost sm" onClick={() => setMonth(currentMonth())}>
+                Til i dag
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         <div className="stack" style={{ gap: mobile ? 14 : 16 }}>
@@ -333,8 +367,17 @@ export default function OverviewPage() {
   );
 }
 
-function buildInsights(d: OverviewData, prevLabel: string) {
+function buildInsights(d: OverviewData, prevLabel: string, partial = false) {
   const out: Array<{ icon: string; text: React.ReactNode; tone: string }> = [];
+  // Early in a running month, "Dagligvarer er ned 100 %" only means the month has just started.
+  if (partial) {
+    if (d.stats.days >= 7 && d.stats.noSpendDays >= 3)
+      out.push({ icon: '🗓️', tone: 'good', text: <><strong>{d.stats.noSpendDays} dager</strong> uten hverdagsforbruk så langt. Hver slik dag er penger spart.</> });
+    const uncategorizedNow = d.groups.find((g) => g.id === null);
+    if (uncategorizedNow && uncategorizedNow.spent > 0)
+      out.push({ icon: '🏷️', tone: 'warn', text: <>{kr(uncategorizedNow.spent)} er uten kategori. Gå gjennom dem for et riktigere bilde.</> });
+    return out;
+  }
   const cats = d.groups.flatMap((g) => g.categories).filter((c) => c.id !== null);
   const changes = cats
     .filter((c) => c.prevSpent > 0 && Math.abs(c.spent - c.prevSpent) >= 50_000)
@@ -486,7 +529,10 @@ function Largest({ data }: { data: OverviewData }) {
 /** One plain sentence that sums the period up, so the numbers below have a story. */
 function Story({ data, month, span, prevLabel }: { data: OverviewData; month: string; span: number; prevLabel: string }) {
   const everyday = data.spending - data.fixedSpending;
-  const pct = data.prevSpending ? Math.round(((data.spending - data.prevSpending) / data.prevSpending) * 100) : null;
+  // In a running month, compare with the same day last month.
+  const running = span === 1 && month === currentMonth();
+  const base = running ? data.daily[Number(todayISO().slice(8, 10)) - 1]?.prevCum ?? 0 : data.prevSpending;
+  const pct = base ? Math.round(((data.spending - base) / base) * 100) : null;
   const period = span === 1 ? `I ${monthLabel(month).split(' ')[0].toLowerCase()}` : `De siste ${span} månedene`;
   const top = data.groups.flatMap((g) => g.categories).filter((c) => c.id !== null && !c.fixed)[0];
   return (
@@ -500,10 +546,10 @@ function Story({ data, month, span, prevLabel }: { data: OverviewData; month: st
       .{' '}
       {pct !== null && (
         <>
-          Det er {pct === 0 ? 'det samme som' : `${Math.abs(pct)} % ${pct > 0 ? 'mer' : 'mindre'} enn`} {prevLabel}.{' '}
+          Det er {pct === 0 ? 'det samme som' : `${Math.abs(pct)} % ${pct > 0 ? 'mer' : 'mindre'} enn`} {running ? `samme dag ${prevLabel}` : prevLabel}.{' '}
         </>
       )}
-      {top && (
+      {top && top.spent > 0 && (
         <>
           Mest av hverdagspengene gikk til <strong>{top.name.toLowerCase()}</strong> ({kr(top.spent)}).
         </>

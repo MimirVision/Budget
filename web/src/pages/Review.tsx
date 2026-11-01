@@ -22,6 +22,16 @@ export default function ReviewPage() {
   const { summary, refresh, version } = useStore();
   const mobile = useIsMobile();
   const toast = useToast();
+  // The swipe tip shows the first few visits only.
+  const [showSwipeHint] = useState(() => {
+    try {
+      const n = Number(localStorage.getItem('review.swipeHint') ?? 0);
+      localStorage.setItem('review.swipeHint', String(n + 1));
+      return n < 3;
+    } catch {
+      return true;
+    }
+  });
   // PC: the card you're on, moved with ↑/↓ (or J/K); the card itself handles Enter, E and 1–5.
   const [focus, setFocus] = useState(0);
 
@@ -125,7 +135,7 @@ export default function ReviewPage() {
         <SyncNow compact />
         {withSuggestion > 0 && (
           <button className="btn primary" onClick={approveAll}>
-            <Icon name="check" size={16} /> {mobile ? `Godkjenn ${withSuggestion}` : `Godkjenn ${withSuggestion} forslag`}
+            <Icon name="check" size={16} /> {mobile ? `Godkjenn forslag (${withSuggestion})` : `Godkjenn ${withSuggestion} forslag`}
           </button>
         )}
         </div>
@@ -133,11 +143,14 @@ export default function ReviewPage() {
 
       {startCount !== null && startCount > 0 && items.length > 0 && (
         <>
-          <div className="review-progress" aria-label={`${done} av ${startCount} gjennomgått`}>
-            <div style={{ width: `${(done / startCount) * 100}%` }} />
-          </div>
+          {/* Progress only once you've started; an empty bar looks like something is loading. */}
+          {done > 0 && (
+            <div className="review-progress" aria-label={`${done} av ${startCount} gjennomgått`}>
+              <div style={{ width: `${(done / startCount) * 100}%` }} />
+            </div>
+          )}
           {mobile ? (
-            <div className="swipe-hint">Sveip til høyre for å godkjenne →</div>
+            showSwipeHint && <div className="swipe-hint">Sveip et kort til høyre for å godkjenne det →</div>
           ) : (
             <div className="swipe-hint keys-hint">
               <kbd>↑</kbd> <kbd>↓</kbd> flytt · <kbd>Enter</kbd> godkjenn · <kbd>1</kbd>–<kbd>5</kbd> mest brukte kategorier · <kbd>E</kbd> endre ·{' '}
