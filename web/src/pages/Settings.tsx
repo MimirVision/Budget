@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { useStore } from '../store';
+import { useIsMobile } from '../hooks';
 import { AppVersion } from '../version';
 import { CategorySelect, Icon, Modal, Money, MoneyInput, useToast } from '../components/ui';
 import { kr, monthLabel } from '../format';
@@ -61,7 +62,6 @@ export default function SettingsPage() {
 
 function Categories() {
   const [groups, setGroups] = useState<Group[]>([]);
-  const [newGroup, setNewGroup] = useState('');
   const { refresh } = useStore();
   const toast = useToast();
   const [deleting, setDeleting] = useState<{ id: number; name: string } | null>(null);
@@ -81,6 +81,122 @@ function Categories() {
     await api.patch(`/category-groups/${id}`, body);
     after();
   };
+
+  const mobile = useIsMobile();
+  // Phone: one "⋯" per row opens the actions as a sheet, instead of five small buttons that don't fit.
+  const [menu, setMenu] = useState<{ kind: 'group'; g: Group } | { kind: 'cat'; g: Group; c: Group['categories'][number] } | null>(null);
+
+  if (mobile)
+    return (
+      <div className="stack">
+        <p className="muted small" style={{ margin: 0 }}>
+          Trykk på et navn for å endre det, og på ⋯ for å flytte, skjule eller slette.
+        </p>
+        {groups.map((g) => (
+          <div key={g.id} className="card cat-card">
+            <div className="cat-row cat-group">
+              <InlineName value={g.name} onSave={(name) => patchGroup(g.id, { name })} bold />
+              {g.is_income ? <span className="chip brand">Inntekt</span> : null}
+              {g.hidden ? <span className="chip">Skjult</span> : null}
+              {!g.is_income && (
+                <button className="icon-btn" onClick={() => setMenu({ kind: 'group', g })} aria-label={`Valg for gruppen ${g.name}`}>
+                  <Icon name="more" size={18} />
+                </button>
+              )}
+            </div>
+            {g.categories.map((c) => (
+              <div key={c.id} className="cat-row" style={{ opacity: c.hidden ? 0.55 : 1 }}>
+                <InlineName value={c.name} onSave={(name) => patchCat(c.id, { name })} />
+                {c.hidden ? <span className="chip">Skjult</span> : null}
+                <button className="icon-btn" onClick={() => setMenu({ kind: 'cat', g, c })} aria-label={`Valg for ${c.name}`}>
+                  <Icon name="more" size={18} />
+                </button>
+              </div>
+            ))}
+            <AddCategory groupId={g.id} onAdded={after} />
+          </div>
+        ))}
+        <AddGroup onAdded={after} />
+        {menu && (
+          <Modal title={menu.kind === 'group' ? menu.g.name : menu.c.name} onClose={() => setMenu(null)}>
+            {menu.kind === 'cat' && (
+              <label className="field">
+                Gruppe
+                <select
+                  className="select"
+                  value={menu.g.id}
+                  onChange={(e) => {
+                    patchCat(menu.c.id, { group_id: Number(e.target.value) });
+                    setMenu(null);
+                  }}
+                >
+                  {groups.map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {x.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <div className="sheet-actions">
+              <button
+                className="sheet-action"
+                onClick={() => (menu.kind === 'group' ? patchGroup(menu.g.id, { move: 'up' }) : patchCat(menu.c.id, { move: 'up' }))}
+              >
+                <Icon name="up" size={18} /> Flytt opp
+              </button>
+              <button
+                className="sheet-action"
+                onClick={() => (menu.kind === 'group' ? patchGroup(menu.g.id, { move: 'down' }) : patchCat(menu.c.id, { move: 'down' }))}
+              >
+                <Icon name="down" size={18} /> Flytt ned
+              </button>
+              <button
+                className="sheet-action"
+                onClick={() => {
+                  if (menu.kind === 'group') patchGroup(menu.g.id, { hidden: !menu.g.hidden });
+                  else patchCat(menu.c.id, { hidden: !menu.c.hidden });
+                  setMenu(null);
+                }}
+              >
+                <Icon name={(menu.kind === 'group' ? menu.g.hidden : menu.c.hidden) ? 'eye' : 'eyeOff'} size={18} />{' '}
+                {(menu.kind === 'group' ? menu.g.hidden : menu.c.hidden) ? 'Vis igjen' : 'Skjul'}
+              </button>
+              {(menu.kind === 'cat' || menu.g.categories.length === 0) && (
+                <button
+                  className="sheet-action danger"
+                  onClick={async () => {
+                    if (menu.kind === 'cat') setDeleting(menu.c);
+                    else {
+                      await api.del(`/category-groups/${menu.g.id}`);
+                      after();
+                    }
+                    setMenu(null);
+                  }}
+                >
+                  <Icon name="trash" size={18} /> Slett
+                </button>
+              )}
+            </div>
+            <p className="small faint" style={{ margin: 0 }}>
+              Skjulte kategorier beholder historikken, men er ute av veien. Inntektskategorier går til «Klar til fordeling».
+            </p>
+          </Modal>
+        )}
+        {deleting && (
+          <DeleteCategory
+            cat={deleting}
+            options={summary?.categories.filter((x) => x.id !== deleting.id && !x.hidden) ?? []}
+            onClose={() => setDeleting(null)}
+            onDone={(msg) => {
+              setDeleting(null);
+              toast(msg);
+              after();
+            }}
+          />
+        )}
+      </div>
+    );
 
   return (
     <div className="stack">
@@ -170,22 +286,29 @@ function Categories() {
           }}
         />
       )}
-      <form
-        className="row"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          if (!newGroup.trim()) return;
-          await api.post('/category-groups', { name: newGroup });
-          setNewGroup('');
-          after();
-        }}
-      >
-        <input className="input" style={{ maxWidth: 280 }} placeholder="Navn på ny gruppe" value={newGroup} onChange={(e) => setNewGroup(e.target.value)} />
-        <button className="btn">
-          <Icon name="plus" size={16} /> Legg til gruppe
-        </button>
-      </form>
+      <AddGroup onAdded={after} />
     </div>
+  );
+}
+
+function AddGroup({ onAdded }: { onAdded: () => void }) {
+  const [name, setName] = useState('');
+  return (
+    <form
+      className="row add-group"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (!name.trim()) return;
+        await api.post('/category-groups', { name });
+        setName('');
+        onAdded();
+      }}
+    >
+      <input className="input" style={{ maxWidth: 280, flex: '1 1 180px' }} placeholder="Navn på ny gruppe" value={name} onChange={(e) => setName(e.target.value)} />
+      <button className="btn">
+        <Icon name="plus" size={16} /> Legg til gruppe
+      </button>
+    </form>
   );
 }
 
@@ -278,7 +401,7 @@ function Rules() {
             </select>
           </label>
           <label className="field" style={{ flex: '1 1 180px' }}>
-            &nbsp;
+            Tekst
             <input className="input" value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder="f.eks. klatresenter" />
           </label>
           <label className="field" style={{ flex: '1 1 200px' }}>

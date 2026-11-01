@@ -979,7 +979,7 @@ label.field .help {
 
 @media (max-width: 860px) {
   .toasts {
-    bottom: 84px;
+    bottom: calc(84px + env(safe-area-inset-bottom));
   }
 }
 
@@ -4261,4 +4261,72 @@ kbd {
 }
 .cc-purchase > .grow {
   flex: 1 1 auto;
+}
+
+/* ---------- Phone: settings rows and action sheets ---------- */
+.cat-card {
+  overflow: hidden;
+}
+.cat-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 16px;
+  min-height: 52px;
+  border-top: 0.5px solid var(--border);
+}
+.cat-row:first-child {
+  border-top: 0;
+}
+.cat-row .assign-input {
+  flex: 1;
+  min-width: 0;
+  width: auto !important;
+}
+.cat-group {
+  background: var(--surface-2);
+}
+.sheet-actions {
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.sheet-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 0;
+  border-top: 0.5px solid var(--border);
+  background: none;
+  font: inherit;
+  font-size: 16px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.sheet-action:first-child {
+  border-top: 0;
+}
+.sheet-action:active {
+  background: var(--border);
+}
+.sheet-action.danger {
+  color: var(--bad);
+}
+.sheet-action .spacer {
+  flex: 1;
+}
+.add-group {
+  flex-wrap: nowrap;
+}
+.acc-row {
+  cursor: pointer;
+  gap: 12px;
+  align-items: center;
+}
+.acc-row:active {
+  background: var(--surface-2);
 }
