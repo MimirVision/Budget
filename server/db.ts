@@ -174,6 +174,21 @@ CREATE TABLE IF NOT EXISTS attachments (
 );
 CREATE INDEX IF NOT EXISTS attachments_tx ON attachments(transaction_id);
 
+-- Kredittkort: the bill as the bank states it (amount to pay, due date, statement date), and optionally the
+-- balance right now. The newest one is the card's starting point: it wins over what the app worked out.
+CREATE TABLE IF NOT EXISTS card_statements (
+  id INTEGER PRIMARY KEY,
+  account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  closed TEXT NOT NULL,                        -- fakturadato: the billing period closed this day
+  due TEXT NOT NULL,                           -- forfallsdato
+  amount INTEGER NOT NULL,                     -- øre, "å betale" on the bill
+  minimum INTEGER,                             -- øre, minstebeløp if known
+  balance INTEGER,                             -- øre, what the bank says is owed in total on balance_date
+  balance_date TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS card_statements_account ON card_statements(account_id);
+
 CREATE TABLE IF NOT EXISTS pending_auth (
   state TEXT PRIMARY KEY,
   provider TEXT NOT NULL,

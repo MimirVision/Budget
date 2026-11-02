@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { run } from './db.ts';
 import { openDb } from './db-node.ts';
-import { cardAlerts, cardOverview } from './cards.ts';
+import { cardAlerts, cardOverview, matchBalance, saveStatement } from './cards.ts';
 
 function setup(terms: Record<string, number | null> = {}) {
   const db = openDb(':memory:');
@@ -135,5 +135,90 @@ describe('Kredittkort', () => {
 
     const [late] = cardOverview(db, '2026-11-25');
     expect(late.purchases[0]).toMatchObject({ payee: 'Kiwi', status: 'overdue', daysLeft: -5 });
+  });
+
+  it('uses the bill entered from the bank, and does not count the opening balance as new purchases', () => {
+    const { db, tx, card } = setup();
+    tx('2026-11-01', -530200, 'Startsaldo'); // "Start på nytt": all the debt as one line on the start date
+    tx('2026-11-01', -20000, 'Rema');
+    run(db, "INSERT INTO settings(key, value) VALUES ('budget_start', '2026-11-01')");
+    // Without the bill: the opening balance is the bill before the start, due 20.11, not "nye kjøp".
+    let [c] = cardOverview(db, '2026-11-02');
+    expect(c.breakdown).toMatchObject({ nextBill: 530200, unbilled: 20000 });
+    expect(c.purchases.find((p) => p.kind === 'opening')).toMatchObject({ due: '2026-11-20', bill: 'oktober-regningen' });
+
+    saveStatement(db, card, { closed: '2026-10-31', due: '2026-11-20', amount: 480000, minimum: 50000 }, '2026-11-02');
+    [c] = cardOverview(db, '2026-11-02');
+    expect(c.statement).toMatchObject({ closed: '2026-10-31', due: '2026-11-20', amount: 480000, left: 480000, status: 'due', minimum: 50000, fromBank: true });
+    expect(c.owed).toBe(500000);
+    expect(c.bank).toMatchObject({ newer: false, appOwed: 550200 });
+    expect(c.breakdown).toMatchObject({ overdue: 0, nextBill: 480000, unbilled: 20000 });
+    expect(c.purchases.map((p) => [p.payee, p.left, p.due, p.daysLeft, p.kind])).toEqual([
+      ['Regningen fra banken', 480000, '2026-11-20', 18, 'unknown'],
+      ['Rema', 20000, '2026-12-20', 48, 'purchase'],
+    ]);
+
+    // Kontoer can be made to match; the card page stays the same.
+    expect(matchBalance(db, card, '2026-11-02')).toBe(50200);
+    [c] = cardOverview(db, '2026-11-02');
+    expect(c.bank.appOwed).toBe(500000);
+    expect(c.owed).toBe(500000);
+  });
+
+  it('shows the purchases the app has on the entered bill, and the rest as one line', () => {
+    const { db, tx, card } = setup();
+    tx('2026-10-05', -100000, 'Elkjøp');
+    tx('2026-10-25', -50000, 'Kiwi');
+    saveStatement(db, card, { closed: '2026-10-31', due: '2026-11-20', amount: 300000 }, '2026-11-02');
+    tx('2026-11-10', 200000, 'Innbetaling');
+    const [c] = cardOverview(db, '2026-11-12');
+    const by = Object.fromEntries(c.purchases.map((p) => [p.payee, p]));
+    // The unknown 1 500 is the oldest (older debt), so the payment covers it first, then Elkjøp.
+    expect(by['Eldre saldo og ukjente kjøp']).toMatchObject({ amount: 150000, left: 0, status: 'paid' });
+    expect(by.Elkjøp).toMatchObject({ left: 50000, status: 'free' });
+    expect(by.Kiwi).toMatchObject({ left: 50000, status: 'free' });
+    expect(c.statement).toMatchObject({ amount: 300000, paid: 200000, left: 100000, status: 'due' });
+
+    // A smaller bill than the purchases: the older ones were already paid before it.
+    saveStatement(db, card, { closed: '2026-10-31', due: '2026-11-20', amount: 120000 }, '2026-11-02');
+    const [d] = cardOverview(db, '2026-11-02');
+    expect(d.purchases.filter((p) => p.left > 0).map((p) => [p.payee, p.left])).toEqual([
+      ['Elkjøp', 70000],
+      ['Kiwi', 50000],
+    ]);
+  });
+
+  it('fills in from the bank balance what the app has not seen since the bill', () => {
+    const { db, tx, card } = setup();
+    tx('2026-11-03', -20000, 'Rema');
+    saveStatement(db, card, { closed: '2026-10-31', due: '2026-11-20', amount: 300000, balance: 350000, balance_date: '2026-11-05' }, '2026-11-05');
+    let [c] = cardOverview(db, '2026-11-06');
+    expect(c.owed).toBe(350000);
+    expect(c.breakdown).toMatchObject({ nextBill: 300000, unbilled: 50000 });
+    expect(c.purchases.find((p) => p.id === -2)).toMatchObject({ amount: 30000, due: '2026-12-20', kind: 'unknown' });
+
+    // Less than the app thinks: a payment the app hasn't seen, which went to the bill.
+    saveStatement(db, card, { closed: '2026-10-31', due: '2026-11-20', amount: 300000, balance: 250000, balance_date: '2026-11-05' }, '2026-11-05');
+    [c] = cardOverview(db, '2026-11-06');
+    expect(c.owed).toBe(250000);
+    expect(c.statement).toMatchObject({ left: 230000, paid: 70000 });
+  });
+
+  it('takes a bill entered on its statement day as closed, and notices when a newer bill has come', () => {
+    const { db, card } = setup({ due_day: null as any });
+    run(db, 'UPDATE accounts SET due_day = NULL, statement_day = NULL WHERE id = ?', card);
+    saveStatement(db, card, { closed: '2026-10-31', due: '2026-11-18', amount: 100000 }, '2026-10-31');
+    let [c] = cardOverview(db, '2026-10-31');
+    expect(c.statement).toMatchObject({ closed: '2026-10-31', due: '2026-11-18', status: 'due' });
+    expect(c.current).toMatchObject({ from: '2026-11-01', closes: '2026-11-30', due: '2026-12-18' }); // due day from the bill
+    [c] = cardOverview(db, '2026-12-02');
+    expect(c.bank.newer).toBe(true);
+  });
+
+  it('refuses a bill that does not make sense', () => {
+    const { db, card } = setup();
+    expect(() => saveStatement(db, card, { closed: '2026-12-01', due: '2026-12-20', amount: 1 }, '2026-11-02')).toThrow(/frem i tid/);
+    expect(() => saveStatement(db, card, { closed: '2026-10-31', due: '2026-10-20', amount: 1 }, '2026-11-02')).toThrow(/etter fakturadatoen/);
+    expect(() => saveStatement(db, card, { closed: '2026-10-31', due: '2026-11-20', amount: 100, minimum: 200 }, '2026-11-02')).toThrow(/Minstebeløpet/);
   });
 });

@@ -6,19 +6,23 @@
  * (fakturadato). The bill for that period is due some days later (forfall). Pay it all by then and there's no
  * interest; otherwise interest is charged, usually from the purchase date.
  */
-import { all, get, type DB } from './db.ts';
+import { all, get, run, type DB } from './db.ts';
 import { budgetStart, getBudget } from './budget.ts';
-import { addDays, addMonths, dayDiff, daysInMonth, todayISO } from '../shared/months.ts';
+import { addDays, dayDiff, todayISO } from '../shared/months.ts';
+import {
+  closesAround,
+  dueFor,
+  effectiveTerms,
+  latestStatement,
+  ledger,
+  type CardStatement,
+  type CardTerms,
+  type Payment,
+  type Period,
+  type Purchase,
+} from './cardledger.ts';
 
-export interface CardTerms {
-  statement_day: number | null;
-  due_day: number | null;
-  interest_rate: number | null; // hundredths of a percent a year
-  credit_limit: number | null; // øre
-  free_days: number | null;
-  min_pay_pct: number | null; // hundredths of a percent
-  min_pay_kr: number | null; // øre
-}
+export type { CardStatement, CardTerms, Payment, Period, Purchase };
 
 export interface CardOverview extends CardTerms {
   id: number;
@@ -29,7 +33,20 @@ export interface CardOverview extends CardTerms {
   owed: number;
   available: number | null;
   /** The last closed billing period and its bill. */
-  statement: { closed: string; due: string; amount: number; paid: number; left: number; status: 'paid' | 'due' | 'overdue' | 'none'; minimum: number | null; dueIsEstimate: boolean };
+  statement: {
+    closed: string;
+    due: string;
+    amount: number;
+    paid: number;
+    left: number;
+    status: 'paid' | 'due' | 'overdue' | 'none';
+    minimum: number | null;
+    dueIsEstimate: boolean;
+    /** The amount is the bank's, entered from the bill. */
+    fromBank: boolean;
+  };
+  /** The bill entered from the bank, if any, and what the app's own balance says. */
+  bank: { statement: CardStatement | null; newer: boolean; appOwed: number };
   /** The period running now. */
   current: { from: string; closes: string; spent: number; due: string };
   /** Bought today: interest-free until… */
@@ -52,209 +69,8 @@ export interface CardOverview extends CardTerms {
   periods: Period[];
   /** Payments (and refunds) into the card, newest first, with what each one paid down. */
   payments: Payment[];
-  /** Purchases still (partly) unpaid, plus recently paid ones, with how long each has before interest. */
+  /** Every purchase from the last bill on, and any older one still unpaid, with how long each has before interest. */
   purchases: Purchase[];
-}
-
-export interface Purchase {
-  id: number;
-  date: string;
-  payee: string;
-  amount: number;
-  /** Still unpaid of this purchase (payments go to the oldest purchases first). */
-  left: number;
-  /** Must be paid by this date to stay interest-free: the due date of its bill. */
-  due: string;
-  /** Days from today to `due` (negative when past). */
-  daysLeft: number;
-  /** Interest-free days this purchase got in total (purchase date to due date). */
-  freeDays: number;
-  status: 'paid' | 'free' | 'overdue';
-  /** Interest so far if overdue, or what one month late would cost if it isn't paid in time. */
-  interest: number | null;
-  billed: boolean;
-}
-
-export interface Period {
-  from: string;
-  closes: string;
-  due: string;
-  label: string;
-  charged: number;
-  paid: number;
-  left: number;
-  status: 'open' | 'paid' | 'due' | 'overdue';
-}
-
-export interface Payment {
-  id: number;
-  date: string;
-  amount: number;
-  kind: 'payment' | 'refund';
-  text: string;
-  covered: Array<{ label: string; amount: number }>;
-  /** More than was owed: money left on the card. */
-  extra: number;
-}
-
-const MONTHS = ['januar', 'februar', 'mars', 'april', 'mai', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'desember'];
-
-/**
- * The card's ledger: every purchase lands in the billing period it was made in, and every payment (or refund)
- * pays down the oldest unpaid period first, the way the banks apply payments. That shows what each payment
- * covered and what's actually still owed, and how urgent it is.
- */
-function ledger(db: DB, c: CardTerms & { id: number }, start: string, today: string) {
-  const rows = all<{ id: number; date: string; amount: number; payee: string; raw_description: string; transfer_id: number | null }>(
-    db,
-    'SELECT id, date, amount, payee, raw_description, transfer_id FROM transactions WHERE account_id = ? AND date >= ? AND date <= ? ORDER BY date, id',
-    c.id,
-    start,
-    today,
-  );
-  const buckets = new Map<string, Period>();
-  const bucketFor = (date: string) => {
-    // The close of the period `date` belongs to (a close day is still in its period).
-    const { next: close, before } = closesAround(date, c.statement_day);
-    if (!buckets.has(close)) {
-      const prev = before(close);
-      const monthEnd = !c.statement_day || c.statement_day >= 28;
-      buckets.set(close, {
-        from: addDays(prev, 1),
-        closes: close,
-        due: dueFor(close, prev, c).due,
-        label: monthEnd ? `${MONTHS[Number(close.slice(5, 7)) - 1]}-regningen` : `regningen ${Number(close.slice(8, 10))}. ${MONTHS[Number(close.slice(5, 7)) - 1]}`,
-        charged: 0,
-        paid: 0,
-        left: 0,
-        status: 'open',
-      });
-    }
-    return buckets.get(close)!;
-  };
-  // Each period's purchases in date order, so a payment can say which purchases it paid for.
-  const charges = new Map<string, Array<{ id: number; date: string; payee: string; amount: number; left: number }>>();
-  for (const r of rows)
-    if (r.amount < 0) {
-      const b = bucketFor(r.date);
-      b.charged += -r.amount;
-      charges.set(b.closes, [...(charges.get(b.closes) ?? []), { id: r.id, date: r.date, payee: r.payee || r.raw_description, amount: -r.amount, left: -r.amount }]);
-    }
-  const ordered = [...buckets.values()].sort((a, b) => a.closes.localeCompare(b.closes));
-  for (const b of ordered) b.left = b.charged;
-  const payBucket = (b: Period, amount: number) => {
-    b.left -= amount;
-    b.paid += amount;
-    let rest = amount;
-    for (const ch of charges.get(b.closes) ?? []) {
-      if (rest <= 0) break;
-      const take = Math.min(rest, ch.left);
-      ch.left -= take;
-      rest -= take;
-    }
-  };
-
-  const payments: Payment[] = [];
-  let credit = 0;
-  for (const r of rows.filter((x) => x.amount > 0)) {
-    const isPayment = !!r.transfer_id || /innbetal|betaling|payment|overføring|nedbetal/i.test(`${r.payee} ${r.raw_description}`);
-    let rest = r.amount;
-    const covered: Payment['covered'] = [];
-    for (const b of ordered) {
-      if (rest <= 0) break;
-      if (b.left <= 0) continue;
-      const take = Math.min(rest, b.left);
-      payBucket(b, take);
-      rest -= take;
-      covered.push({ label: b.closes >= today ? 'nye kjøp (ikke fakturert ennå)' : b.label, amount: take });
-    }
-    credit += rest;
-    payments.push({ id: r.id, date: r.date, amount: r.amount, kind: isPayment ? 'payment' : 'refund', text: r.payee || r.raw_description, covered, extra: rest });
-  }
-  // Charges after an overpayment use up the money left on the card.
-  for (const b of ordered) {
-    if (credit <= 0) break;
-    const take = Math.min(credit, b.left);
-    payBucket(b, take);
-    credit -= take;
-  }
-  for (const b of ordered) b.status = b.closes >= today ? 'open' : b.left <= 0 ? 'paid' : today > b.due ? 'overdue' : 'due';
-
-  const sum = (st: Period['status']) => ordered.filter((b) => b.status === st).reduce((s, b) => s + b.left, 0);
-  // Interest on what's overdue, from the start of each period (Norwegian cards charge from the purchase date).
-  const accruedInterest = c.interest_rate
-    ? Math.round(
-        ordered
-          .filter((b) => b.status === 'overdue')
-          .reduce((s, b) => s + (b.left * (c.interest_rate! / 10000) * dayDiff(b.from, today)) / 365, 0),
-      )
-    : null;
-  // Every purchase with what's left of it, its deadline and what being late costs.
-  const rate = c.interest_rate ? c.interest_rate / 10000 : null;
-  const purchases: Purchase[] = [];
-  for (const b of ordered)
-    for (const ch of charges.get(b.closes) ?? []) {
-      const daysLeft = dayDiff(today, b.due);
-      const status: Purchase['status'] = ch.left <= 0 ? 'paid' : daysLeft < 0 ? 'overdue' : 'free';
-      // Norwegian cards charge interest from the purchase date when the bill isn't paid in full.
-      const interest =
-        rate && ch.left > 0
-          ? Math.round((ch.left * rate * (status === 'overdue' ? dayDiff(ch.date, today) : dayDiff(ch.date, b.due) + 30)) / 365)
-          : null;
-      if (status === 'paid' && dayDiff(ch.date, today) > 45) continue;
-      purchases.push({
-        id: ch.id,
-        date: ch.date,
-        payee: ch.payee,
-        amount: ch.amount,
-        left: Math.max(0, ch.left),
-        due: b.due,
-        daysLeft,
-        freeDays: dayDiff(ch.date, b.due),
-        status,
-        interest,
-        billed: b.closes < today,
-      });
-    }
-  // Most urgent first: overdue, then the soonest deadline; paid ones last, newest first.
-  purchases.sort((a, b) =>
-    a.status === 'paid' && b.status === 'paid' ? b.date.localeCompare(a.date) : a.status === 'paid' ? 1 : b.status === 'paid' ? -1 : a.daysLeft - b.daysLeft || a.date.localeCompare(b.date),
-  );
-
-  return {
-    purchases: purchases.slice(0, 60),
-    periods: ordered.slice().reverse().slice(0, 8),
-    payments: payments.reverse().slice(0, 10),
-    breakdown: { overdue: sum('overdue'), nextBill: sum('due'), unbilled: sum('open'), credit, accruedInterest },
-  };
-}
-
-const clampDay = (month: string, day: number) => `${month}-${String(Math.min(day, daysInMonth(month))).padStart(2, '0')}`;
-
-/** The day a billing period closes in a given month. Month end when the statement day isn't set. */
-function closeIn(month: string, statementDay: number | null) {
-  return clampDay(month, statementDay ?? 31);
-}
-
-/** The most recent close on or before `date`'s previous day, and the next one after. */
-function closesAround(date: string, statementDay: number | null) {
-  const month = date.slice(0, 7);
-  const thisClose = closeIn(month, statementDay);
-  // The period closes at the end of its close day, so on that day it's still open.
-  const last = date > thisClose ? thisClose : closeIn(addMonths(month, -1), statementDay);
-  const next = date > thisClose ? closeIn(addMonths(month, 1), statementDay) : thisClose;
-  return { last, next, before: (close: string) => closeIn(addMonths(close.slice(0, 7), -1), statementDay) };
-}
-
-/** When the bill for the period closing on `close` is due. */
-function dueFor(close: string, prevClose: string, t: CardTerms): { due: string; estimate: boolean } {
-  if (t.due_day) {
-    const sameMonth = clampDay(close.slice(0, 7), t.due_day);
-    return { due: sameMonth > close ? sameMonth : clampDay(addMonths(close.slice(0, 7), 1), t.due_day), estimate: false };
-  }
-  // "Up to N interest-free days" counts from the first day of the period.
-  if (t.free_days) return { due: addDays(prevClose, t.free_days), estimate: false };
-  return { due: addDays(close, 20), estimate: true };
 }
 
 const FEE = /\b(rente|renter|gebyr|årsavgift|termingebyr|fakturagebyr|purregebyr|purring|omkostning)/i;
@@ -268,18 +84,23 @@ export function cardOverview(db: DB, today = todayISO()): CardOverview[] {
        FROM accounts WHERE kind = 'credit' AND closed = 0 ORDER BY sort, id`,
   );
   let potRows: Array<{ id: number; available: number }> | null = null;
-  return cards.map((c) => {
-    const owedAt = (date: string) =>
-      -(get<{ s: number }>(db, 'SELECT COALESCE(SUM(amount), 0) AS s FROM transactions WHERE account_id = ? AND date >= ? AND date <= ?', c.id, start, date)!.s);
-    const owed = Math.max(0, owedAt(today));
-
-    const { last, next, before } = closesAround(today, c.statement_day);
+  return cards.map((card) => {
+    const bank = latestStatement(db, card.id);
+    // The bank's own bill fills in what the terms don't say.
+    const c = effectiveTerms(card, bank);
+    // A bill entered on its statement day: that day already counts as closed.
+    const ref = bank && bank.closed >= today ? addDays(bank.closed, 1) : today;
+    const { last, next, before } = closesAround(ref, c.statement_day);
     const prev = before(last);
-    const lastDue = dueFor(last, prev, c);
+    const lastDue = bank && bank.closed === last ? { due: bank.due, estimate: false } : dueFor(last, prev, c);
     const nextDue = dueFor(next, last, c);
 
-    const book = ledger(db, c, start, today);
-    // The last closed bill: what was charged in it, and how much of it (plus anything older) is still unpaid.
+    const book = ledger(db, c, start, today, bank);
+    const owed = Math.max(0, book.owed);
+    // What the app's own balance (Kontoer) says, to show when it doesn't match the bank.
+    const appOwed = -(get<{ s: number }>(db, 'SELECT COALESCE(SUM(amount), 0) AS s FROM transactions WHERE account_id = ? AND date >= ? AND date <= ?', c.id, start, today)!.s);
+
+    // The last closed bill: what was on it, and how much of it (plus anything older) is still unpaid.
     const lastPeriod = book.periods.find((p) => p.closes === last);
     const billed = lastPeriod?.charged ?? 0;
     const left = book.breakdown.overdue + book.breakdown.nextBill;
@@ -289,9 +110,13 @@ export function cardOverview(db: DB, today = todayISO()): CardOverview[] {
 
     const pct = c.min_pay_pct ?? 300; // 3 % is common in Norway, but the card's own terms win
     const minKr = c.min_pay_kr ?? 30000;
-    const minimum = billed > 0 ? Math.min(billed, Math.max(minKr, Math.round((billed * pct) / 10000))) : null;
-
-    const spent = -(get<{ s: number }>(db, 'SELECT COALESCE(SUM(amount), 0) AS s FROM transactions WHERE account_id = ? AND amount < 0 AND date > ? AND date <= ?', c.id, last, today)!.s);
+    const minimum =
+      bank && bank.closed === last && bank.minimum !== null
+        ? bank.minimum
+        : billed > 0
+          ? Math.min(billed, Math.max(minKr, Math.round((billed * pct) / 10000)))
+          : null;
+    const spent = book.periods.find((p) => p.closes === next)?.charged ?? 0;
 
     // Interest-free time: from the purchase to the due date of the period it lands in.
     const freeToday = { days: dayDiff(today, nextDue.due), until: nextDue.due };
@@ -335,12 +160,19 @@ export function cardOverview(db: DB, today = todayISO()): CardOverview[] {
     if (pot && c.on_budget && !potRows) potRows = getBudget(db, today.slice(0, 7)).groups.flatMap((g) => g.categories);
     const potAvailable = pot && c.on_budget ? potRows?.find((r) => r.id === pot.id)?.available ?? 0 : null;
 
+    const { owed: _owed, ...rest } = book;
     return {
-      ...c,
+      ...card, // the terms as saved (what the bill fills in is used above, not shown as if it were saved)
       configured: !!(c.interest_rate && (c.due_day || c.free_days)),
       owed,
+      bank: {
+        statement: bank,
+        // A newer bill has closed since the one entered: worked out from transactions until it's entered too.
+        newer: !!bank && last > bank.closed,
+        appOwed,
+      },
       available: c.credit_limit ? c.credit_limit - owed : null,
-      statement: { closed: last, due: lastDue.due, amount: billed, paid, left, status, minimum, dueIsEstimate: lastDue.estimate },
+      statement: { closed: last, due: lastPeriod?.due ?? lastDue.due, amount: billed, paid, left, status, minimum, dueIsEstimate: lastDue.estimate, fromBank: !!lastPeriod?.fromBank },
       current: { from: addDays(last, 1), closes: next, spent, due: nextDue.due },
       freeToday,
       freeMax,
@@ -350,12 +182,81 @@ export function cardOverview(db: DB, today = todayISO()): CardOverview[] {
       feesThisYear: { total: fees.reduce((s, r) => s - r.amount, 0), items: fees.slice(0, 5).map((r) => ({ date: r.date, payee: r.payee || r.raw_description, amount: -r.amount })) },
       cashThisYear: { total: cash.reduce((s, r) => s - r.amount, 0), count: cash.length },
       pot: potAvailable,
-      ...book,
+      ...rest,
     };
   });
 }
 
 /** Reminders for the Budsjett page: a bill due within five days, or one that wasn't paid in full. */
+export interface StatementInput {
+  closed: string;
+  due: string;
+  amount: number;
+  minimum?: number | null;
+  balance?: number | null;
+  balance_date?: string | null;
+}
+
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Saves the bill as the bank states it. It becomes the card's starting point. */
+export function saveStatement(db: DB, accountId: number, input: StatementInput, today = todayISO()): number {
+  const card = get<{ id: number }>(db, "SELECT id FROM accounts WHERE id = ? AND kind = 'credit'", accountId);
+  if (!card) throw new Error('Fant ikke kortet');
+  const { closed, due } = input;
+  if (!ISO.test(String(closed)) || !ISO.test(String(due))) throw new Error('Velg fakturadato og forfallsdato');
+  if (closed > today) throw new Error('Fakturadatoen kan ikke være frem i tid');
+  if (due < closed) throw new Error('Forfall må være etter fakturadatoen');
+  if (dayDiff(closed, due) > 70) throw new Error('Forfall er mer enn 70 dager etter fakturadatoen. Sjekk datoene');
+  const amount = Math.round(Number(input.amount));
+  if (!Number.isFinite(amount) || amount < 0) throw new Error('Skriv inn beløpet som skal betales');
+  const minimum = input.minimum ? Math.max(0, Math.round(Number(input.minimum))) : null;
+  if (minimum !== null && minimum > amount) throw new Error('Minstebeløpet kan ikke være større enn regningen');
+  const hasBalance = input.balance !== null && input.balance !== undefined && String(input.balance) !== '';
+  const balance = hasBalance ? Math.round(Number(input.balance)) : null;
+  if (balance !== null && !Number.isFinite(balance)) throw new Error('Ugyldig saldo');
+  const balanceDate = balance === null ? null : input.balance_date || today;
+  if (balanceDate && (!ISO.test(balanceDate) || balanceDate < closed || balanceDate > today))
+    throw new Error('Saldoen må være fra fakturadatoen eller senere, og ikke frem i tid');
+  return Number(
+    run(
+      db,
+      'INSERT INTO card_statements(account_id, closed, due, amount, minimum, balance, balance_date) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      accountId,
+      closed,
+      due,
+      amount,
+      minimum,
+      balance,
+      balanceDate,
+    ).lastInsertRowid,
+  );
+}
+
+/**
+ * Makes the app's own balance for the card (Kontoer) match what the card page says is owed, with a
+ * Saldojustering. The card page itself doesn't change: with a bill entered, adjustments are left out of it.
+ */
+export function matchBalance(db: DB, accountId: number, today = todayISO()): number {
+  const c = cardOverview(db, today).find((x) => x.id === accountId);
+  if (!c?.bank.statement) throw new Error('Legg inn regningen fra banken først');
+  const diff = c.bank.appOwed - c.owed;
+  if (diff !== 0)
+    run(
+      db,
+      `INSERT INTO transactions(account_id, date, amount, payee, raw_description, reviewed, source)
+       VALUES (?, ?, ?, 'Saldojustering', 'Saldojustering', 0, 'manual')`,
+      accountId,
+      today,
+      diff,
+    );
+  return diff;
+}
+
+export function deleteStatement(db: DB, accountId: number, id: number) {
+  run(db, 'DELETE FROM card_statements WHERE id = ? AND account_id = ?', id, accountId);
+}
+
 export function cardAlerts(db: DB, today = todayISO()) {
   return cardOverview(db, today)
     .filter((c) => (c.statement.status === 'due' && dayDiff(today, c.statement.due) <= 5) || c.statement.status === 'overdue')

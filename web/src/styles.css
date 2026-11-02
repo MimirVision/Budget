@@ -4342,3 +4342,86 @@ kbd {
   align-items: center;
   gap: 12px;
 }
+
+/* Kredittkort: the bill from the bank, the interest planner and purchases grouped by bill */
+.cc-bank {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.cc-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+.cc-plan .chip-btn {
+  font-variant-numeric: tabular-nums;
+}
+.cc-plan-date {
+  width: auto;
+  max-width: 160px;
+  padding: 4px 8px;
+  min-height: 0;
+  height: 32px;
+}
+.cc-plan-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.cc-plan-result.good {
+  background: var(--good-soft);
+  border-color: transparent;
+}
+.cc-plan-result.bad {
+  background: var(--bad-soft);
+  border-color: transparent;
+}
+.cc-plan-amount {
+  font-size: 24px;
+  letter-spacing: -0.01em;
+}
+.cc-plan-steps {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cc-plan-what {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cc-plan-what .input {
+  max-width: 160px;
+}
+.cc-group {
+  display: flex;
+  flex-direction: column;
+}
+.cc-group-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 12px 0 6px;
+}
+.cc-estimated .ellipsis {
+  font-style: italic;
+}
+.cc-group-head > .grow {
+  flex: 1;
+}
+.cc-group-head > .right {
+  text-align: right;
+}
