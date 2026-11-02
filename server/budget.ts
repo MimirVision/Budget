@@ -360,7 +360,7 @@ export function getBudget(db: DB, month: string): BudgetMonth {
   const uncategorized = get<{ count: number; amount: number }>(
     db,
     `SELECT COUNT(*) AS count, COALESCE(SUM(t.amount), 0) AS amount FROM transactions t JOIN accounts a ON a.id = t.account_id
-      WHERE a.on_budget = 1 AND t.category_id IS NULL AND t.transfer_id IS NULL AND t.date >= ?
+      WHERE a.on_budget = 1 AND t.category_id IS NULL AND t.transfer_id IS NULL AND t.date >= ? AND t.source != 'freshstart'
         AND NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id)`,
     budgetStart(db),
   )!;

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { all, get, getSetting, run, setSetting, tx, type DB } from './db.ts';
 import { autoAssign, budgetStart, overspendMode, getBudget, moveMoney, readyToAssign, setAssigned, type AutoAssignMode } from './budget.ts';
-import { applyFreshStart, incomeCategory, previewFreshStart, undoFreshStart } from './freshstart.ts';
+import { applyFreshStart, followBankBalance, incomeCategory, openingCategory, previewFreshStart, undoFreshStart } from './freshstart.ts';
 import { forgetImport, ingest, linkTransfer, rejectTransferSuggestion, ruleMatches, transferToAccount, unlinkTransfer, withImportHashes } from './ingest.ts';
 import { previewCsv, type CsvMapping } from './import/csv.ts';
 import { overview } from './overview.ts';
@@ -455,14 +455,13 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
               : body[f];
       run(db, `UPDATE accounts SET ${f} = ? WHERE id = ?`, value, id);
     }
-    // An opening balance from "Start på nytt" counts against Klar til fordeling only on a budget account.
-    if (body.on_budget !== undefined)
-      run(
-        db,
-        "UPDATE transactions SET category_id = ? WHERE account_id = ? AND source = 'freshstart'",
-        body.on_budget ? incomeCategory(db) : null,
-        id,
-      );
+    // An opening balance from "Start på nytt" counts in Klar til fordeling only on a budget account (and card
+    // debt never does: the Kortregning pot shows it instead).
+    if (body.on_budget !== undefined) {
+      const acc = get<{ kind: string; on_budget: number }>(db, 'SELECT kind, on_budget FROM accounts WHERE id = ?', id)!;
+      for (const o of all<{ id: number; amount: number }>(db, "SELECT id, amount FROM transactions WHERE account_id = ? AND source = 'freshstart'", id))
+        run(db, 'UPDATE transactions SET category_id = ? WHERE id = ?', openingCategory(db, acc, o.amount), o.id);
+    }
     if (body.move) moveSort(db, 'accounts', id, body.move, '1 = 1 OR ? IS NULL', id);
     // Fix the balance so it matches the bank ("reconcile").
     if (body.reconcileTo !== undefined) {
@@ -507,7 +506,8 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
       where.push('t.account_id = ?');
       params.push(Number(q.account));
     }
-    if (q.category === 'none') where.push('t.category_id IS NULL AND t.transfer_id IS NULL AND NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id)');
+    if (q.category === 'none')
+      where.push("t.category_id IS NULL AND t.transfer_id IS NULL AND t.source != 'freshstart' AND NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id)");
     else if (q.category) {
       where.push('(t.category_id = ? OR EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id AND s.category_id = ?))');
       params.push(Number(q.category), Number(q.category));
@@ -929,7 +929,11 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
     const result = ingest(db, accountId, rows.slice(offset, offset + limit), 'csv');
     const next = offset + limit < rows.length ? offset + limit : null;
     // The bank's balance at the end of the file, unless a newer one is already known (from a sync or a newer file).
-    if (next === null && p.balance) rememberBankBalance(db, accountId, p.balance.amount, p.balance.date);
+    if (next === null && p.balance) {
+      rememberBankBalance(db, accountId, p.balance.amount, p.balance.date);
+      // After "Start på nytt" the opening balance follows the bank, so Kontoer shows what the bank says.
+      followBankBalance(db, accountId);
+    }
     return c.json({ ...result, total: rows.length, next });
   });
 
