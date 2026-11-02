@@ -27,13 +27,21 @@ export function usage(c: CategoryRow, pace: number) {
   return { funds, spent, ratio, fast, show: funds > 0 || spent > 0 };
 }
 
-export function UsageBar({ c, pace }: { c: CategoryRow; pace: number }) {
+export function UsageBar({ c, pace, withLabel }: { c: CategoryRow; pace: number; withLabel?: boolean }) {
   const u = usage(c, pace);
-  if (!u.show) return <div className="bar bar-none" />;
-  return (
-    <div className="bar" title={`${Math.round(u.ratio * 100)} % brukt`}>
-      <div className={`fill ${c.available < 0 ? 'bad' : u.fast ? 'warn' : ''}`} style={{ width: `${u.ratio * 100}%` }} />
+  if (!u.show) return withLabel ? <div className="use use-none"><div className="bar bar-none" /></div> : <div className="bar bar-none" />;
+  const tone = c.available < 0 ? 'bad' : u.fast ? 'warn' : '';
+  const bar = (
+    <div className="bar" title={`${Math.round(u.ratio * 100)} % brukt${u.fast ? ', raskere enn kalenderen' : ''}`}>
+      <div className={`fill ${tone}`} style={{ width: `${u.ratio * 100}%` }} />
       {pace > 0 && pace < 1 && <div className="pace" style={{ left: `${pace * 100}%` }} />}
+    </div>
+  );
+  if (!withLabel) return bar;
+  return (
+    <div className={`use ${tone}`}>
+      {bar}
+      <span className="use-pct num">{c.available < 0 ? 'over' : `${Math.round(u.ratio * 100)} %`}</span>
     </div>
   );
 }

@@ -4,6 +4,10 @@ import type { CategoryOption } from '../api';
 
 // ---------- Icons (inline, so the app has no icon dependency) ----------
 const paths: Record<string, string> = {
+  card: 'M3 7a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2zM3 10h18M7 15h3',
+  receipt: 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3',
+  home: 'M4 11l8-7 8 7M6 9.5V20h12V9.5',
+  trend: 'M3 17l6-6 4 4 8-8M15 7h6v6',
   budget: 'M4 6h16M4 12h16M4 18h10',
   inbox: 'M4 13l2-8h12l2 8M4 13v6h16v-6M4 13h5l1 2h4l1-2h5',
   list: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01',
@@ -48,7 +52,7 @@ export function Icon({ name, size = 20, className = '' }: { name: keyof typeof p
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth={2}
+      strokeWidth={1.8}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"

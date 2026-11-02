@@ -217,9 +217,33 @@ function CardPanel({ c, onEdit, onBill, onChanged }: { c: Card; onEdit: () => vo
             </button>
           </div>
         </div>
-        <div className="cc-face-owed">
-          <span>Skyldig</span>
-          <strong>{kr(c.owed)}</strong>
+        <div className="cc-face-row">
+          <div className="cc-face-owed">
+            <span>Skyldig</span>
+            <strong>{kr(c.owed)}</strong>
+          </div>
+          <dl className="cc-face-facts">
+            <div>
+              <dt>Neste betaling</dt>
+              <dd className="num">{c.statement.left > 0 ? kr(c.statement.left) : 'Ingen'}</dd>
+            </div>
+            <div>
+              <dt>Frist</dt>
+              <dd className={c.statement.status === 'overdue' ? 'bad-text' : ''}>
+                {c.statement.left > 0 ? `${dayLabel(c.statement.due)}${c.statement.status === 'overdue' ? ' (forfalt)' : ''}` : '–'}
+              </dd>
+            </div>
+            <div>
+              <dt>Periode nå</dt>
+              <dd>
+                {dayLabel(c.current.from)}–{dayLabel(c.current.closes)}
+              </dd>
+            </div>
+            <div>
+              <dt>Rentefritt for kjøp i dag</dt>
+              <dd>{days(c.freeToday.days)}</dd>
+            </div>
+          </dl>
         </div>
         {used !== null && (
           <div className="cc-face-limit">

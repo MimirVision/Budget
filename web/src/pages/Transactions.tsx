@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, type Transaction } from '../api';
 import { dayLabel, monthLabel, relativeDay } from '../format';
@@ -127,7 +127,7 @@ export default function TransactionsPage() {
         </div>
       </div>
 
-      <div className="row" style={{ marginBottom: 14 }}>
+      <div className="row tx-toolbar">
         <div style={{ position: 'relative', flex: '1 1 220px' }}>
           <input className="input" placeholder="Søk i mottaker, tekst eller beløp" value={search} onChange={(e) => setSearch(e.target.value)} style={{ paddingLeft: 34 }} />
           <span style={{ position: 'absolute', left: 10, top: 9, color: 'var(--faint)' }}>
@@ -210,7 +210,6 @@ export default function TransactionsPage() {
                     />
                   </th>
                 )}
-                <th>Dato</th>
                 <th>Mottaker</th>
                 <th className="hide-sm">Konto</th>
                 <th className="hide-sm">Kategori</th>
@@ -218,18 +217,21 @@ export default function TransactionsPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((t) => (
-                <tr key={t.id} className={`clickable ${selected.includes(t.id) ? 'selected' : ''}`} onClick={() => open(t)}>
+              {rows.map((t, i) => (
+                <DayRows key={t.id} t={t} prev={rows[i - 1]} rows={rows} cols={selecting ? 5 : 4}>
+                <tr className={`clickable ${selected.includes(t.id) ? 'selected' : ''}`} onClick={() => open(t)}>
                   {selecting && (
                     <td onClick={(e) => e.stopPropagation()}>
                       <input type="checkbox" aria-label={`Velg ${t.payee}`} checked={selected.includes(t.id)} onChange={() => toggle(t.id)} />
                     </td>
                   )}
-                  <td className="num muted" style={{ width: 90 }}>
-                    {dayLabel(t.date)}
-                  </td>
-                  <td style={{ maxWidth: 280 }}>
-                    <div className="ellipsis" style={{ fontWeight: 500 }}>
+                  <td className="tx-merchant-cell">
+                    <div className="tx-merchant">
+                    <span className={`tx-avatar ${t.amount > 0 ? 'in' : ''}`} aria-hidden="true">
+                      {t.transfer_id ? <Icon name="swap" size={14} /> : (t.payee || t.raw_description || '?').trim().charAt(0).toUpperCase()}
+                    </span>
+                    <div style={{ minWidth: 0 }}>
+                    <div className="ellipsis tx-name">
                       {t.payee || t.raw_description}
                       {!t.reviewed && <span className="chip brand" style={{ marginLeft: 6 }}>ny</span>}
                       {!!t.attachment_count && (
@@ -248,6 +250,8 @@ export default function TransactionsPage() {
                       {t.account_name}
                     </div>
                     {t.memo && <div className="small faint ellipsis">{t.memo}</div>}
+                    </div>
+                    </div>
                   </td>
                   <td className="hide-sm muted">{t.account_name}</td>
                   <td className="hide-sm" onClick={(e) => !selecting && e.stopPropagation()} style={{ minWidth: 170 }}>
@@ -273,9 +277,10 @@ export default function TransactionsPage() {
                     )}
                   </td>
                   <td className="right">
-                    <Money value={t.amount} sign />
+                    <Money value={t.amount} sign className={`tx-amt ${t.amount > 0 ? 'in' : ''}`} />
                   </td>
                 </tr>
+                </DayRows>
               ))}
             </tbody>
           </table>
@@ -328,6 +333,24 @@ export default function TransactionsPage() {
 }
 
 /** Phone list: grouped by day with a daily total, big rows, category under the payee. */
+/** A date header with the day's total before the first transaction of each day, then the row itself. */
+function DayRows({ t, prev, rows, cols, children }: { t: Transaction; prev?: Transaction; rows: Transaction[]; cols: number; children: React.ReactNode }) {
+  if (prev && prev.date === t.date) return <>{children}</>;
+  const total = rows.filter((r) => r.date === t.date && !r.transfer_id).reduce((s, r) => s + r.amount, 0);
+  return (
+    <>
+      <tr className="tx-day">
+        <td colSpan={cols - 1}>
+          {relativeDay(t.date)}
+          <span className="faint"> · {new Date(`${t.date}T12:00:00`).toLocaleDateString('nb-NO', { weekday: 'long' })}</span>
+        </td>
+        <td className="right num">{total !== 0 && <Money value={total} sign />}</td>
+      </tr>
+      {children}
+    </>
+  );
+}
+
 function DayList({
   rows,
   onOpen,

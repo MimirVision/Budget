@@ -33,9 +33,15 @@ const SUB_PAGES = ['/bills', '/cards', '/accounts', '/settings', '/duplicates'];
 const SECONDARY = [
   { to: '/review', label: 'Gjennomgå', icon: 'inbox' },
   { to: '/transactions', label: 'Transaksjoner', icon: 'list' },
-  { to: '/bills', label: 'Faste regninger', icon: 'calendar' },
-  { to: '/cards', label: 'Kredittkort', icon: 'wallet' },
+  { to: '/bills', label: 'Faste regninger', icon: 'receipt' },
+  { to: '/cards', label: 'Kredittkort', icon: 'card' },
   { to: '/accounts', label: 'Kontoer', icon: 'bank' },
+];
+/** The sidebar, in sections: planning, everyday work, and what's owed. */
+const NAV_SECTIONS = [
+  { label: 'Planlegg', items: PRIMARY.map((p) => ({ ...p, icon: p.to === '/' ? 'wallet' : 'trend' })) },
+  { label: 'Daglig', items: SECONDARY.slice(0, 2) },
+  { label: 'Forpliktelser', items: SECONDARY.slice(2) },
 ];
 
 function Layout() {
@@ -81,29 +87,27 @@ function Layout() {
             <span className="spacer">Søk</span>
             <kbd>{navigator.platform.startsWith('Mac') ? '⌘' : 'Ctrl'} K</kbd>
           </button>
-          <button className="btn ghost side-add" onClick={() => setAdding(true)}>
-            <Icon name="plus" size={16} /> Legg til manuelt
+          <button className="btn side-add" onClick={() => setAdding(true)}>
+            <Icon name="plus" size={16} /> Ny transaksjon
           </button>
-          {PRIMARY.map((n) => (
-            <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => `nav-link primary-link ${isActive ? 'active' : ''}`}>
-              <Icon name={n.icon} className="nav-icon" />
-              <span>
-                {n.label}
-                <small>{n.hint}</small>
-              </span>
-            </NavLink>
-          ))}
-          <div className="side-divider" />
-          {SECONDARY.map((n) => (
-            <NavLink key={n.to} to={n.to} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-              <Icon name={n.icon} className="nav-icon" />
-              {n.label}
-              {n.to === '/review' && badge}
-            </NavLink>
+          {NAV_SECTIONS.map((sec) => (
+            <nav key={sec.label} className="side-nav" aria-label={sec.label}>
+              <div className="side-section">{sec.label}</div>
+              {sec.items.map((n: any) => (
+                <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                  <Icon name={n.icon} className="nav-icon" size={18} />
+                  <span className="spacer">{n.label}</span>
+                  {n.to === '/review' && badge}
+                </NavLink>
+              ))}
+            </nav>
           ))}
           {summary && (
             <NavLink to="/" className={`side-rta ${rta > 0 ? 'positive' : rta < 0 ? 'negative' : ''}`}>
-              <span className="small">Klar til fordeling</span>
+              <span className="side-rta-label">
+                <span className="status-dot" aria-hidden="true" />
+                Klar til fordeling
+              </span>
               <AnimatedMoney value={rta} />
             </NavLink>
           )}
@@ -112,8 +116,9 @@ function Layout() {
               <div className="side-section">{g.label}</div>
               {g.items.map((a) => (
                 <NavLink key={a.id} to={`/transactions?account=${a.id}`} className="side-account">
-                  <span>{a.name}</span>
-                  <Money value={a.balance} className={a.balance < 0 ? 'faint' : ''} />
+                  <span className={`acct-dot ${a.kind}`} aria-hidden="true" />
+                  <span className="acct-name">{a.name}</span>
+                  <Money value={a.balance} className={a.balance < 0 ? 'neg' : ''} />
                 </NavLink>
               ))}
             </div>

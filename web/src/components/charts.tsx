@@ -48,13 +48,13 @@ export function ChartCard({
 }) {
   const [asTable, setAsTable] = useState(false);
   return (
-    <div className="card card-pad">
-      <div className="row" style={{ marginBottom: 10 }}>
+    <div className="card card-pad chart-card">
+      <div className="section-head">
         <div className="spacer">
-          <h3 style={{ margin: 0 }}>{title}</h3>
-          {sub && <div className="small muted">{sub}</div>}
+          <h3>{title}</h3>
+          {sub && <div className="section-sub">{sub}</div>}
         </div>
-        <button className="btn ghost sm" onClick={() => setAsTable((v) => !v)}>
+        <button className="btn ghost sm toggle-view" onClick={() => setAsTable((v) => !v)}>
           {asTable ? 'Vis diagram' : 'Vis tabell'}
         </button>
       </div>
@@ -248,6 +248,13 @@ export function NetWorthChart({ rows }: { rows: WorthRow[] }) {
             </text>
           ) : null,
         )}
+        <defs>
+          <linearGradient id="worth-area" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stopColor="var(--series-1)" stopOpacity="0.14" />
+            <stop offset="1" stopColor="var(--series-1)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {rows.length > 1 && <path d={`${d}L${x(rows.length - 1)},${pad.top + innerH}L${x(0)},${pad.top + innerH}Z`} fill="url(#worth-area)" stroke="none" />}
         <path d={d} fill="none" stroke="var(--series-1)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
         {h && hover !== null && (
           <>
@@ -320,8 +327,20 @@ export function PaceChart({ rows }: { rows: Array<{ day: number; cum: number | n
             {d}.
           </text>
         ))}
-        <path d={line('prevCum')} fill="none" stroke="var(--faint)" strokeWidth={2} strokeDasharray="5 4" strokeLinecap="round" />
-        <path d={line('cum')} fill="none" stroke="var(--series-1)" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+        <defs>
+          <linearGradient id="pace-area" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stopColor="var(--series-1)" stopOpacity="0.18" />
+            <stop offset="1" stopColor="var(--series-1)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {(() => {
+          const pts = rows.filter((r) => r.cum !== null);
+          if (pts.length < 2) return null;
+          const base = pad.top + innerH;
+          return <path d={`${line('cum')}L${x(pts[pts.length - 1].day)},${base}L${x(pts[0].day)},${base}Z`} fill="url(#pace-area)" stroke="none" />;
+        })()}
+        <path d={line('prevCum')} fill="none" stroke="var(--axis-text)" strokeOpacity={0.55} strokeWidth={1.5} strokeDasharray="4 4" strokeLinecap="round" />
+        <path d={line('cum')} fill="none" stroke="var(--series-1)" strokeWidth={2.25} strokeLinejoin="round" strokeLinecap="round" />
         {lastNow && hover === null && <circle cx={x(lastNow.day)} cy={y(lastNow.cum!)} r={5} fill="var(--series-1)" stroke="var(--surface)" strokeWidth={2} />}
         {h && hover !== null && (
           <>

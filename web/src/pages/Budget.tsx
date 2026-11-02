@@ -138,16 +138,21 @@ export default function BudgetPage() {
     .filter((g) => filter === 'all' || g.shown.length > 0);
   const toggleGroup = (id: number) => setCollapsed((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]));
 
+  const [monthName, yearName] = monthLabel(month).split(' ');
   const header = (
-    <div className="page-head">
+    <div className="page-head budget-head">
       <div className="month-nav">
-        <button className="icon-btn" onClick={() => setMonth(addMonths(month, -1))} aria-label="Forrige måned">
-          <Icon name="left" />
-        </button>
-        <h1>{monthLabel(month)}</h1>
-        <button className="icon-btn" onClick={() => setMonth(addMonths(month, 1))} aria-label="Neste måned">
-          <Icon name="right" />
-        </button>
+        <h1>
+          {monthName} <span className="year">{yearName}</span>
+        </h1>
+        <div className="month-steps">
+          <button className="icon-btn" onClick={() => setMonth(addMonths(month, -1))} aria-label="Forrige måned">
+            <Icon name="left" size={18} />
+          </button>
+          <button className="icon-btn" onClick={() => setMonth(addMonths(month, 1))} aria-label="Neste måned">
+            <Icon name="right" size={18} />
+          </button>
+        </div>
         {month !== currentMonth() && (
           <button className="btn sm ghost" onClick={() => setMonth(currentMonth())}>
             I dag
@@ -155,9 +160,11 @@ export default function BudgetPage() {
         )}
       </div>
       {!mobile && (
-        <label className="check small muted">
-          <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> Vis skjulte
-        </label>
+        <div className="row" style={{ gap: 8 }}>
+          <button className={`btn ${budget.readyToAssign > 0 ? 'primary' : ''}`} onClick={() => setAutoOpen(true)}>
+            <Icon name="magic" size={16} /> Autofordel
+          </button>
+        </div>
       )}
     </div>
   );
@@ -206,10 +213,7 @@ export default function BudgetPage() {
       )}
       <Payday budget={budget} month={month} onChanged={() => { load(); refresh(); }} />
       {/* Status first: what's left to assign and the month's totals, in one place. */}
-      <section className="budget-summary card" aria-label="Status for måneden">
-        <Hero budget={budget} onAuto={() => setAutoOpen(true)} />
-        <Stats budget={budget} />
-      </section>
+      <BudgetHealth budget={budget} month={month} onAuto={() => setAutoOpen(true)} />
       <Attention budget={budget} />
       {/* On a phone the month's wrap-up and tips follow the status; on a PC they sit in the side column. */}
       {mobile && (
@@ -263,12 +267,19 @@ export default function BudgetPage() {
       ) : (
         <div className="grid-2">
           <div>
-            {filters}
-            <div className="card" style={{ overflow: 'hidden' }}>
+            <div className="card workspace">
+              <div className="ws-head">
+                <h2>Kategorier</h2>
+                {filters}
+                <label className="check small muted ws-hidden">
+                  <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> Vis skjulte
+                </label>
+              </div>
               <table className="budget-table">
                 <thead>
                   <tr>
                     <th>Kategori</th>
+                    <th className="col-use">Forbruk</th>
                     <th>Fordelt</th>
                     <th>Brukt</th>
                     <th>Tilgjengelig</th>
@@ -286,6 +297,7 @@ export default function BudgetPage() {
                         open={open}
                         onToggle={() => toggleGroup(g.id)}
                         totals={{ assigned: sum('assigned'), activity: sum('activity'), available: sum('available') }}
+                        count={g.shown.length}
                         onAdded={load}
                       >
                         {open &&
@@ -340,51 +352,76 @@ export default function BudgetPage() {
 }
 
 /**
- * The one number that matters most: money that still needs a job. Negative is shown clearly but calmly: the
- * amount in red with a short reason, not a red banner across the page.
+ * The month at a glance. Left: the one number that needs action, Klar til fordeling, with what it means.
+ * Right: how much of what's assigned this month is spent, against how far into the month we are, and the
+ * month's four totals.
  */
-function Hero({ budget, onAuto }: { budget: BudgetMonth; onAuto: () => void }) {
+function BudgetHealth({ budget, month, onAuto }: { budget: BudgetMonth; month: string; onAuto: () => void }) {
   const rta = budget.readyToAssign;
   const state = rta > 0 ? 'positive' : rta < 0 ? 'negative' : 'zero';
+  const spent = -budget.activity;
+  const share = budget.assigned > 0 ? Math.min(1, Math.max(0, spent / budget.assigned)) : 0;
+  const pace = budget.pace;
+  const monthName = monthLabel(month).split(' ')[0].toLowerCase();
+  const days = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
+  const figures = [
+    { label: 'Inntekt', value: budget.income, note: 'denne måneden' },
+    { label: 'Fordelt', value: budget.assigned, note: 'denne måneden' },
+    { label: 'Brukt', value: spent, note: 'denne måneden' },
+    { label: 'Tilgjengelig', value: budget.available, note: 'i alle kategorier' },
+  ];
   return (
-    <div className={`hero ${state}`}>
-      <div className="hero-main">
-        <div className="hero-label">
-          {rta < 0 && <Icon name="alert" size={14} />}
-          {rta === 0 && <Icon name="check" size={14} />}
-          Klar til fordeling
-        </div>
-        <div className="hero-amount">
+    <section className={`health card ${state}`} aria-label="Status for måneden">
+      <div className="health-main">
+        <div className="eyebrow">Klar til fordeling</div>
+        <div className="health-amount">
           <AnimatedMoney value={rta} />
         </div>
-        <div className="hero-sub">
-          {rta > 0 && 'Gi pengene en jobb: velg en kategori, eller autofordel.'}
-          {rta < 0 && 'Dere har fordelt mer enn dere har. Ta tilbake fra en kategori til dette blir 0.'}
-          {rta === 0 && 'Hver krone har en jobb. Neste lønn dukker opp her.'}
+        <div className="health-status">
+          <span className="status-dot" aria-hidden="true" />
+          {rta > 0 && 'Penger uten jobb. Fordel dem til kategoriene.'}
+          {rta < 0 && 'Fordelt mer enn dere har. Ta tilbake fra en kategori.'}
+          {rta === 0 && 'Hver krone har en jobb.'}
         </div>
+        <button className={`btn sm ${rta > 0 ? 'primary' : ''} health-auto`} onClick={onAuto}>
+          <Icon name="magic" size={15} /> Autofordel
+        </button>
       </div>
-      <button className={`btn sm ${rta > 0 ? 'primary' : ''} hero-btn`} onClick={onAuto}>
-        <Icon name="magic" size={15} /> Autofordel
-      </button>
-    </div>
+      <div className="health-month">
+        <div className="health-month-head">
+          <span>Brukt av fordelt i {monthName}</span>
+          <span className="num">
+            <strong>{Math.round(share * 100)} %</strong>
+            {pace > 0 && pace < 1 && <span className="muted"> · dag {Math.max(1, Math.round(pace * days))} av {days}</span>}
+          </span>
+        </div>
+        <div className="meter big" role="img" aria-label={`${Math.round(share * 100)} % av det som er fordelt er brukt`}>
+          <div className={`meter-fill ${pace > 0 && share > pace + 0.1 ? 'warn' : ''}`} style={{ width: `${share * 100}%` }} />
+          {pace > 0 && pace < 1 && <div className="meter-pace" style={{ left: `${pace * 100}%` }} title="I dag" />}
+        </div>
+        <dl className="health-figures">
+          {figures.map((f) => (
+            <div key={f.label}>
+              <dt>{f.label}</dt>
+              <dd>
+                <AnimatedMoney value={f.value} />
+              </dd>
+              <span className="small faint">{f.note}</span>
+            </div>
+          ))}
+        </dl>
+      </div>
+    </section>
   );
 }
 
-function Stats({ budget }: { budget: BudgetMonth }) {
-  const items = [
-    { label: 'Inntekt', value: budget.income },
-    { label: 'Fordelt', value: budget.assigned },
-    { label: 'Brukt', value: -budget.activity },
-    { label: 'Tilgjengelig', value: budget.available },
-  ];
+/** A slim bar: spent of what was there to spend. */
+function Meter({ spent, funds }: { spent: number; funds: number }) {
+  if (funds <= 0 && spent <= 0) return <div className="meter meter-none" />;
+  const ratio = funds > 0 ? Math.min(1, Math.max(0, spent / funds)) : 1;
   return (
-    <div className="stats">
-      {items.map((i) => (
-        <div key={i.label} className="stat-mini">
-          <span>{i.label}</span>
-          <AnimatedMoney value={i.value} />
-        </div>
-      ))}
+    <div className="meter">
+      <div className={`meter-fill ${spent > funds ? 'bad' : ''}`} style={{ width: `${ratio * 100}%` }} />
     </div>
   );
 }
@@ -395,6 +432,7 @@ function GroupRows({
   open,
   onToggle,
   totals,
+  count,
   onAdded,
   children,
 }: {
@@ -403,6 +441,7 @@ function GroupRows({
   open: boolean;
   onToggle: () => void;
   totals: { assigned: number; activity: number; available: number };
+  count: number;
   onAdded: () => void;
   children: ReactNode;
 }) {
@@ -411,11 +450,12 @@ function GroupRows({
   const { refresh } = useStore();
   return (
     <>
-      <tr className="group" onClick={onToggle}>
+      <tr className={`group ${open ? 'open' : ''}`} onClick={onToggle}>
         <td>
-          <span className="row" style={{ gap: 4 }}>
+          <span className="group-name">
             <Icon name={open ? 'down' : 'right'} size={14} />
             {name}
+            <span className="group-count">{count}</span>
             <button
               className="icon-btn add-cat"
               onClick={(e) => {
@@ -429,13 +469,16 @@ function GroupRows({
             </button>
           </span>
         </td>
+        <td className="col-use">
+          <Meter spent={-totals.activity} funds={totals.available - totals.activity} />
+        </td>
         <td className="num">{kr(totals.assigned)}</td>
-        <td className="num">{kr(totals.activity)}</td>
-        <td className="num">{kr(totals.available)}</td>
+        <td className="num">{totals.activity ? kr(totals.activity) : '–'}</td>
+        <td className={`num ${totals.available < 0 ? 'bad-text' : ''}`}>{kr(totals.available)}</td>
       </tr>
       {adding && (
         <tr>
-          <td colSpan={4}>
+          <td colSpan={5}>
             <form
               className="row"
               onSubmit={async (e) => {
@@ -485,7 +528,9 @@ function CategoryLine({
           {c.name}
         </div>
         {sub && <div className={`cat-sub ${sub.tone ?? ''}`}>{sub.text}</div>}
-        <UsageBar c={c} pace={pace} />
+      </td>
+      <td className="col-use">
+        <UsageBar c={c} pace={pace} withLabel />
       </td>
       <td onClick={(e) => e.stopPropagation()}>
         <MoneyInput

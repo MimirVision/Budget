@@ -143,30 +143,67 @@ export default function BillsPage() {
         </div>
       )}
 
-      {data.bills.length > 0 && (
-        <div className="card list bills-list">
-          {data.bills.map((b) => {
-            const s = status(b);
-            return (
-              <button key={b.id} className="list-item bill-row" onClick={() => setEditing(b)}>
-                <span className="grow" style={{ minWidth: 0 }}>
-                  <span className="ellipsis" style={{ display: 'block', fontWeight: 600 }}>
-                    {b.name}
-                  </span>
-                  <span className="small muted ellipsis" style={{ display: 'block' }}>
-                    {when(b)} · {b.category_name ?? <span className="warn-text">Velg kategori</span>}
-                  </span>
-                  <span className={`small bill-status ${s.tone}`}>{s.text}</span>
-                </span>
-                <span className="bill-amount">
-                  <strong>{kr(b.amount)}</strong>
-                  {b.every > 1 && <small className="faint">{kr(b.monthly)}/mnd</small>}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {data.bills.length > 0 && <MonthStrip bills={data.bills} onOpen={setEditing} />}
+
+      {data.bills.length > 0 &&
+        (() => {
+          const today = todayISO();
+          const overdue = data.bills.filter((b) => !b.paid && b.due < today);
+          const upcoming = data.bills.filter((b) => !b.paid && b.due >= today).sort((x, y) => x.due.localeCompare(y.due));
+          const done = data.bills.filter((b) => b.paid);
+          const sections = [
+            { key: 'overdue', title: 'Krever oppmerksomhet', sub: 'Forfalt, men betalingen er ikke funnet i banken', items: overdue },
+            { key: 'upcoming', title: 'Kommende', sub: 'Neste betalinger, i rekkefølge', items: upcoming },
+            { key: 'paid', title: 'Betalt', sub: 'Funnet i transaksjonene denne perioden', items: done },
+          ].filter((x) => x.items.length);
+          return sections.map((sec) => (
+            <section key={sec.key} className={`card bills-section ${sec.key}`}>
+              <div className="section-head">
+                <div className="spacer">
+                  <h3>
+                    {sec.title} <span className="faint">{sec.items.length}</span>
+                  </h3>
+                  <div className="section-sub">{sec.sub}</div>
+                </div>
+                <strong className="num">{kr(sec.items.reduce((sum, b) => sum + (b.paid?.amount ?? b.amount), 0))}</strong>
+              </div>
+              <div className="list">
+                {sec.items.map((b) => {
+                  const s = status(b);
+                  const changed = b.paid && Math.abs(b.paid.amount - b.amount) > Math.max(100, b.amount * 0.02);
+                  const d = new Date(`${(b.paid?.date ?? b.due)}T12:00:00`);
+                  return (
+                    <button key={b.id} className="list-item bill-row" onClick={() => setEditing(b)}>
+                      <span className={`bill-date ${sec.key}`} aria-hidden="true">
+                        <strong>{d.getDate()}</strong>
+                        <small>{d.toLocaleDateString('nb-NO', { month: 'short' }).replace('.', '')}</small>
+                      </span>
+                      <span className="grow" style={{ minWidth: 0 }}>
+                        <span className="ellipsis bill-name">{b.name}</span>
+                        <span className="small muted ellipsis" style={{ display: 'block' }}>
+                          {EVERY.find((e) => e.v === b.every)?.label ?? 'Hver måned'} · {b.category_name ?? <span className="warn-text">Velg kategori</span>}
+                        </span>
+                      </span>
+                      <span className="bill-tags">
+                        {changed && <span className="tag warn">Endret beløp</span>}
+                        {sec.key === 'overdue' && <span className="tag bad">Ikke funnet</span>}
+                        <span className={`small bill-status ${s.tone}`}>{s.text}</span>
+                      </span>
+                      <span className="bill-amount">
+                        <strong className="num">{kr(b.paid?.amount ?? b.amount)}</strong>
+                        {changed ? (
+                          <small className="faint num">var {kr(b.amount)}</small>
+                        ) : (
+                          b.every > 1 && <small className="faint num">{kr(b.monthly)}/mnd</small>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          ));
+        })()}
 
       {data.suggestions.length > 0 && (
         <section className="card bills-suggest">
@@ -342,5 +379,50 @@ function BillEditor({ draft, onClose, onSaved }: { draft: Draft; onClose: () => 
         <span className="small faint">Brukes for å se om regningen er betalt. Et ord fra mottakeren holder.</span>
       </label>
     </Modal>
+  );
+}
+
+/** The month at a glance: each bill on a line from the 1st to the last day, coloured by where it stands. */
+function MonthStrip({ bills, onOpen }: { bills: Bill[]; onOpen: (b: Bill) => void }) {
+  const today = todayISO();
+  const month = today.slice(0, 7);
+  const days = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
+  const inMonth = bills.filter((b) => (b.paid?.date ?? b.due).slice(0, 7) === month);
+  const at = (d: string) => ((Number(d.slice(8, 10)) - 0.5) / days) * 100;
+  return (
+    <div className="card bills-strip">
+      <div className="section-head">
+        <div className="spacer">
+          <h3>{new Date(`${today}T12:00:00`).toLocaleDateString('nb-NO', { month: 'long' }).replace(/^./, (x) => x.toUpperCase())}</h3>
+          <div className="section-sub">Når regningene trekkes denne måneden</div>
+        </div>
+        <span className="strip-legend small muted">
+          <span><i className="dot paid" /> Betalt</span>
+          <span><i className="dot upcoming" /> Kommer</span>
+          <span><i className="dot overdue" /> Ikke funnet</span>
+        </span>
+      </div>
+      <div className="strip-track">
+        <div className="strip-today" style={{ left: `${at(today)}%` }} title="I dag" />
+        {inMonth.map((b) => {
+          const key = b.paid ? 'paid' : b.due < today ? 'overdue' : 'upcoming';
+          return (
+            <button
+              key={b.id}
+              className={`strip-dot ${key}`}
+              style={{ left: `${at(b.paid?.date ?? b.due)}%` }}
+              onClick={() => onOpen(b)}
+              title={`${b.name}: ${kr(b.paid?.amount ?? b.amount)}, ${dayLabel(b.paid?.date ?? b.due)}`}
+              aria-label={`${b.name}, ${kr(b.amount)}, ${dayLabel(b.due)}`}
+            />
+          );
+        })}
+      </div>
+      <div className="strip-axis small faint">
+        <span>1.</span>
+        <span>{Math.round(days / 2)}.</span>
+        <span>{days}.</span>
+      </div>
+    </div>
   );
 }
