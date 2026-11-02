@@ -13,6 +13,16 @@ export interface Prefs {
   density: 'comfortable' | 'compact';
   start: 'budget' | 'overview';
   showOre: boolean;
+  /** Budsjett: rings for spent of assigned and the day of the month, in the summary at the top. */
+  budgetRings: boolean;
+  /** Budsjett: a coloured letter tile beside each category, in its group's colour. */
+  catIcons: boolean;
+  /** Budsjett: spending per category as a small ring with %, instead of a bar. */
+  catRing: boolean;
+  /** Kredittkort: a small card picture and a payment ring counting down to the due date. */
+  cardWallet: boolean;
+  /** Gjennomgå: soft cards and filled fields. */
+  softReview: boolean;
 }
 
 export const ACCENTS: Array<{ id: Accent; label: string; color: string }> = [
@@ -23,7 +33,18 @@ export const ACCENTS: Array<{ id: Accent; label: string; color: string }> = [
   { id: 'pink', label: 'Rosa', color: '#be185d' },
 ];
 
-const DEFAULTS: Prefs = { theme: 'system', accent: 'green', density: 'comfortable', start: 'budget', showOre: true };
+const DEFAULTS: Prefs = {
+  theme: 'system',
+  accent: 'green',
+  density: 'comfortable',
+  start: 'budget',
+  showOre: true,
+  budgetRings: true,
+  catIcons: true,
+  catRing: true,
+  cardWallet: true,
+  softReview: true,
+};
 const KEY = 'budget.prefs';
 
 function load(): Prefs {
@@ -58,6 +79,7 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
     r.dataset.theme = dark ? 'dark' : 'light';
     r.dataset.accent = prefs.accent;
     r.dataset.density = prefs.density;
+    r.dataset.softReview = prefs.softReview ? 'on' : 'off';
     // Match the phone's status bar to the app background.
     const bg = getComputedStyle(r).getPropertyValue('--bg').trim();
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', bg || (dark ? '#121412' : '#f6f6f3'));

@@ -16,7 +16,11 @@ export type CardId =
   | 'payees'
   | 'accounts'
   | 'largest'
-  | 'worth';
+  | 'worth'
+  | 'cashflow'
+  | 'vsUsual'
+  | 'recurring'
+  | 'donut';
 export type Zone = 'wide' | 'left' | 'right';
 export interface Layout {
   items: Array<{ id: CardId; zone: Zone }>;
@@ -35,6 +39,10 @@ export const CARDS: Record<CardId, { title: string; desc: string }> = {
   accounts: { title: 'Per konto og kort', desc: 'Hvor pengene gikk ut fra' },
   largest: { title: 'Største kjøp', desc: 'De fem største kjøpene' },
   worth: { title: 'Formue', desc: 'Eiendeler og gjeld over tid' },
+  cashflow: { title: 'Kontantstrøm', desc: 'Inn og ut siste 12 måneder, sparerate og beste måned' },
+  vsUsual: { title: 'Over og under vanlig', desc: 'Kategoriene som skiller seg mest fra snittet' },
+  recurring: { title: 'Faste kostnader', desc: 'Per måned og år, abonnementer og det som kommer' },
+  donut: { title: 'Fordeling', desc: 'Forbruket per gruppe, som smultring' },
 };
 
 export const DEFAULT_LAYOUT: Layout = {
@@ -42,11 +50,15 @@ export const DEFAULT_LAYOUT: Layout = {
     { id: 'tiles', zone: 'wide' },
     { id: 'story', zone: 'wide' },
     { id: 'insights', zone: 'right' },
+    { id: 'donut', zone: 'right' },
+    { id: 'vsUsual', zone: 'right' },
     { id: 'budget', zone: 'right' },
     { id: 'trend', zone: 'left' },
+    { id: 'cashflow', zone: 'left' },
     { id: 'categories', zone: 'left' },
     { id: 'days', zone: 'left' },
     { id: 'payees', zone: 'right' },
+    { id: 'recurring', zone: 'right' },
     { id: 'accounts', zone: 'right' },
     { id: 'largest', zone: 'right' },
     { id: 'worth', zone: 'wide' },

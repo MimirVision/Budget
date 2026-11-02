@@ -10,8 +10,9 @@ import { useStore } from '../store';
 import { useIsMobile, useStoredState } from '../hooks';
 import { AnimatedMoney, Icon, Money, Skeleton } from '../components/ui';
 import { Arranged, normalize, type Layout } from './overviewLayout';
+import { CashflowCard, DonutCard, RecurringCard, VsUsualCard } from './overviewExtra';
 import { CashflowChart, ChartCard, NetWorthChart, PaceChart, SimpleTable, type WorthRow } from '../components/charts';
-import { addMonths, currentMonth, todayISO } from '../../../shared/months';
+import { addMonths, currentMonth, daysInMonth, todayISO } from '../../../shared/months';
 
 interface OverviewData {
   from: string;
@@ -359,6 +360,10 @@ export default function OverviewPage() {
               accounts,
               largest,
               worth: worthCard,
+              cashflow: <CashflowCard />,
+              vsUsual: span === 1 ? <VsUsualCard month={month} fixedIds={new Set(data.groups.flatMap((g) => g.categories.filter((c) => c.fixed && c.id !== null).map((c) => c.id as number)))} pace={month === currentMonth() ? Number(todayISO().slice(8, 10)) / daysInMonth(month) : 1} /> : null,
+              recurring: <RecurringCard />,
+              donut: <DonutCard groups={data.groups} />,
             }}
           />
         </div>
