@@ -250,4 +250,26 @@ describe('Kredittkort', () => {
     [c] = cardOverview(db, '2026-11-05');
     expect(c.bank.balance).toBeNull();
   });
+
+  it('works out what is unpaid from a balance alone: the newest purchases, also from before the start date', () => {
+    const { db, tx, card } = setup();
+    run(db, "INSERT INTO settings(key, value) VALUES ('budget_start', '2026-11-01')");
+    // Like a DNB "transaksjonsliste": October purchases and payments (history before the start), one in November.
+    tx('2026-10-05', -300000, 'Kiwi');
+    tx('2026-10-15', 400000, 'Innbetaling'); // last bill (3 000) plus 1 000 of October
+    tx('2026-10-20', -200000, 'Dressmann');
+    tx('2026-10-31', -50000, 'Wolt');
+    tx('2026-11-01', -59700, 'Klarna');
+    // Owed at 1.11 per the file: 3 000 carried + 5 597 bought - 4 000 paid = 4 597.
+    run(db, "UPDATE accounts SET bank_balance = -459700, bank_balance_at = '2026-11-01 23:59:59' WHERE id = ?", card);
+    const [c] = cardOverview(db, '2026-11-02');
+    expect(c.owed).toBe(459700);
+    expect(c.bank.appOwed).toBe(59700); // Kontoer only counts from the start date
+    expect(c.breakdown).toMatchObject({ nextBill: 400000, unbilled: 59700 });
+    const by = Object.fromEntries(c.purchases.map((p) => [p.payee, p]));
+    expect(by.Klarna).toMatchObject({ left: 59700, due: '2026-12-20' });
+    expect(by.Wolt).toMatchObject({ left: 50000, due: '2026-11-20' });
+    expect(by.Dressmann).toMatchObject({ left: 200000 });
+    expect(by.Kiwi).toMatchObject({ left: 150000, amount: 300000 }); // half of it was paid by the 15.10 payment
+  });
 });

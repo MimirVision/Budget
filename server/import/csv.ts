@@ -33,8 +33,11 @@ export interface CsvPreview {
   rows: ParsedRow[];
   skipped: number;
   warnings: string[];
-  /** The balance after the newest row, in the app's sign (debt is negative), if the file has a Saldo column. */
-  balance: { amount: number; date: string } | null;
+  /**
+   * The balance after the newest row, in the app's sign (debt is negative): from a Saldo column, or worked out
+   * from a "carried from the last bill" line plus every row after it.
+   */
+  balance: { amount: number; date: string; computed?: boolean } | null;
 }
 
 export function splitCsv(text: string, delimiter: string): string[][] {
@@ -219,9 +222,13 @@ function range(n: number) {
   return Array.from({ length: n }, (_, i) => i);
 }
 
-export function applyMapping(rows: string[][], mapping: CsvMapping): { rows: ParsedRow[]; skipped: number } {
+/** A line with the balance carried in from before the file (it has no date of its own). */
+const OPENING = /skyldig beløp fra forrige|fra forrige faktura|forrige saldo|inngående saldo|saldo fra forrige|overført fra forrige|opening balance|previous balance/i;
+
+export function applyMapping(rows: string[][], mapping: CsvMapping): { rows: ParsedRow[]; skipped: number; opening: number | null } {
   const out: ParsedRow[] = [];
   let skipped = 0;
+  let opening: number | null = null;
   for (const r of rows.slice(mapping.headerRow + 1)) {
     if (mapping.state !== undefined) {
       const state = (r[mapping.state] ?? '').toUpperCase();
@@ -239,6 +246,11 @@ export function applyMapping(rows: string[][], mapping: CsvMapping): { rows: Par
       if (inflow !== null || outflow !== null) amount = Math.abs(inflow ?? 0) - Math.abs(outflow ?? 0);
     }
     if (amount !== null && mapping.fee !== undefined) amount -= Math.abs(parseAmount(r[mapping.fee]) ?? 0);
+    // "Skyldig beløp fra forrige faktura": not a transaction, but where the file's balance starts.
+    if (amount !== null && OPENING.test(r.join(' '))) {
+      opening = (opening ?? 0) + (mapping.invert ? -amount : amount);
+      continue;
+    }
     if (!date || amount === null) {
       skipped++;
       continue;
@@ -247,7 +259,7 @@ export function applyMapping(rows: string[][], mapping: CsvMapping): { rows: Par
     const balance = mapping.balance !== undefined ? parseAmount(r[mapping.balance]) : null;
     out.push({ date, amount, description: (r[mapping.description] ?? '').trim(), ...(balance !== null ? { balance } : {}) });
   }
-  return { rows: out, skipped };
+  return { rows: out, skipped, opening };
 }
 
 export function previewCsv(text: string, accountKind: string, override?: Partial<CsvMapping>): CsvPreview {
@@ -271,7 +283,7 @@ export function previewCsv(text: string, accountKind: string, override?: Partial
   if (parsed.rows.length === 0) warnings.push('Fant ingen transaksjoner å lese. Sjekk kolonnevalgene under.');
 
   return {
-    balance: fileBalance(parsed.rows, accountKind),
+    balance: fileBalance(parsed.rows, accountKind, parsed.opening),
     format: detected.format,
     headers: mapping.headerRow >= 0 ? rows[mapping.headerRow] : (rows[0] ?? []).map((_, i) => `Kolonne ${i + 1}`),
     sample: rows.slice(mapping.headerRow + 1, mapping.headerRow + 6),
@@ -288,9 +300,13 @@ export function previewCsv(text: string, accountKind: string, override?: Partial
  * the balance moves by each row's amount, one way or the other. With nothing to go on, a positive balance on a
  * credit card is what's owed.
  */
-export function fileBalance(rows: ParsedRow[], accountKind: string): { amount: number; date: string } | null {
+export function fileBalance(rows: ParsedRow[], accountKind: string, opening: number | null = null): CsvPreview['balance'] {
   const withBalance = rows.filter((r) => r.balance !== undefined);
-  if (!withBalance.length) return null;
+  if (!withBalance.length) {
+    if (opening === null || !rows.length) return null;
+    const newest = rows.reduce((d, r) => (r.date > d ? r.date : d), rows[0].date);
+    return { amount: opening + rows.reduce((s, r) => s + r.amount, 0), date: newest, computed: true };
+  }
   const newestFirst = withBalance.length > 1 && withBalance[0].date > withBalance[withBalance.length - 1].date;
   const chrono = newestFirst ? [...withBalance].reverse() : withBalance;
   let same = 0;

@@ -80,3 +80,19 @@ describe('balance from the file', () => {
     expect(previewCsv('Dato;Beskrivelse;Beløp\n01.11.2026;Rema;-500,00', 'checking').balance).toBeNull();
   });
 });
+
+describe('balance carried from the last bill', () => {
+  it('adds every row to "Skyldig beløp fra forrige faktura" (DNB card export)', () => {
+    const text = [
+      'Dato;Beløpet gjelder;Valuta;Kurs;Inn;Ut',
+      ';Skyldig beløp fra forrige faktura;;;;11670,68',
+      '01.11.2026;Klarna*begood.no, Stockholm;;;;597,00',
+      '20.10.2026;Innbetaling;;;10600,00;',
+      '20.10.2026;DRESSMANN 197, Skien;;;;1616,30',
+    ].join('\n');
+    const p = previewCsv(text, 'credit');
+    expect(p.rows).toHaveLength(3);
+    expect(p.skipped).toBe(0);
+    expect(p.balance).toEqual({ amount: -(1167068 + 59700 - 1060000 + 161630), date: '2026-11-01', computed: true });
+  });
+});

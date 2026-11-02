@@ -239,6 +239,7 @@ export function ledger(
   };
 
   let rows: Row[];
+  let startCredit = 0;
   if (s) {
     // The entered bill is exactly what the bank says. The purchases the app has from that period are shown on it;
     // whatever they don't explain (older debt, purchases the app never saw) is one line of its own.
@@ -270,14 +271,52 @@ export function ledger(
     charges.set(bill.closes, items);
 
     rows = raw.filter((r) => r.date > s.closed);
+  } else if (check && check.date <= today) {
+    // Only the bank's balance: payments go to the oldest purchases first, so what's still owed on that day is the
+    // newest purchases, back until they add up to the balance. That holds whatever the app's start date is, so
+    // purchases from before "Start på nytt" count too. If the purchases the app has don't reach the balance,
+    // the rest is older debt it hasn't seen.
+    const known = select(addMonths(check.date.slice(0, 7), -6) + '-01').filter((r) => !isBalanceFix(r));
+    const before = known.filter((r) => r.date <= check.date && r.amount < 0);
+    let need = check.owed;
+    let oldest: string | null = null;
+    const recent = closesAround(today, t.statement_day).last;
+    for (let i = before.length - 1; i >= 0; i--) {
+      if (need <= 0) {
+        // Already paid: only listed when it's on the latest bills, so "Vis betalte" has them.
+        const r = before[i];
+        const b = closesAround(r.date, t.statement_day).next >= recent ? bucketFor(r.date) : null;
+        if (!b) break;
+        b.charged += -r.amount;
+        b.paid += -r.amount;
+        charges.get(b.closes)!.unshift({ id: r.id, date: r.date, payee: r.payee || r.raw_description, amount: -r.amount, left: 0, kind: 'purchase' });
+        continue;
+      }
+      const r = before[i];
+      const owedOfIt = Math.min(need, -r.amount);
+      need -= owedOfIt;
+      oldest = r.date;
+      const b = bucketFor(r.date);
+      b.charged += -r.amount;
+      b.left += owedOfIt;
+      b.paid += -r.amount - owedOfIt;
+      charges.get(b.closes)!.unshift({ id: r.id, date: r.date, payee: r.payee || r.raw_description, amount: -r.amount, left: owedOfIt, kind: 'purchase' });
+    }
+    if (need > 0) {
+      const b = bucketFor(oldest ?? closesAround(check.date, t.statement_day).last);
+      b.charged += need;
+      b.left += need;
+      charges.get(b.closes)!.unshift({ id: -2, date: b.from, payee: 'Eldre saldo som appen ikke har', amount: need, left: need, kind: 'unknown' });
+    }
+    startCredit = Math.max(0, -check.owed);
+    rows = known.filter((r) => r.date > check.date);
   } else {
     rows = select(start);
   }
 
-  // The balance from the bank (typed in, from a CSV's Saldo column, or from a sync): whatever the app's own
-  // transactions don't explain up to that day is filled in. After an entered bill it's new purchases or payments
-  // the app hasn't seen; without one it's most likely older debt, so it goes on the last closed bill.
-  if (check && check.date >= (s ? s.closed : start) && check.date <= today) {
+  // A bank balance after an entered bill: whatever the app's own transactions don't explain between the bill
+  // and that day is purchases or payments the app hasn't seen.
+  if (s && check && check.date >= s.closed && check.date <= today) {
     const at = check.date;
     const appOwed = (s ? s.amount : 0) - rows.filter((r) => r.date <= at).reduce((sum, r) => sum + r.amount, 0);
     const diff = check.owed - appOwed;
@@ -286,11 +325,10 @@ export function ledger(
         id: -2,
         date: at,
         amount: -diff,
-        payee: diff > 0 ? (s ? 'Kjøp banken har, men ikke appen' : 'Saldo i banken som appen ikke har') : 'Innbetalinger banken har, men ikke appen',
+        payee: diff > 0 ? 'Kjøp banken har, men ikke appen' : 'Innbetalinger banken har, men ikke appen',
         raw_description: '',
         transfer_id: diff < 0 ? -1 : null,
         kind: 'unknown',
-        bucket: s ? undefined : closesAround(at, t.statement_day).last,
       };
       const i = rows.findIndex((r) => r.date > at);
       rows.splice(i < 0 ? rows.length : i, 0, extra);
@@ -326,7 +364,7 @@ export function ledger(
   };
 
   const payments: Payment[] = [];
-  let credit = 0;
+  let credit = startCredit;
   for (const r of rows.filter((x) => x.amount > 0)) {
     const isPayment = !!r.transfer_id || isOpening(r) || PAYMENT.test(`${r.payee} ${r.raw_description}`);
     let rest = r.amount;
