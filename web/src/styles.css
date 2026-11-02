@@ -6508,3 +6508,928 @@ input[type='checkbox'] {
     width: 100%;
   }
 }
+
+/* =====================================================================================================
+   Phase 3: Apple. System greys, system tints, soft elevation instead of lines, rounded figures,
+   iOS-style controls and grouped lists. Each kind of spending has its own colour and symbol (apple.tsx).
+   ===================================================================================================== */
+:root {
+  --bg: #f5f5f7;
+  --sidebar: #ececf0;
+  --surface: #ffffff;
+  --surface-2: #f5f5f7;
+  --surface-3: #e8e8ed;
+  --border: #e3e3e8;
+  --border-strong: #d2d2d7;
+  --hairline: rgb(60 60 67 / 0.12);
+  --fill: rgb(118 118 128 / 0.12);
+  --fill-2: rgb(118 118 128 / 0.08);
+  --text: #1d1d1f;
+  --muted: #6e6e73;
+  --faint: #8e8e93;
+  --brand: #08857a;
+  --brand-ink: #06695f;
+  --brand-soft: rgb(8 133 122 / 0.1);
+  --brand-text: #06695f;
+  --good: #1f8a3c;
+  --good-soft: rgb(52 199 89 / 0.13);
+  --warn: #b25000;
+  --warn-soft: rgb(255 149 0 / 0.14);
+  --bad: #d70015;
+  --bad-soft: rgb(255 59 48 / 0.11);
+  --t-blue: #007aff;
+  --t-orange: #ff9500;
+  --t-green: #34c759;
+  --t-pink: #ff2d55;
+  --t-indigo: #5856d6;
+  --t-teal: #08a191;
+  --t-purple: #af52de;
+  --t-yellow: #e6a700;
+  --t-red: #ff3b30;
+  --t-gray: #8e8e93;
+  --series-1: #007aff;
+  --series-2: #ff9500;
+  --grid: rgb(60 60 67 / 0.1);
+  --shadow-card: 0 0 0 0.5px rgb(0 0 0 / 0.05), 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px rgb(0 0 0 / 0.04);
+  --shadow-pop: 0 0 0 0.5px rgb(0 0 0 / 0.08), 0 10px 40px rgb(0 0 0 / 0.16);
+  --radius: 16px;
+  --radius-sm: 10px;
+  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI Variable Text', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI Variable Display', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-rounded: ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Display', 'Segoe UI', Roboto, sans-serif;
+}
+:root[data-theme='dark'] {
+  --bg: #000000;
+  --sidebar: #161618;
+  --surface: #1c1c1e;
+  --surface-2: #232325;
+  --surface-3: #2c2c2e;
+  --border: #2c2c2e;
+  --border-strong: #3a3a3c;
+  --hairline: rgb(84 84 88 / 0.5);
+  --fill: rgb(118 118 128 / 0.24);
+  --fill-2: rgb(118 118 128 / 0.16);
+  --text: #f5f5f7;
+  --muted: #98989d;
+  --faint: #6e6e73;
+  --brand: #30c2b0;
+  --brand-ink: #5fd8c8;
+  --brand-soft: rgb(48 194 176 / 0.16);
+  --brand-text: #5fd8c8;
+  --good: #30d158;
+  --good-soft: rgb(48 209 88 / 0.16);
+  --warn: #ff9f0a;
+  --warn-soft: rgb(255 159 10 / 0.16);
+  --bad: #ff453a;
+  --bad-soft: rgb(255 69 58 / 0.16);
+  --t-blue: #0a84ff;
+  --t-orange: #ff9f0a;
+  --t-green: #30d158;
+  --t-pink: #ff375f;
+  --t-indigo: #5e5ce6;
+  --t-teal: #30c2b0;
+  --t-purple: #bf5af2;
+  --t-yellow: #ffd60a;
+  --t-red: #ff453a;
+  --t-gray: #8e8e93;
+  --series-1: #0a84ff;
+  --series-2: #ff9f0a;
+  --grid: rgb(84 84 88 / 0.4);
+  --shadow-card: 0 0 0 0.5px rgb(255 255 255 / 0.06);
+}
+body {
+  font-size: 14px;
+  letter-spacing: -0.006em;
+}
+h1,
+h2,
+h3,
+.page-head h1 {
+  font-family: var(--font-display);
+}
+.card {
+  border: 0;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+}
+
+/* Icon tiles and rings */
+.tile {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 28%;
+  background: var(--tile);
+  color: #fff;
+  font-family: var(--font-rounded);
+  font-weight: 650;
+  font-size: 12.5px;
+  box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.06);
+}
+.tile svg {
+  stroke-width: 2.1;
+}
+.rings {
+  position: relative;
+  flex: none;
+}
+.rings svg {
+  display: block;
+}
+.ring-arc {
+  transition: stroke-dasharray 0.8s var(--ease);
+}
+.rings-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.05;
+}
+.rings-center strong {
+  font-family: var(--font-rounded);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.rings-center span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Controls: iOS fills, capsule segments */
+.btn {
+  border: 0;
+  background: var(--fill-2);
+  color: var(--text);
+  border-radius: 10px;
+  font-weight: 590;
+  box-shadow: none;
+}
+.btn:hover {
+  background: var(--fill);
+}
+.btn.primary {
+  background: var(--brand);
+  color: #fff;
+}
+.btn.primary:hover {
+  background: color-mix(in srgb, var(--brand) 88%, #000);
+}
+:root[data-theme='dark'] .btn.primary {
+  color: #00201d;
+}
+.btn.ghost {
+  background: transparent;
+}
+.btn.ghost:hover {
+  background: var(--fill-2);
+}
+.input,
+.select,
+textarea.input {
+  border: 0;
+  background-color: var(--fill-2);
+  border-radius: 10px;
+}
+.input:hover,
+.select:hover {
+  background-color: var(--fill);
+}
+.input:focus,
+.select:focus {
+  background-color: var(--surface);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 30%, transparent), 0 0 0 1px var(--brand);
+}
+.seg,
+.ws-head .chips.filters {
+  display: inline-flex;
+  background: var(--fill);
+  border: 0;
+  border-radius: 9px;
+  padding: 2px;
+  gap: 0;
+}
+.seg button,
+.ws-head .chip-btn {
+  border-radius: 7px;
+  font-weight: 550;
+  font-size: 13px;
+  padding: 4px 12px;
+  color: var(--text);
+  background: transparent;
+}
+.seg button.on,
+.ws-head .chip-btn.on {
+  background: var(--surface);
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.04), 0 3px 8px rgb(0 0 0 / 0.12), 0 3px 1px rgb(0 0 0 / 0.04);
+}
+:root[data-theme='dark'] .seg button.on,
+:root[data-theme='dark'] .ws-head .chip-btn.on {
+  background: #636366;
+}
+.ws-head .chip-btn:hover {
+  background: transparent;
+}
+.chip-btn {
+  border: 0;
+  background: var(--fill-2);
+}
+.chip-btn.on {
+  background: var(--text);
+  color: var(--surface);
+}
+
+/* ---------- Shell: a vibrant sidebar, tinted symbols ---------- */
+@media (min-width: 861px) {
+  .app {
+    grid-template-columns: 252px minmax(0, 1fr);
+    background: linear-gradient(to right, var(--sidebar) 252px, var(--bg) 252px);
+  }
+  .main {
+    padding: 34px 44px 72px;
+  }
+}
+.sidebar {
+  background: color-mix(in srgb, var(--sidebar) 82%, transparent);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-right: 0.5px solid var(--hairline);
+  padding: 18px 10px 12px;
+}
+.brand {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+  padding: 0 10px 14px;
+}
+.side-search {
+  background: var(--fill-2);
+  border: 0;
+  box-shadow: none;
+  border-radius: 9px;
+}
+.btn.side-add {
+  color: var(--brand-ink);
+  background: transparent;
+}
+.side-section {
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  font-weight: 650;
+  color: var(--faint);
+  margin: 16px 0 3px;
+}
+.nav-link {
+  font-size: 13.5px;
+  font-weight: 500;
+  padding: 6px 10px;
+  border-radius: 7px;
+  color: var(--text);
+}
+.nav-link .nav-icon {
+  color: var(--brand);
+}
+.nav-link:hover {
+  background: var(--fill-2);
+}
+.nav-link.active {
+  background: var(--fill);
+  box-shadow: none;
+  font-weight: 600;
+}
+:root[data-theme='dark'] .nav-link.active {
+  background: rgb(255 255 255 / 0.1);
+}
+.side-rta,
+.side-rta.positive,
+.side-rta.negative {
+  background: var(--surface);
+  border: 0;
+  box-shadow: var(--shadow-card);
+  border-radius: 12px;
+  font-family: var(--font-rounded);
+  font-size: 17px;
+}
+.side-account {
+  font-size: 12.5px;
+}
+.acct-dot {
+  border-radius: 3px;
+}
+.acct-dot.checking {
+  background: var(--t-teal);
+}
+.acct-dot.savings {
+  background: var(--t-green);
+}
+.acct-dot.credit {
+  background: var(--t-indigo);
+}
+.acct-dot.loan {
+  background: var(--t-orange);
+}
+
+/* ---------- Large titles ---------- */
+.page-head h1,
+.budget-head h1 {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+.budget-head h1 .year {
+  color: var(--faint);
+  font-weight: 600;
+}
+.month-steps {
+  background: var(--fill);
+  border: 0;
+  box-shadow: none;
+  border-radius: 9px;
+}
+.month-steps .icon-btn + .icon-btn {
+  border-left: 0.5px solid var(--hairline);
+}
+.month-steps .icon-btn {
+  color: var(--text);
+}
+
+/* ---------- Budget: rings, number, totals ---------- */
+.health {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.1fr);
+  align-items: center;
+  gap: 28px;
+  padding: 22px 26px;
+  overflow: visible;
+}
+.health .health-main {
+  background: none;
+  border: 0;
+  padding: 0;
+  gap: 2px;
+}
+.health-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.health-amount {
+  font-family: var(--font-rounded);
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+.health-status {
+  font-size: 13px;
+}
+.health-legend {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.health-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.health-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.health .health-figures {
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 0;
+  margin: 0;
+  padding-left: 26px;
+  border-left: 0.5px solid var(--hairline);
+}
+.health .health-figures > div,
+.health .health-figures > div + div {
+  border: 0;
+  padding: 0 0 0 0;
+}
+.health-figures dt {
+  font-size: 12px;
+}
+.health-figures dd {
+  font-family: var(--font-rounded);
+  font-size: 20px;
+  font-weight: 650;
+}
+
+/* ---------- Budget: groups as inset cards ---------- */
+.ws {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ws .ws-head {
+  border: 0;
+  padding: 0 4px;
+}
+.ws-head h2 {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.ws-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px 116px 100px 124px;
+  padding: 0 16px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--faint);
+  letter-spacing: 0.02em;
+}
+.ws-cols span:not(:first-child):not(:nth-child(2)) {
+  text-align: right;
+}
+.g-card {
+  background: var(--surface);
+  border-radius: 14px;
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+.g-card .budget-table {
+  table-layout: fixed;
+}
+.g-card col.c-use {
+  width: 132px;
+}
+.g-card col.c-assign {
+  width: 116px;
+}
+.g-card col.c-spent {
+  width: 100px;
+}
+.g-card col.c-avail {
+  width: 124px;
+}
+.g-card .budget-table th:nth-child(n),
+.g-card .budget-table td:nth-child(n) {
+  width: auto;
+}
+.g-card .budget-table td {
+  padding: 8px 16px;
+  border-top: 0.5px solid var(--hairline);
+}
+.g-card .budget-table tr.group td {
+  border-top: 0;
+  background: var(--surface);
+  padding: 12px 16px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.g-card .budget-table tr.group td:first-child {
+  color: var(--text);
+}
+.g-card .group-name {
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  gap: 10px;
+}
+.g-card .group-name > svg:last-of-type {
+  color: var(--faint);
+}
+.g-card .group-count {
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--fill-2);
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+.g-card .budget-table tr.cat td:first-child {
+  padding-left: 16px;
+}
+.g-card .budget-table tr.group + tr.cat td {
+  border-top-color: var(--hairline);
+}
+/* Separators start after the icon, as in iOS lists. */
+.g-card .budget-table tr.cat td {
+  border-top: 0;
+  box-shadow: inset 0 0.5px 0 var(--hairline);
+}
+.g-card .budget-table tr.cat td:first-child {
+  box-shadow: inset 0 0.5px 0 transparent;
+  background-image: linear-gradient(var(--hairline), var(--hairline));
+  background-size: calc(100% - 50px) 0.5px;
+  background-position: 50px 0;
+  background-repeat: no-repeat;
+}
+.g-card .budget-table tr.cat:hover td {
+  background-color: var(--fill-2);
+}
+.g-card .budget-table tr.cat.selected td {
+  background-color: var(--brand-soft);
+}
+.g-card .budget-table tr.cat.selected td:first-child {
+  box-shadow: none;
+}
+.cat-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.cat-cell .tile {
+  font-size: 11.5px;
+}
+.cat-name {
+  font-weight: 550;
+  font-size: 14px;
+}
+.cat-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+.cat-sub.good {
+  color: var(--muted);
+}
+.cat-sub.warn {
+  color: var(--warn);
+}
+.cat-sub.bad {
+  color: var(--bad);
+}
+.mini-ring {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.mini-ring.none {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 4px var(--fill-2);
+}
+.mini-ring.warn {
+  color: var(--warn);
+}
+.mini-ring.bad {
+  color: var(--bad);
+  font-weight: 650;
+}
+.g-card .meter {
+  height: 5px;
+  max-width: 96px;
+  background: var(--fill-2);
+}
+.assign-input {
+  font-family: var(--font-rounded);
+  font-size: 14.5px;
+  font-weight: 600;
+  border-radius: 8px;
+}
+.g-card .budget-table tr.cat:hover .assign-input:not(:focus):not(:disabled) {
+  background: var(--surface);
+  border-color: transparent;
+  box-shadow: 0 0 0 0.5px var(--border-strong);
+}
+.pill {
+  font-family: var(--font-rounded);
+  font-size: 14.5px;
+  font-weight: 650;
+  border-radius: 999px;
+}
+.pill.good {
+  color: var(--text);
+}
+.pill.warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.pill.bad {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+/* Side column: secondary, flatter */
+.panel .card {
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+.panel .card h3 {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+/* ---------- Overview: Health-style summary cards ---------- */
+.card.ov-tiles {
+  background: none;
+  box-shadow: none;
+  gap: 12px;
+  overflow: visible;
+}
+@media (min-width: 861px) {
+  .card.ov-tiles {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.ov-tiles .ov-tile,
+.ov-tiles .ov-tile:first-child {
+  background: var(--surface);
+  border-radius: 16px;
+  box-shadow: var(--shadow-card);
+  padding: 14px 16px 16px;
+  justify-content: flex-start;
+  gap: 4px;
+}
+.ov-tiles .ov-tile + .ov-tile {
+  border-left: 0;
+}
+.ov-tiles .ov-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+  font-weight: 650;
+}
+.ov-tiles .ov-value,
+.ov-tiles .ov-tile:first-child .ov-value {
+  font-family: var(--font-rounded);
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 6px;
+  color: var(--text);
+}
+.ov-tiles .ov-tile.good .ov-value {
+  color: var(--text);
+}
+.chart-card,
+.ov-grid .card-pad {
+  border-radius: 18px;
+  padding: 18px 20px;
+}
+.section-head h3 {
+  font-size: 16px;
+  font-weight: 650;
+}
+.toggle-view {
+  border: 0;
+  background: var(--fill-2);
+  color: var(--text);
+}
+
+/* ---------- Transactions: an inset list ---------- */
+.tx-toolbar {
+  background: transparent;
+  box-shadow: none;
+  border: 0;
+  padding: 0;
+}
+.tx-toolbar .input,
+.tx-toolbar .select {
+  background-color: var(--fill);
+}
+.card.table-wrap {
+  border-radius: 16px;
+}
+.tx-table thead th {
+  background: var(--surface);
+  border-bottom: 0.5px solid var(--hairline);
+}
+.tx-table tr.tx-day td {
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  border-top: 0;
+  padding: 10px 16px 6px;
+}
+.tx-table td {
+  border-top: 0.5px solid var(--hairline);
+}
+.tx-name {
+  font-weight: 590;
+}
+.tx-amt {
+  font-family: var(--font-rounded);
+  font-weight: 620;
+  font-size: 14.5px;
+}
+
+/* ---------- Credit cards: a titanium card, a payment ring ---------- */
+.cc-face::before {
+  display: none;
+}
+.cc-face {
+  padding: 20px 22px 18px;
+}
+.cc-ident {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.mini-card {
+  position: relative;
+  width: 50px;
+  height: 32px;
+  flex: none;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #fbfbfd 0%, #e6e6eb 55%, #d5d5db 100%);
+  box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.12), 0 2px 6px rgb(0 0 0 / 0.08);
+}
+.mini-card i {
+  position: absolute;
+  left: 7px;
+  top: 10px;
+  width: 9px;
+  height: 7px;
+  border-radius: 2px;
+  background: linear-gradient(135deg, #e9d7a6, #c9ad6a);
+}
+:root[data-theme='dark'] .mini-card {
+  background: linear-gradient(135deg, #4a4a4f 0%, #2f2f33 60%, #222225 100%);
+}
+.cc-face-owed strong {
+  font-family: var(--font-rounded);
+  font-size: 34px;
+}
+.cc-pay {
+  margin-left: auto;
+}
+.cc-pay .rings-center strong {
+  font-size: 18px;
+}
+.cc-face-row {
+  align-items: center;
+}
+.cc-face-facts dd {
+  font-family: var(--font-rounded);
+}
+.cc-answer {
+  background: var(--surface-2);
+  border: 0;
+  border-radius: 14px;
+}
+.cc-days.big {
+  border-radius: 12px;
+}
+
+/* ---------- Bills: calendar-icon dates ---------- */
+.bill-date {
+  flex-direction: column-reverse;
+  justify-content: flex-start;
+  width: 44px;
+  height: 46px;
+  padding-top: 4px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 0 0 0.5px var(--border-strong), 0 1px 2px rgb(0 0 0 / 0.06);
+  overflow: hidden;
+}
+.bill-date small {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--t-red);
+  letter-spacing: 0.06em;
+}
+.bill-date strong {
+  font-family: var(--font-rounded);
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--text);
+}
+.bill-date.paid,
+.bill-date.overdue {
+  background: var(--surface);
+}
+.bill-date.paid strong {
+  color: var(--good);
+}
+.bill-date.overdue strong {
+  color: var(--bad);
+}
+.bills-section {
+  border-radius: 16px;
+}
+.strip-dot.upcoming {
+  box-shadow: inset 0 0 0 2px var(--t-blue);
+}
+.dot.upcoming {
+  box-shadow: inset 0 0 0 2px var(--t-blue);
+}
+
+/* ---------- Sheets, menus, feedback ---------- */
+.modal {
+  border: 0;
+  border-radius: 20px;
+}
+.modal-head h2 {
+  font-size: 18px;
+  font-weight: 700;
+}
+.modal-foot {
+  background: transparent;
+  border-top: 0.5px solid var(--hairline);
+}
+.toast {
+  border-radius: 999px;
+  padding: 10px 18px;
+  background: color-mix(in srgb, var(--text) 92%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+/* ---------- Phone ---------- */
+@media (max-width: 860px) {
+  .page-head h1,
+  .budget-head h1 {
+    font-size: 30px;
+  }
+  .health {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 16px;
+    padding: 16px;
+  }
+  .health .rings {
+    width: 104px !important;
+    height: 104px !important;
+  }
+  .health .rings svg {
+    width: 104px;
+    height: 104px;
+  }
+  .health-amount {
+    font-size: 28px;
+  }
+  .health-legend {
+    display: none;
+  }
+  .health .health-main {
+    border: 0;
+    padding: 0;
+  }
+  .health .health-figures {
+    grid-column: 1 / -1;
+    border-left: 0;
+    padding: 12px 0 0;
+    border-top: 0.5px solid var(--hairline);
+  }
+  .health-auto {
+    position: static;
+    align-self: flex-start;
+    margin-top: 8px;
+  }
+  .m-group {
+    border-radius: 14px;
+  }
+  .m-group-head {
+    gap: 10px;
+    font-size: 15px;
+    text-transform: none;
+    letter-spacing: -0.01em;
+  }
+  .m-cat {
+    gap: 12px;
+  }
+  .card.ov-tiles {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .ov-tiles .ov-tile:nth-child(even) {
+    border-left: 0;
+  }
+  .ov-tiles .ov-tile:nth-child(n + 3) {
+    border-top: 0;
+  }
+  .ov-tiles .ov-value,
+  .ov-tiles .ov-tile:first-child .ov-value {
+    font-size: 22px;
+  }
+  .cc-pay {
+    margin-left: 0;
+  }
+}
+.health.negative .health-main,
+.health.positive .health-main,
+.health.zero .health-main {
+  background: none;
+}
+.group-name .tile svg,
+.tile svg {
+  color: #fff;
+}
+.ws-cols {
+  padding: 0;
+}
+.ws-cols span {
+  padding: 0 16px;
+}

@@ -2,6 +2,7 @@
  * Budsjett: where you manage the money. Give every krone a job, see what's left in each category, fix overspending.
  * Desktop: a dense table with a detail panel on the right. Phone: tappable cards with a bottom sheet.
  */
+import { Rings, Tile, groupTint } from '../components/apple';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, type BudgetMonth, type CategoryRow, type Recurring } from '../api';
@@ -10,7 +11,7 @@ import { useStore } from '../store';
 import { useIsMobile, useStoredState } from '../hooks';
 import { AnimatedMoney, Icon, Modal, MoneyInput, Skeleton, haptic, useToast } from '../components/ui';
 import { addMonths, currentMonth } from '../../../shared/months';
-import { Attention, AutoAssignMenu, CardBills, Payday, Tips, WrapUp, CategoryDetail, Pill, Upcoming, UsageBar, Welcome, subtitle } from './budgetParts';
+import { Attention, AutoAssignMenu, CardBills, Payday, Tips, WrapUp, CategoryDetail, Pill, Upcoming, UsageBar, Welcome, subtitle, usage } from './budgetParts';
 
 type Filter = 'all' | 'needs' | 'over' | 'money';
 const FILTERS: Array<{ id: Filter; label: string; test: (c: CategoryRow) => boolean }> = [
@@ -233,8 +234,9 @@ export default function BudgetPage() {
               return (
                 <section key={g.id} className="card m-group">
                   <button className="m-group-head" onClick={() => toggleGroup(g.id)} aria-expanded={open}>
-                    <Icon name={open ? 'down' : 'right'} size={16} />
+                    <Tile color={groupTint(g.name).color} icon={groupTint(g.name).icon} size={26} />
                     <span className="spacer">{g.name}</span>
+                    <Icon name={open ? 'down' : 'right'} size={16} />
                     <span className="num small muted">{kr(available)}</span>
                   </button>
                   {open &&
@@ -242,6 +244,7 @@ export default function BudgetPage() {
                       const sub = subtitle(c, budget.pace);
                       return (
                         <button key={c.id} className="m-cat" onClick={() => setSelected(c.id)} style={{ opacity: c.hidden ? 0.5 : 1 }}>
+                          <Tile color={groupTint(g.name).color} letter={c.name} size={30} />
                           <div className="m-cat-main">
                             <span className="m-cat-name">{c.name}</span>
                             {sub && <span className={`m-cat-sub ${sub.tone ?? ''}`}>{sub.text}</span>}
@@ -267,7 +270,7 @@ export default function BudgetPage() {
       ) : (
         <div className="grid-2">
           <div>
-            <div className="card workspace">
+            <div className="ws">
               <div className="ws-head">
                 <h2>Kategorier</h2>
                 {filters}
@@ -275,49 +278,59 @@ export default function BudgetPage() {
                   <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> Vis skjulte
                 </label>
               </div>
-              <table className="budget-table">
-                <thead>
-                  <tr>
-                    <th>Kategori</th>
-                    <th className="col-use">Forbruk</th>
-                    <th>Fordelt</th>
-                    <th>Brukt</th>
-                    <th>Tilgjengelig</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {groups.map((g) => {
-                    const open = !collapsed.includes(g.id) || filter !== 'all';
-                    const sum = (k: 'assigned' | 'activity' | 'available') => g.shown.reduce((s, c) => s + c[k], 0);
-                    return (
-                      <GroupRows
-                        key={g.id}
-                        id={g.id}
-                        name={g.name}
-                        open={open}
-                        onToggle={() => toggleGroup(g.id)}
-                        totals={{ assigned: sum('assigned'), activity: sum('activity'), available: sum('available') }}
-                        count={g.shown.length}
-                        onAdded={load}
-                      >
-                        {open &&
-                          g.shown.map((c) => (
-                            <CategoryLine
-                              key={c.id}
-                              c={c}
-                              pace={budget.pace}
-                              selected={selected === c.id}
-                              onSelect={() => setSelected(c.id === selected ? null : c.id)}
-                              onAssign={(a) => assign(c.id, a)}
-                              readOnly={readOnly}
-                            />
-                          ))}
-                      </GroupRows>
-                    );
-                  })}
-                </tbody>
-              </table>
-              {groups.length === 0 && <div className="empty small">Ingen kategorier her. 🎉</div>}
+              <div className="ws-cols" aria-hidden="true">
+                <span>Kategori</span>
+                <span>Forbruk</span>
+                <span>Fordelt</span>
+                <span>Brukt</span>
+                <span>Tilgjengelig</span>
+              </div>
+              {groups.map((g) => {
+                const open = !collapsed.includes(g.id) || filter !== 'all';
+                const sum = (k: 'assigned' | 'activity' | 'available') => g.shown.reduce((s, c) => s + c[k], 0);
+                const tint = groupTint(g.name);
+                return (
+                  <section key={g.id} className="g-card">
+                    <table className="budget-table">
+                      <colgroup>
+                        <col />
+                        <col className="c-use" />
+                        <col className="c-assign" />
+                        <col className="c-spent" />
+                        <col className="c-avail" />
+                      </colgroup>
+                      <tbody>
+                        <GroupRows
+                          id={g.id}
+                          name={g.name}
+                          tint={tint.color}
+                          icon={tint.icon}
+                          open={open}
+                          onToggle={() => toggleGroup(g.id)}
+                          totals={{ assigned: sum('assigned'), activity: sum('activity'), available: sum('available') }}
+                          count={g.shown.length}
+                          onAdded={load}
+                        >
+                          {open &&
+                            g.shown.map((c) => (
+                              <CategoryLine
+                                key={c.id}
+                                c={c}
+                                tint={tint.color}
+                                pace={budget.pace}
+                                selected={selected === c.id}
+                                onSelect={() => setSelected(c.id === selected ? null : c.id)}
+                                onAssign={(a) => assign(c.id, a)}
+                                readOnly={readOnly}
+                              />
+                            ))}
+                        </GroupRows>
+                      </tbody>
+                    </table>
+                  </section>
+                );
+              })}
+              {groups.length === 0 && <div className="card empty small">Ingen kategorier her.</div>}
             </div>
           </div>
           <div className="stack panel">
@@ -352,76 +365,99 @@ export default function BudgetPage() {
 }
 
 /**
- * The month at a glance. Left: the one number that needs action, Klar til fordeling, with what it means.
- * Right: how much of what's assigned this month is spent, against how far into the month we are, and the
- * month's four totals.
+ * The month at a glance, in rings: the outer ring is how much of what's assigned is spent, the inner ring how far
+ * into the month we are. Spending ahead of the calendar shows as the outer ring running ahead of the inner one.
+ * Beside it, the one number that needs action (Klar til fordeling) and the month's totals.
  */
 function BudgetHealth({ budget, month, onAuto }: { budget: BudgetMonth; month: string; onAuto: () => void }) {
   const rta = budget.readyToAssign;
   const state = rta > 0 ? 'positive' : rta < 0 ? 'negative' : 'zero';
   const spent = -budget.activity;
-  const share = budget.assigned > 0 ? Math.min(1, Math.max(0, spent / budget.assigned)) : 0;
+  const share = budget.assigned > 0 ? Math.max(0, spent / budget.assigned) : 0;
   const pace = budget.pace;
-  const monthName = monthLabel(month).split(' ')[0].toLowerCase();
   const days = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
+  const day = pace >= 1 ? days : Math.max(1, Math.round(pace * days));
+  const ahead = pace > 0 && share > pace + 0.1;
   const figures = [
-    { label: 'Inntekt', value: budget.income, note: 'denne måneden' },
-    { label: 'Fordelt', value: budget.assigned, note: 'denne måneden' },
-    { label: 'Brukt', value: spent, note: 'denne måneden' },
-    { label: 'Tilgjengelig', value: budget.available, note: 'i alle kategorier' },
+    { label: 'Inntekt', value: budget.income },
+    { label: 'Fordelt', value: budget.assigned },
+    { label: 'Brukt', value: spent },
+    { label: 'Tilgjengelig', value: budget.available },
   ];
   return (
     <section className={`health card ${state}`} aria-label="Status for måneden">
+      <Rings
+        size={136}
+        stroke={14}
+        gap={4}
+        label={`${Math.round(share * 100)} % av det som er fordelt er brukt, dag ${day} av ${days}`}
+        rings={[
+          { value: share, color: ahead ? 'var(--t-orange)' : 'var(--brand)' },
+          { value: pace > 0 ? pace : 1, color: 'var(--t-blue)' },
+        ]}
+      >
+        <strong className="num">{Math.round(share * 100)}%</strong>
+        <span>brukt</span>
+      </Rings>
       <div className="health-main">
-        <div className="eyebrow">Klar til fordeling</div>
+        <div className="health-label">Klar til fordeling</div>
         <div className="health-amount">
           <AnimatedMoney value={rta} />
         </div>
         <div className="health-status">
-          <span className="status-dot" aria-hidden="true" />
           {rta > 0 && 'Penger uten jobb. Fordel dem til kategoriene.'}
           {rta < 0 && 'Fordelt mer enn dere har. Ta tilbake fra en kategori.'}
           {rta === 0 && 'Hver krone har en jobb.'}
+        </div>
+        <div className="health-legend">
+          <span>
+            <i style={{ background: ahead ? 'var(--t-orange)' : 'var(--brand)' }} />
+            Brukt av fordelt
+          </span>
+          <span>
+            <i style={{ background: 'var(--t-blue)' }} />
+            Dag {day} av {days}
+          </span>
         </div>
         <button className={`btn sm ${rta > 0 ? 'primary' : ''} health-auto`} onClick={onAuto}>
           <Icon name="magic" size={15} /> Autofordel
         </button>
       </div>
-      <div className="health-month">
-        <div className="health-month-head">
-          <span>Brukt av fordelt i {monthName}</span>
-          <span className="num">
-            <strong>{Math.round(share * 100)} %</strong>
-            {pace > 0 && pace < 1 && <span className="muted"> · dag {Math.max(1, Math.round(pace * days))} av {days}</span>}
-          </span>
-        </div>
-        <div className="meter big" role="img" aria-label={`${Math.round(share * 100)} % av det som er fordelt er brukt`}>
-          <div className={`meter-fill ${pace > 0 && share > pace + 0.1 ? 'warn' : ''}`} style={{ width: `${share * 100}%` }} />
-          {pace > 0 && pace < 1 && <div className="meter-pace" style={{ left: `${pace * 100}%` }} title="I dag" />}
-        </div>
-        <dl className="health-figures">
-          {figures.map((f) => (
-            <div key={f.label}>
-              <dt>{f.label}</dt>
-              <dd>
-                <AnimatedMoney value={f.value} />
-              </dd>
-              <span className="small faint">{f.note}</span>
-            </div>
-          ))}
-        </dl>
-      </div>
+      <dl className="health-figures">
+        {figures.map((f) => (
+          <div key={f.label}>
+            <dt>{f.label}</dt>
+            <dd>
+              <AnimatedMoney value={f.value} />
+            </dd>
+          </div>
+        ))}
+      </dl>
     </section>
   );
 }
 
+/** A category's spending as a small ring, with the share beside it. */
+function MiniRing({ c, pace, tint }: { c: CategoryRow; pace: number; tint: string }) {
+  const u = usage(c, pace);
+  if (!u.show) return <span className="mini-ring none" />;
+  const over = c.available < 0;
+  const color = over ? 'var(--bad)' : u.fast ? 'var(--t-orange)' : tint;
+  return (
+    <span className={`mini-ring ${over ? 'bad' : u.fast ? 'warn' : ''}`} title={`${Math.round(u.ratio * 100)} % brukt${u.fast ? ', raskere enn kalenderen' : ''}`}>
+      <Rings size={22} stroke={4} gap={0} rings={[{ value: over ? 1 : u.ratio, color }]} label={`${Math.round(u.ratio * 100)} % brukt`} />
+      <span className="num">{over ? 'Over' : `${Math.round(u.ratio * 100)} %`}</span>
+    </span>
+  );
+}
+
 /** A slim bar: spent of what was there to spend. */
-function Meter({ spent, funds }: { spent: number; funds: number }) {
+function Meter({ spent, funds, color }: { spent: number; funds: number; color?: string }) {
   if (funds <= 0 && spent <= 0) return <div className="meter meter-none" />;
   const ratio = funds > 0 ? Math.min(1, Math.max(0, spent / funds)) : 1;
   return (
     <div className="meter">
-      <div className={`meter-fill ${spent > funds ? 'bad' : ''}`} style={{ width: `${ratio * 100}%` }} />
+      <div className={`meter-fill ${spent > funds ? 'bad' : ''}`} style={{ width: `${ratio * 100}%`, background: spent > funds ? undefined : color }} />
     </div>
   );
 }
@@ -433,6 +469,8 @@ function GroupRows({
   onToggle,
   totals,
   count,
+  tint,
+  icon,
   onAdded,
   children,
 }: {
@@ -442,6 +480,8 @@ function GroupRows({
   onToggle: () => void;
   totals: { assigned: number; activity: number; available: number };
   count: number;
+  tint: string;
+  icon: string;
   onAdded: () => void;
   children: ReactNode;
 }) {
@@ -453,9 +493,10 @@ function GroupRows({
       <tr className={`group ${open ? 'open' : ''}`} onClick={onToggle}>
         <td>
           <span className="group-name">
-            <Icon name={open ? 'down' : 'right'} size={14} />
+            <Tile color={tint} icon={icon} size={26} />
             {name}
             <span className="group-count">{count}</span>
+            <Icon name={open ? 'down' : 'right'} size={14} />
             <button
               className="icon-btn add-cat"
               onClick={(e) => {
@@ -470,7 +511,7 @@ function GroupRows({
           </span>
         </td>
         <td className="col-use">
-          <Meter spent={-totals.activity} funds={totals.available - totals.activity} />
+          <Meter spent={-totals.activity} funds={totals.available - totals.activity} color={tint} />
         </td>
         <td className="num">{kr(totals.assigned)}</td>
         <td className="num">{totals.activity ? kr(totals.activity) : '–'}</td>
@@ -507,6 +548,7 @@ function GroupRows({
 
 function CategoryLine({
   c,
+  tint,
   pace,
   selected,
   onSelect,
@@ -514,6 +556,7 @@ function CategoryLine({
   readOnly,
 }: {
   c: CategoryRow;
+  tint: string;
   pace: number;
   selected: boolean;
   onSelect: () => void;
@@ -524,13 +567,16 @@ function CategoryLine({
   return (
     <tr className={`cat ${selected ? 'selected' : ''}`} onClick={onSelect}>
       <td>
-        <div className="cat-name" style={{ opacity: c.hidden ? 0.5 : 1 }}>
-          {c.name}
+        <div className="cat-cell" style={{ opacity: c.hidden ? 0.5 : 1 }}>
+          <Tile color={tint} letter={c.name} size={24} />
+          <div style={{ minWidth: 0 }}>
+            <div className="cat-name">{c.name}</div>
+            {sub && <div className={`cat-sub ${sub.tone ?? ''}`}>{sub.text}</div>}
+          </div>
         </div>
-        {sub && <div className={`cat-sub ${sub.tone ?? ''}`}>{sub.text}</div>}
       </td>
       <td className="col-use">
-        <UsageBar c={c} pace={pace} withLabel />
+        <MiniRing c={c} pace={pace} tint={tint} />
       </td>
       <td onClick={(e) => e.stopPropagation()}>
         <MoneyInput

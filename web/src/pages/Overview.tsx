@@ -183,7 +183,7 @@ export default function OverviewPage() {
   const tiles = (
     <div className="card ov-tiles">
       <div className="ov-tile">
-        <span className="ov-label">Brukt</span>
+        <span className="ov-label" style={{ color: 'var(--t-orange)' }}><Icon name="cart" size={15} /> Brukt</span>
         <AnimatedMoney value={data.spending} className="ov-value" />
         {running && prevSameDay !== null ? (
           <Delta now={data.spending} prev={prevSameDay} prevLabel={`samme dag ${prevLabel}`} goodWhenUp={false} />
@@ -192,7 +192,7 @@ export default function OverviewPage() {
         )}
       </div>
       <div className="ov-tile">
-        <span className="ov-label">Inntekt</span>
+        <span className="ov-label" style={{ color: 'var(--t-green)' }}><Icon name="trend" size={15} /> Inntekt</span>
         <AnimatedMoney value={data.income} className="ov-value" />
         {running && data.income === 0 ? (
           <span className="delta faint">Ingen inntekt ennå denne måneden</span>
@@ -203,20 +203,20 @@ export default function OverviewPage() {
       {data.income === 0 && (data.pendingIncome > 0 || running) ? (
         // Salary not reviewed yet: "spent more than you earned" would be a false alarm.
         <div className="ov-tile">
-          <span className="ov-label">Til overs</span>
+          <span className="ov-label" style={{ color: 'var(--t-teal)' }}><Icon name="leaf" size={15} /> Til overs</span>
           <span className="ov-value faint">–</span>
           <span className="delta faint">{data.pendingIncome > 0 ? 'Gå gjennom innbetalingene først' : 'Venter på inntekt'}</span>
         </div>
       ) : (
         <div className={`ov-tile ${saved >= 0 ? 'good' : 'bad'}`}>
-          <span className="ov-label">{saved >= 0 ? 'Til overs' : 'Brukt mer enn inntekt'}</span>
+          <span className="ov-label" style={{ color: saved >= 0 ? 'var(--t-teal)' : 'var(--bad)' }}><Icon name="leaf" size={15} /> {saved >= 0 ? 'Til overs' : 'Brukt mer enn inntekt'}</span>
           <AnimatedMoney value={Math.abs(saved)} className="ov-value" />
           <span className="delta faint">{rate !== null ? `${Math.max(rate, 0)} % av inntekten spart` : 'Ingen inntekt registrert'}</span>
         </div>
       )}
       {data.forecast ? (
         <div className="ov-tile">
-          <span className="ov-label">Ligger an til</span>
+          <span className="ov-label" style={{ color: 'var(--t-blue)' }}><Icon name="calendar" size={15} /> Ligger an til</span>
           <AnimatedMoney value={data.forecast.projected} className="ov-value" />
           <span className="delta faint">
             {data.prevSpending > 0
@@ -226,7 +226,7 @@ export default function OverviewPage() {
         </div>
       ) : (
         <div className="ov-tile">
-          <span className="ov-label">Hverdag per dag</span>
+          <span className="ov-label" style={{ color: 'var(--t-blue)' }}><Icon name="calendar" size={15} /> Hverdag per dag</span>
           <AnimatedMoney value={data.stats.avgPerDay} className="ov-value" />
           <span className="delta faint">
             {data.stats.noSpendDays} av {data.stats.days} dager uten hverdagsforbruk

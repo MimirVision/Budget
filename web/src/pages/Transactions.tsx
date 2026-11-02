@@ -6,6 +6,14 @@ import { useStore } from '../store';
 import { useIsMobile } from '../hooks';
 import { CategorySelect, Icon, Money, useToast } from '../components/ui';
 import { TransactionEditor } from '../components/TransactionEditor';
+import { Tile, groupTint, nameTint } from '../components/apple';
+
+/** A transaction's colour: its category group's, so groceries look like groceries everywhere; else from the payee. */
+function tintFor(t: Transaction, categories: Array<{ id: number; group_name: string }>): string {
+  const cat = categories.find((c) => c.id === t.category_id);
+  if (cat) return groupTint(cat.group_name).color;
+  return nameTint(t.payee || t.raw_description || '?');
+}
 
 const PAGE = 100;
 
@@ -227,9 +235,11 @@ export default function TransactionsPage() {
                   )}
                   <td className="tx-merchant-cell">
                     <div className="tx-merchant">
-                    <span className={`tx-avatar ${t.amount > 0 ? 'in' : ''}`} aria-hidden="true">
-                      {t.transfer_id ? <Icon name="swap" size={14} /> : (t.payee || t.raw_description || '?').trim().charAt(0).toUpperCase()}
-                    </span>
+                    {t.transfer_id ? (
+                      <Tile color="var(--t-gray)" icon="swap" size={30} />
+                    ) : (
+                      <Tile color={tintFor(t, summary.categories)} letter={t.payee || t.raw_description || '?'} size={30} />
+                    )}
                     <div style={{ minWidth: 0 }}>
                     <div className="ellipsis tx-name">
                       {t.payee || t.raw_description}
@@ -362,6 +372,7 @@ function DayList({
   selecting: boolean;
   selected: number[];
 }) {
+  const { summary } = useStore();
   const days: Array<{ date: string; items: Transaction[] }> = [];
   for (const t of rows) {
     const last = days[days.length - 1];
@@ -386,15 +397,15 @@ function DayList({
                   onClick={() => onOpen(t)}
                   aria-pressed={selecting ? selected.includes(t.id) : undefined}
                 >
-                  <span className={`tx-avatar ${selecting && selected.includes(t.id) ? 'checked' : ''}`} aria-hidden="true">
-                    {selecting ? (
-                      selected.includes(t.id) ? <Icon name="check" size={16} /> : ''
-                    ) : t.transfer_id ? (
-                      <Icon name="swap" size={16} />
-                    ) : (
-                      (t.payee || t.raw_description || '?').trim().charAt(0).toUpperCase()
-                    )}
-                  </span>
+                  {selecting ? (
+                    <span className={`tx-avatar ${selected.includes(t.id) ? 'checked' : ''}`} aria-hidden="true">
+                      {selected.includes(t.id) ? <Icon name="check" size={16} /> : ''}
+                    </span>
+                  ) : t.transfer_id ? (
+                    <Tile color="var(--t-gray)" icon="swap" size={36} />
+                  ) : (
+                    <Tile color={tintFor(t, summary?.categories ?? [])} letter={t.payee || t.raw_description || '?'} size={36} />
+                  )}
                   <span className="tx-main">
                     <span className="ellipsis" style={{ display: 'block', fontWeight: 600 }}>
                       {t.payee || t.raw_description}

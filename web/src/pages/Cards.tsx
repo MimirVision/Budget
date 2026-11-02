@@ -11,6 +11,7 @@ import { useStore } from '../store';
 import { Icon, Modal, MoneyInput, Skeleton, useToast } from '../components/ui';
 import { addDays, dayDiff, todayISO } from '../../../shared/months';
 import { payToStayFree, whatIfPay } from '../../../shared/cardplan';
+import { Rings } from '../components/apple';
 import { closesAround, dueFor } from '../../../shared/carddates';
 
 interface Card {
@@ -204,9 +205,14 @@ function CardPanel({ c, onEdit, onBill, onChanged }: { c: Card; onEdit: () => vo
     <section className="card cc">
       <div className="cc-face">
         <div className="cc-face-top">
-          <div style={{ minWidth: 0 }}>
+          <div className="cc-ident">
+            <span className="mini-card" aria-hidden="true">
+              <i />
+            </span>
+            <div style={{ minWidth: 0 }}>
             <div className="cc-face-name">{c.name}</div>
             <div className="cc-face-sub">{source}</div>
+            </div>
           </div>
           <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
             <button className="btn sm cc-face-btn" onClick={onBill}>
@@ -221,6 +227,31 @@ function CardPanel({ c, onEdit, onBill, onChanged }: { c: Card; onEdit: () => vo
           <div className="cc-face-owed">
             <span>Skyldig</span>
             <strong>{kr(c.owed)}</strong>
+          </div>
+          <div className="cc-pay">
+            {(() => {
+              const bill = c.statement.amount;
+              const share = bill > 0 ? Math.min(1, c.statement.paid / bill) : 1;
+              const left = dayDiff(todayISO(), c.statement.due);
+              const owing = c.statement.left > 0;
+              return (
+                <Rings
+                  size={68}
+                  stroke={7}
+                  rings={[{ value: owing ? share : 1, color: c.statement.status === 'overdue' ? 'var(--bad)' : 'var(--good)' }]}
+                  label={owing ? `${Math.round(share * 100)} % av regningen betalt, ${left} dager til forfall` : 'Regningen er betalt'}
+                >
+                  {owing ? (
+                    <>
+                      <strong className="num">{Math.abs(left)}</strong>
+                      <span>{left < 0 ? 'dg. sent' : 'dager'}</span>
+                    </>
+                  ) : (
+                    <strong>✓</strong>
+                  )}
+                </Rings>
+              );
+            })()}
           </div>
           <dl className="cc-face-facts">
             <div>
