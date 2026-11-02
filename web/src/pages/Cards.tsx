@@ -9,8 +9,9 @@ import { api } from '../api';
 import { dayLabel as fullDay, kr } from '../format';
 import { useStore } from '../store';
 import { Icon, Modal, MoneyInput, Skeleton, useToast } from '../components/ui';
-import { dayDiff, todayISO } from '../../../shared/months';
+import { addDays, dayDiff, todayISO } from '../../../shared/months';
 import { payToStayFree, whatIfPay } from '../../../shared/cardplan';
+import { closesAround, dueFor } from '../../../shared/carddates';
 
 interface Card {
   id: number;
@@ -24,6 +25,7 @@ interface Card {
   min_pay_pct: number | null;
   min_pay_kr: number | null;
   configured: boolean;
+  guessed: { statementDay: boolean; due: boolean };
   owed: number;
   available: number | null;
   statement: {
@@ -73,6 +75,7 @@ interface Purchase {
   bill: string;
   closes: string;
   kind: 'purchase' | 'unknown' | 'opening';
+  cashLike: boolean;
 }
 
 interface BankStatement {
@@ -231,7 +234,7 @@ function CardPanel({ c, onEdit, onBill, onChanged }: { c: Card; onEdit: () => vo
       </div>
 
       <div className="cc-body">
-        <Answer c={c} />
+        <Answer c={c} onEdit={onEdit} />
         <Notes c={c} onBill={onBill} onEdit={onEdit} onChanged={onChanged} />
 
         <div className="seg cc-tabs" role="tablist">
@@ -257,7 +260,7 @@ function CardPanel({ c, onEdit, onBill, onChanged }: { c: Card; onEdit: () => vo
  * The answer: "nothing should cost interest up to and including [date]: pay X by Y". The date defaults to the
  * next deadline; any date can be picked. Below it: what a smaller (or bigger) payment would cover.
  */
-function Answer({ c }: { c: Card }) {
+function Answer({ c, onEdit }: { c: Card; onEdit: () => void }) {
   const today = todayISO();
   const unpaid = c.periods.filter((p) => p.left > 0);
   const dues = [...new Set(unpaid.map((p) => p.due))].sort();
@@ -279,6 +282,21 @@ function Answer({ c }: { c: Card }) {
     );
 
   const plan = payToStayFree(c.periods, until, today);
+  const guessed = c.guessed.statementDay || c.guessed.due;
+  const guessNote = guessed && (
+    <div className="cc-guess small">
+      <Icon name="alert" size={15} />
+      <span>
+        <strong>Fristene er anslått.</strong> Appen vet ikke {c.guessed.statementDay && c.guessed.due ? 'fakturadato og forfall' : c.guessed.statementDay ? 'fakturadatoen' : 'forfallsdagen'}{' '}
+        for kortet, så den regner med {c.guessed.statementDay ? 'faktura ved månedsslutt' : ''}
+        {c.guessed.statementDay && c.guessed.due ? ' og ' : ''}
+        {c.guessed.due ? 'forfall 20 dager etter' : ''}.{' '}
+        <button className="link-btn" onClick={onEdit}>
+          Legg inn datoene
+        </button>
+      </span>
+    </div>
+  );
   const overdue = plan.steps.some((s) => s.overdue);
   const what = whatIf && amount > 0 ? whatIfPay(c.periods, amount, today) : null;
   const short = dayLabel;
@@ -314,6 +332,7 @@ function Answer({ c }: { c: Card }) {
         </div>
       </div>
 
+      {guessNote}
       {plan.total === 0 ? (
         <>
           <strong className="cc-answer-big">Ingenting å betale før {dayLabel(until)}</strong>
@@ -417,8 +436,8 @@ function Notes({ c, onBill, onEdit, onChanged }: { c: Card; onBill: () => void; 
     });
   else if (c.bank.newer)
     notes.push({ key: 'newer', text: `Ny regning ble laget ${dayLabel(c.statement.closed)}.`, action: 'Legg den inn', run: onBill, warn: true });
-  if (!c.configured)
-    notes.push({ key: 'terms', text: 'Legg inn renten og forfallsdagen, så blir datoer og renter riktige.', action: 'Vilkår', run: onEdit });
+  if (!c.interest_rate)
+    notes.push({ key: 'terms', text: 'Legg inn renten, så ser du hva det koster å betale for sent.', action: 'Vilkår', run: onEdit });
   if (exact && Math.abs(diff) >= 100)
     notes.push({ key: 'match', text: `Kontoer viser ${kr(c.bank.appOwed)} skyldig, banken ${kr(c.owed)}.`, action: 'Juster Kontoer', run: match });
   if (!notes.length) return null;
@@ -436,7 +455,11 @@ function Notes({ c, onBill, onEdit, onChanged }: { c: Card; onBill: () => void; 
   );
 }
 
-/** Every purchase, grouped by the bill it's on, with days until interest. */
+/**
+ * Every purchase, grouped by the bill it's on. On a Norwegian card the interest-free deadline belongs to the
+ * bill: everything on it must be paid by its due date. So the countdown is shown once per bill, and each
+ * purchase shows how many interest-free days it got in total (an early purchase gets more than a late one).
+ */
 function Purchases({ c }: { c: Card }) {
   const [showPaid, setShowPaid] = useState(false);
   const [open, setOpen] = useState<Record<string, boolean>>({});
@@ -445,39 +468,54 @@ function Purchases({ c }: { c: Card }) {
   const groups = new Map<string, Purchase[]>();
   for (const p of c.purchases) if (showPaid || p.status !== 'paid') groups.set(p.closes, [...(groups.get(p.closes) ?? []), p]);
   const ordered = [...groups.entries()].sort((a, b) => a[1][0].due.localeCompare(b[1][0].due));
-  const tone = (p: Purchase) => (p.status === 'paid' ? 'paid' : p.status === 'overdue' || p.daysLeft <= 6 ? 'bad' : p.daysLeft <= 20 ? 'warn' : 'good');
+  const guessed = c.guessed.statementDay || c.guessed.due;
   const LIMIT = 10;
   return (
     <div className="cc-purchases">
       {ordered.map(([closes, list]) => {
         const first = list[0];
-        const left = list.reduce((s, p) => s + p.left, 0);
+        const unpaid = list.filter((p) => p.status !== 'paid');
+        const left = unpaid.reduce((s, p) => s + p.left, 0);
+        const daysLeft = first.daysLeft;
+        const overdue = unpaid.length > 0 && daysLeft < 0;
+        const tone = !unpaid.length ? 'paid' : overdue || daysLeft <= 6 ? 'bad' : daysLeft <= 20 ? 'warn' : 'good';
         const shown = open[closes] || list.length <= LIMIT + 2 ? list : list.slice(0, LIMIT);
         return (
           <div key={closes} className="cc-group">
-            <div className="cc-group-head small">
+            <div className="cc-group-head">
               <div className="grow" style={{ minWidth: 0 }}>
                 <strong>{cap(first.bill)}</strong>
-                <div className="muted">Betales innen {dayLabel(first.due)}</div>
+                <div className="small muted">
+                  {unpaid.length
+                    ? `${kr(left)} må betales innen ${dayLabel(first.due)}${guessed ? ' (anslått)' : ''}`
+                    : `Betalt ✓ · forfall ${dayLabel(first.due)}`}
+                  {!first.billed ? ` · lukkes ${dayLabel(closes)}, nye kjøp før det kommer i tillegg` : ''}
+                </div>
               </div>
-              <strong className="num">{kr(left)}</strong>
+              {unpaid.length > 0 && (
+                <div className={`cc-days big ${tone}`}>
+                  <strong>{overdue ? -daysLeft : daysLeft}</strong>
+                  <span>{overdue ? (-daysLeft === 1 ? 'dag for sent' : 'dager for sent') : daysLeft === 0 ? 'siste dag' : daysLeft === 1 ? 'dag igjen' : 'dager igjen'}</span>
+                </div>
+              )}
             </div>
             {shown.map((p) => (
               <div key={p.id} className={`cc-row ${p.status === 'paid' ? 'paid' : ''}`}>
                 <div className="grow" style={{ minWidth: 0 }}>
                   <div className={`ellipsis ${p.kind !== 'purchase' ? 'cc-estimated' : ''}`}>{p.payee}</div>
-                  <div className="small muted ellipsis">
-                    {p.kind === 'unknown' ? 'Fra bankens tall' : p.kind === 'opening' ? 'Gjeld fra før appen' : dayLabel(p.date)}
-                    {p.left > 0 && p.left < p.amount ? ` · ${kr(p.left)} igjen av ${kr(p.amount)}` : ''}
+                  <div className="small muted">
+                    {p.kind === 'unknown'
+                      ? 'Fra bankens tall: ikke en transaksjon appen har'
+                      : p.kind === 'opening'
+                        ? 'Gjeld fra før appen'
+                        : `${dayLabel(p.date)} · ${p.freeDays} rentefrie dager`}
+                    {p.status === 'paid' ? ' · betalt' : p.left < p.amount ? ` · ${kr(p.left)} igjen` : ''}
                   </div>
+                  {p.cashLike && p.status !== 'paid' && (
+                    <div className="small warn-text">Påfyll/uttak: mange banker tar rente fra første dag og gebyr på dette</div>
+                  )}
                 </div>
-                <span className="num cc-row-amount">{kr(p.left > 0 ? p.left : p.amount)}</span>
-                <span
-                  className={`cc-days ${tone(p)}`}
-                  title={p.status === 'free' ? `Rentefritt til ${dayLabel(p.due)}` : p.interest ? `Ca. ${kr(p.interest)} i renter` : undefined}
-                >
-                  {p.status === 'paid' ? '✓' : p.status === 'overdue' ? `+${-p.daysLeft} d` : p.daysLeft === 0 ? 'i dag' : `${p.daysLeft} d`}
-                </span>
+                <span className="num cc-row-amount">{kr(p.amount)}</span>
               </div>
             ))}
             {shown.length < list.length && (
@@ -489,7 +527,7 @@ function Purchases({ c }: { c: Card }) {
         );
       })}
       <div className="row small muted" style={{ justifyContent: 'space-between' }}>
-        <span>Dager = rentefrie dager igjen. Innbetalinger går til eldste regning først.</span>
+        <span>Rentefristen gjelder hele regningen. Innbetalinger går til eldste regning først.</span>
         {paidCount > 0 && (
           <button className="link-btn" onClick={() => setShowPaid((v) => !v)}>
             {showPaid ? 'Skjul betalte' : `Vis betalte (${paidCount})`}
@@ -584,6 +622,18 @@ function Insight({ c, onEdit }: { c: Card; onEdit: () => void }) {
       text: (
         <>
           {kr(c.feesThisYear.total)} ({c.feesThisYear.items.map((f) => f.payee).slice(0, 3).join(', ')}).
+        </>
+      ),
+    });
+  const cashLike = c.purchases.filter((p) => p.cashLike && p.status !== 'paid');
+  if (cashLike.length)
+    facts.push({
+      title: 'Påfyll og uttak på kortet',
+      tone: 'warn',
+      text: (
+        <>
+          {kr(cashLike.reduce((s, p) => s + p.left, 0))} ubetalt ({[...new Set(cashLike.map((p) => p.payee.split(',')[0].trim()))].slice(0, 2).join(', ')}). Påfyll
+          av Revolut og lignende regnes ofte som kontantuttak: rente fra første dag og gebyr, uansett forfall. Sjekk vilkårene eller fakturaen.
         </>
       ),
     });
@@ -751,6 +801,16 @@ function TermsEditor({ card, onClose, onSaved }: { card: Card; onClose: () => vo
   };
   const days = Array.from({ length: 31 }, (_, i) => i + 1);
 
+  // What these dates mean, right now: which purchases land on which bill, and when each must be paid.
+  const dates = { statement_day: statementDay || null, due_day: dueDay || null, free_days: num(freeDays) };
+  const today = todayISO();
+  const { last, next } = closesAround(today, dates.statement_day);
+  const after = closesAround(addDays(next, 1), dates.statement_day).next;
+  const bills = [
+    { from: addDays(last, 1), closes: next, ...dueFor(next, last, dates) },
+    { from: addDays(next, 1), closes: after, ...dueFor(after, next, dates) },
+  ];
+
   const save = async () => {
     try {
       await api.patch(`/accounts/${card.id}`, {
@@ -799,7 +859,7 @@ function TermsEditor({ card, onClose, onSaved }: { card: Card; onClose: () => vo
       </div>
       <div className="row" style={{ alignItems: 'flex-end' }}>
         <label className="field" style={{ flex: '1 1 140px' }}>
-          Fakturadato (perioden lukkes)
+          Fakturadato
           <select className="select" value={statementDay} onChange={(e) => setStatementDay(e.target.value ? Number(e.target.value) : '')}>
             <option value="">Siste dag i måneden</option>
             {days.map((d) => (
@@ -808,9 +868,10 @@ function TermsEditor({ card, onClose, onSaved }: { card: Card; onClose: () => vo
               </option>
             ))}
           </select>
+          <span className="help">Siste dag med kjøp på en regning.</span>
         </label>
         <label className="field" style={{ flex: '1 1 140px' }}>
-          Forfall (betal innen)
+          Forfallsdato
           <select className="select" value={dueDay} onChange={(e) => setDueDay(e.target.value ? Number(e.target.value) : '')}>
             <option value="">Vet ikke</option>
             {days.map((d) => (
@@ -819,13 +880,26 @@ function TermsEditor({ card, onClose, onSaved }: { card: Card; onClose: () => vo
               </option>
             ))}
           </select>
+          <span className="help">Betal hele regningen innen denne dagen.</span>
         </label>
       </div>
-      <label className="field">
-        Rentefrie dager («inntil … dager»)
-        <input className="input" inputMode="numeric" value={freeDays} onChange={(e) => setFreeDays(e.target.value)} placeholder="f.eks. 50" />
-        <span className="help">Brukes til å regne ut forfall hvis du ikke vet forfallsdatoen.</span>
-      </label>
+      {!dueDay && (
+        <label className="field">
+          Eller: rentefrie dager («inntil … dager»)
+          <input className="input" inputMode="numeric" value={freeDays} onChange={(e) => setFreeDays(e.target.value)} placeholder="f.eks. 50" />
+          <span className="help">Brukes bare når forfallsdatoen ikke er kjent: forfall = inntil så mange dager fra periodens første dag.</span>
+        </label>
+      )}
+      <div className="cc-terms-preview small">
+        <strong>Slik blir det:</strong>
+        {bills.map((b) => (
+          <div key={b.closes}>
+            Kjøp {dayLabel(b.from)}–{dayLabel(b.closes)} betales innen <strong>{dayLabel(b.due)}</strong>
+            {b.estimate ? ' (anslått)' : ''} · {dayDiff(b.closes, b.due)}–{dayDiff(b.from, b.due)} rentefrie dager
+          </div>
+        ))}
+        {card.bank.statement && <div className="muted">Fakturadatoen fra regningen du la inn ({dayLabel(card.bank.statement.closed)}) brukes foran denne.</div>}
+      </div>
       <div className="row" style={{ alignItems: 'flex-end' }}>
         <label className="field" style={{ flex: '1 1 140px' }}>
           Minstebeløp (% av regningen)

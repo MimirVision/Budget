@@ -272,4 +272,44 @@ describe('Kredittkort', () => {
     expect(by.Dressmann).toMatchObject({ left: 200000 });
     expect(by.Kiwi).toMatchObject({ left: 150000, amount: 300000 }); // half of it was paid by the 15.10 payment
   });
+
+  it('gives every purchase on a bill the same deadline, but its own number of interest-free days', () => {
+    // A card whose bill closes on the 4th and is due on the 20th: 5.10–4.11 is one bill, due 20.11.
+    const { db, tx } = setup({ statement_day: 4, due_day: 20 });
+    tx('2026-10-05', -100000, 'Sport Outlet');
+    tx('2026-10-31', -40000, 'Wolt');
+    tx('2026-11-01', -59700, 'Klarna');
+    tx('2026-11-05', -20000, 'Rema'); // the next bill
+    const [c] = cardOverview(db, '2026-11-06');
+    const by = Object.fromEntries(c.purchases.map((p) => [p.payee, p]));
+    expect(by['Sport Outlet']).toMatchObject({ due: '2026-11-20', daysLeft: 14, freeDays: 46, billed: true });
+    expect(by.Wolt).toMatchObject({ due: '2026-11-20', daysLeft: 14, freeDays: 20 });
+    expect(by.Klarna).toMatchObject({ due: '2026-11-20', daysLeft: 14, freeDays: 19 });
+    expect(by.Rema).toMatchObject({ due: '2026-12-20', daysLeft: 44, freeDays: 45, billed: false });
+    expect(c.statement).toMatchObject({ closed: '2026-11-04', due: '2026-11-20', amount: 199700 });
+    expect(c.guessed).toEqual({ statementDay: false, due: false });
+    expect(c.freeToday).toEqual({ days: 44, until: '2026-12-20' });
+    expect(c.bestBuyDay).toBe(5);
+  });
+
+  it('charges interest on an overdue bill from each purchase date, and says which dates are guesses', () => {
+    const { db, tx, card } = setup({ interest_rate: 2000 }); // 20 %
+    run(db, 'UPDATE accounts SET statement_day = NULL, due_day = NULL WHERE id = ?', card);
+    tx('2026-10-01', -365000, 'Elkjøp');
+    tx('2026-10-31', -365000, 'Kiwi');
+    const [c] = cardOverview(db, '2026-11-30'); // due 20.11 (guessed: month end + 20 days), 10 days late
+    expect(c.guessed).toEqual({ statementDay: true, due: true });
+    expect(c.statement).toMatchObject({ due: '2026-11-20', status: 'overdue', dueIsEstimate: true });
+    // 3 650 kr at 20 % is 2 kr a day: Elkjøp 60 days, Kiwi 30 days.
+    expect(c.breakdown.accruedInterest).toBe(60 * 200 + 30 * 200);
+  });
+
+  it('flags cash withdrawals and wallet top-ups, which often cost interest from day one', () => {
+    const { db, tx } = setup();
+    tx('2026-10-24', -500000, 'Revolut , Dublin, IRL');
+    tx('2026-10-25', -50000, 'Kiwi');
+    const by = Object.fromEntries(cardOverview(db, '2026-11-02')[0].purchases.map((p) => [p.payee, p]));
+    expect(by['Revolut , Dublin, IRL'].cashLike).toBe(true);
+    expect(by.Kiwi.cashLike).toBe(false);
+  });
 });
