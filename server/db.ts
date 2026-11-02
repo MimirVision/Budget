@@ -199,6 +199,9 @@ CREATE TABLE IF NOT EXISTS pending_auth (
 
 /** Columns added after the first version. ALTER fails if the column is already there, which is fine. */
 const MIGRATIONS = [
+  // Card debt from before "Start på nytt" is shown by the Kortregning pot, not taken from Klar til fordeling.
+  `UPDATE transactions SET category_id = NULL WHERE source = 'freshstart' AND amount < 0
+     AND account_id IN (SELECT id FROM accounts WHERE kind = 'credit')`,
   // Kortregning: the category that holds the money for paying a credit card.
   'ALTER TABLE categories ADD COLUMN card_account_id INTEGER',
   // Which day of the month the card bill is due.

@@ -28,20 +28,35 @@ export function incomeCategory(db: DB): number | null {
   );
 }
 
+/**
+ * The category an opening balance is booked to. Money on a budget account lands in Klar til fordeling. Debt on a
+ * credit card doesn't: it's paid from the card's Kortregning pot, which shows it as needed (like YNAB), so a big
+ * card balance from before the start doesn't make Klar til fordeling negative.
+ */
+export function openingCategory(db: DB, a: { kind: string; on_budget: number | boolean }, amount: number): number | null {
+  if (!a.on_budget) return null;
+  if (a.kind === 'credit' && amount < 0) return null;
+  return incomeCategory(db);
+}
+
 /** Balance each open account should start with on `start` (YYYY-MM-DD). */
 export function previewFreshStart(db: DB, start: string): OpeningPreview[] {
   const accounts = all<any>(db, 'SELECT * FROM accounts WHERE closed = 0 ORDER BY sort, id');
   return accounts.map((a) => {
     // Openings from an earlier fresh start don't count; everything else on/after the start date does.
+    // What happened from the start date up to when the bank's balance was taken (from a sync it's now; from a
+    // CSV it's the file's newest day).
+    const balanceDay = a.bank_balance_at ? String(a.bank_balance_at).slice(0, 10) : '9999-12-31';
     const after = get<{ s: number }>(
       db,
-      'SELECT COALESCE(SUM(amount), 0) AS s FROM transactions WHERE account_id = ? AND date >= ? AND source != ?',
+      'SELECT COALESCE(SUM(amount), 0) AS s FROM transactions WHERE account_id = ? AND date >= ? AND date <= ? AND source != ?',
       a.id,
       start,
+      balanceDay,
       SOURCE,
     )!.s;
-    if (a.bank_balance !== null && a.bank_balance !== undefined) {
-      // Synced: today's bank balance minus what has happened since the start date = balance on the start date.
+    if (a.bank_balance !== null && a.bank_balance !== undefined && balanceDay >= start) {
+      // The bank's balance minus what has happened since the start date = balance on the start date.
       return { accountId: a.id, name: a.name, kind: a.kind, onBudget: !!a.on_budget, source: 'bank' as const, opening: a.bank_balance - after };
     }
     const before = get<{ s: number }>(
@@ -59,7 +74,6 @@ export function previewFreshStart(db: DB, start: string): OpeningPreview[] {
 export function applyFreshStart(db: DB, start: string, overrides: Record<number, number> = {}) {
   if (!/^\d{4}-\d{2}-01$/.test(start)) throw new Error('Velg en måned å starte fra');
   const preview = previewFreshStart(db, start);
-  const income = incomeCategory(db);
   tx(db, () => {
     run(db, 'DELETE FROM transactions WHERE source = ?', SOURCE);
     for (const p of preview) {
@@ -71,7 +85,7 @@ export function applyFreshStart(db: DB, start: string, overrides: Record<number,
         p.accountId,
         start,
         opening,
-        p.onBudget ? income : null,
+        openingCategory(db, { kind: p.kind, on_budget: p.onBudget }, opening),
         SOURCE,
       );
     }
@@ -118,7 +132,24 @@ export function addFreshStartOpening(db: DB, accountId: number) {
     accountId,
     start,
     p.opening,
-    p.onBudget ? incomeCategory(db) : null,
+    openingCategory(db, { kind: p.kind, on_budget: p.onBudget }, p.opening),
     SOURCE,
   );
+}
+
+/**
+ * A balance from the bank (a CSV import) after "Start på nytt": set the account's opening on the start date so
+ * the app's balance matches the bank's. The bank's own number wins over one typed in at the start.
+ */
+export function followBankBalance(db: DB, accountId: number) {
+  const start = getSetting(db, 'budget_start');
+  if (!start) return;
+  const p = previewFreshStart(db, start).find((x) => x.accountId === accountId);
+  if (!p || p.source !== 'bank') return;
+  const manual: number[] = JSON.parse(getSetting(db, 'budget_start_manual') ?? '[]');
+  if (manual.includes(accountId)) setSetting(db, 'budget_start_manual', JSON.stringify(manual.filter((x) => x !== accountId)));
+  const category = openingCategory(db, { kind: p.kind, on_budget: p.onBudget }, p.opening);
+  if (get(db, 'SELECT 1 FROM transactions WHERE account_id = ? AND source = ?', accountId, SOURCE))
+    run(db, 'UPDATE transactions SET amount = ?, category_id = ? WHERE account_id = ? AND source = ?', p.opening, category, accountId, SOURCE);
+  else addFreshStartOpening(db, accountId);
 }

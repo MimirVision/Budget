@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { all, get, run } from './db.ts';
 import { openDb } from './db-node.ts';
 import { getBudget, readyToAssign, setAssigned } from './budget.ts';
-import { applyFreshStart, followBankAfterFreshStart, previewFreshStart, undoFreshStart } from './freshstart.ts';
+import { applyFreshStart, followBankAfterFreshStart, followBankBalance, previewFreshStart, undoFreshStart } from './freshstart.ts';
 import { overview } from './overview.ts';
 
 function setup() {
@@ -32,7 +32,10 @@ describe('fresh start', () => {
     expect(preview.find((p) => p.accountId === tf)).toMatchObject({ source: 'history', opening: 0 });
 
     applyFreshStart(db, '2026-11-01', { [tf]: -320_000 }); // TF card typed in: 3 200 kr owed
-    expect(readyToAssign(db)).toBe(2_510_000 - 320_000);
+    // Card debt isn't taken from Klar til fordeling: the card's Kortregning pot shows it as needed instead.
+    expect(readyToAssign(db)).toBe(2_510_000);
+    const pot = getBudget(db, '2026-11').groups.flatMap((g) => g.categories).find((c) => c.card?.accountId === tf)!;
+    expect(pot).toMatchObject({ needed: 320_000, card: { owed: 320_000 } });
     const nov = getBudget(db, '2026-11');
     const groceries = nov.groups.flatMap((g) => g.categories).find((c) => c.id === cat('Dagligvarer'))!;
     expect(groceries.available).toBe(-10_000); // October's 2 000 kr leftover is gone
@@ -60,5 +63,20 @@ describe('fresh start', () => {
     undoFreshStart(db);
     expect(readyToAssign(db)).toBe(before);
     expect(all(db, "SELECT 1 FROM transactions WHERE source = 'freshstart'")).toHaveLength(0);
+  });
+
+  it('sets a card\'s opening from a balance in an imported CSV, without touching Klar til fordeling', () => {
+    const { db, tf, cat } = setup();
+    applyFreshStart(db, '2026-11-01');
+    run(db, "INSERT INTO transactions(account_id, date, amount, payee, category_id, reviewed) VALUES (?, '2026-11-01', -59700, 'Klarna', ?, 1)", tf, cat('Klær'));
+    const rta = readyToAssign(db);
+    // The CSV said 33 984,21 owed on 1.11; the app only had the Klarna purchase since the start.
+    run(db, "UPDATE accounts SET bank_balance = -3398421, bank_balance_at = '2026-11-01 23:59:59' WHERE id = ?", tf);
+    followBankBalance(db, tf);
+    const balance = get<{ s: number }>(db, 'SELECT SUM(amount) AS s FROM transactions WHERE account_id = ? AND date >= ?', tf, '2026-11-01')!.s;
+    expect(balance).toBe(-3398421);
+    expect(get(db, "SELECT amount, category_id FROM transactions WHERE account_id = ? AND source = 'freshstart'", tf)).toEqual({ amount: -3338721, category_id: null });
+    expect(readyToAssign(db)).toBe(rta);
+    expect(getBudget(db, '2026-11').uncategorized.count).toBe(0);
   });
 });
