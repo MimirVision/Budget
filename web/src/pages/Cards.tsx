@@ -9,6 +9,7 @@ import { dayLabel, kr } from '../format';
 import { useStore } from '../store';
 import { Icon, Modal, MoneyInput, Skeleton, useToast } from '../components/ui';
 import { dayDiff, todayISO } from '../../../shared/months';
+import { payToStayFree, whatIfPay } from '../../../shared/cardplan';
 
 interface Card {
   id: number;
@@ -24,7 +25,18 @@ interface Card {
   configured: boolean;
   owed: number;
   available: number | null;
-  statement: { closed: string; due: string; amount: number; paid: number; left: number; status: 'paid' | 'due' | 'overdue' | 'none'; minimum: number | null; dueIsEstimate: boolean };
+  statement: {
+    closed: string;
+    due: string;
+    amount: number;
+    paid: number;
+    left: number;
+    status: 'paid' | 'due' | 'overdue' | 'none';
+    minimum: number | null;
+    dueIsEstimate: boolean;
+    fromBank: boolean;
+  };
+  bank: { statement: BankStatement | null; newer: boolean; appOwed: number };
   current: { from: string; closes: string; spent: number; due: string };
   freeToday: { days: number; until: string };
   freeMax: number;
@@ -35,7 +47,7 @@ interface Card {
   cashThisYear: { total: number; count: number };
   pot: number | null;
   breakdown: { overdue: number; nextBill: number; unbilled: number; credit: number; accruedInterest: number | null };
-  periods: Array<{ from: string; closes: string; due: string; label: string; charged: number; paid: number; left: number; status: 'open' | 'paid' | 'due' | 'overdue' }>;
+  periods: Array<{ from: string; closes: string; due: string; label: string; charged: number; paid: number; left: number; status: 'open' | 'paid' | 'due' | 'overdue'; fromBank: boolean }>;
   payments: Array<{ id: number; date: string; amount: number; kind: 'payment' | 'refund'; text: string; covered: Array<{ label: string; amount: number }>; extra: number }>;
   purchases: Purchase[];
 }
@@ -52,8 +64,23 @@ interface Purchase {
   status: 'paid' | 'free' | 'overdue';
   interest: number | null;
   billed: boolean;
+  bill: string;
+  closes: string;
+  kind: 'purchase' | 'unknown' | 'opening';
 }
 
+interface BankStatement {
+  id: number;
+  closed: string;
+  due: string;
+  amount: number;
+  minimum: number | null;
+  balance: number | null;
+  balance_date: string | null;
+}
+
+const cap = (s: string) => s.replace(/^./, (x) => x.toUpperCase());
+const days = (n: number) => `${n} ${Math.abs(n) === 1 ? 'dag' : 'dager'}`;
 const pct = (hundredths: number | null) => (hundredths === null ? '' : (hundredths / 100).toLocaleString('nb-NO', { maximumFractionDigits: 2 }));
 const years = (months: number) => {
   const y = Math.floor(months / 12);
@@ -64,6 +91,7 @@ const years = (months: number) => {
 export default function CardsPage() {
   const [cards, setCards] = useState<Card[] | null>(null);
   const [editing, setEditing] = useState<Card | null>(null);
+  const [billFor, setBillFor] = useState<Card | null>(null);
   const { version } = useStore();
   const load = () => api.get<Card[]>('/cards').then(setCards);
   useEffect(() => {
@@ -88,9 +116,19 @@ export default function CardsPage() {
         <div className="stack" style={{ gap: 16 }}>
           <Summary cards={cards} />
           {cards.map((c) => (
-            <CardPanel key={c.id} c={c} onEdit={() => setEditing(c)} />
+            <CardPanel key={c.id} c={c} onEdit={() => setEditing(c)} onBill={() => setBillFor(c)} onChanged={load} />
           ))}
         </div>
+      )}
+      {billFor && (
+        <StatementEditor
+          card={billFor}
+          onClose={() => setBillFor(null)}
+          onSaved={() => {
+            setBillFor(null);
+            load();
+          }}
+        />
       )}
       {editing && (
         <TermsEditor
@@ -106,7 +144,7 @@ export default function CardsPage() {
   );
 }
 
-function CardPanel({ c, onEdit }: { c: Card; onEdit: () => void }) {
+function CardPanel({ c, onEdit, onBill, onChanged }: { c: Card; onEdit: () => void; onBill: () => void; onChanged: () => void }) {
   const [more, setMore] = useState(false);
   const used = c.credit_limit ? Math.min(100, (c.owed / c.credit_limit) * 100) : null;
   const unused = c.credit_limit ? c.credit_limit - c.owed : 0;
@@ -129,7 +167,7 @@ function CardPanel({ c, onEdit }: { c: Card; onEdit: () => void }) {
           </button>
         </div>
         <div className="cc-face-owed">
-          <span>Skylder</span>
+          <span>Skylder{c.bank.statement ? ' (etter bankens regning)' : ''}</span>
           <strong>{kr(c.owed)}</strong>
         </div>
         {used !== null && (
@@ -145,6 +183,8 @@ function CardPanel({ c, onEdit }: { c: Card; onEdit: () => void }) {
       </div>
 
       <div className="cc-body">
+        <BankBill c={c} onBill={onBill} onChanged={onChanged} />
+
         {!c.configured && (
           <button className="callout info small cc-setup" onClick={onEdit}>
             <Icon name="alert" size={18} />
@@ -166,13 +206,14 @@ function CardPanel({ c, onEdit }: { c: Card; onEdit: () => void }) {
               <div className="small">
                 {s.status === 'overdue'
                   ? `Renter påløper${c.breakdown.accruedInterest ? `, ca. ${kr(c.breakdown.accruedInterest)} så langt` : ''}. Betal så fort som mulig.`
-                  : `${daysToDue === 0 ? 'I dag' : `Om ${daysToDue} ${daysToDue === 1 ? 'dag' : 'dager'}`} · minstebeløp ${kr(s.minimum ?? 0)}`}
+                  : `${daysToDue === 0 ? 'I dag' : `Om ${days(daysToDue)}`} · minstebeløp ${kr(s.minimum ?? 0)}${s.fromBank ? ' · fra bankens regning' : ' · beregnet av appen'}`}
                 {c.pot !== null && c.owed > 0 ? ` · satt av i budsjettet: ${kr(Math.max(0, c.pot))}${c.pot >= s.left ? ' ✓' : ''}` : ''}
               </div>
             </div>
           </div>
         )}
 
+        <Planner c={c} />
         <OwedBreakdown c={c} />
         <Purchases c={c} />
 
@@ -310,85 +351,382 @@ function Cycle({ c }: { c: Card }) {
   );
 }
 
-/** Each purchase with a countdown to when interest starts, most urgent first. */
+/** Every purchase, grouped by the bill it's on, with a countdown to when interest starts. */
 function Purchases({ c }: { c: Card }) {
-  const [all, setAll] = useState(false);
+  const [showPaid, setShowPaid] = useState(false);
+  const [open, setOpen] = useState<Record<string, boolean>>({});
   if (!c.purchases.length) return null;
   const unpaid = c.purchases.filter((p) => p.status !== 'paid');
-  const shown = all ? c.purchases : c.purchases.slice(0, 8);
+  const paidCount = c.purchases.length - unpaid.length;
+  const groups = new Map<string, Purchase[]>();
+  for (const p of c.purchases) if (showPaid || p.status !== 'paid') groups.set(p.closes, [...(groups.get(p.closes) ?? []), p]);
+  const ordered = [...groups.entries()].sort((a, b) => a[1][0].due.localeCompare(b[1][0].due));
   const tone = (p: Purchase) => (p.status === 'paid' ? 'paid' : p.status === 'overdue' ? 'bad' : p.daysLeft <= 6 ? 'bad' : p.daysLeft <= 20 ? 'warn' : 'good');
+  const LIMIT = 12;
   return (
     <div className="cc-purchases">
       <div className="row" style={{ justifyContent: 'space-between' }}>
-        <strong>Kjøp og rentefrie dager</strong>
+        <strong>Alle kjøp og rentefrie dager</strong>
         <span className="small muted">
           {unpaid.length} ubetalte · {kr(unpaid.reduce((s, p) => s + p.left, 0))}
         </span>
       </div>
-      <div className="list">
-        {shown.map((p) => {
-          const t = tone(p);
-          const share = p.freeDays > 0 ? Math.max(0, Math.min(1, p.daysLeft / p.freeDays)) : 0;
-          return (
-            <div key={p.id} className={`cc-purchase ${t}`}>
+      <div className="small muted">
+        Rentefritt så lenge regningen kjøpet står på er betalt i sin helhet innen forfall. Innbetalinger går til den eldste regningen først.
+      </div>
+      {ordered.map(([closes, list]) => {
+        const first = list[0];
+        const left = list.reduce((s, p) => s + p.left, 0);
+        const all = open[closes] || list.length <= LIMIT;
+        const shown = all ? list : list.slice(0, LIMIT);
+        return (
+          <div key={closes} className="cc-group">
+            <div className="cc-group-head">
               <div className="grow" style={{ minWidth: 0 }}>
-                <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap', gap: 8 }}>
-                  <span className="ellipsis" style={{ fontWeight: 550 }}>
-                    {p.payee}
-                  </span>
-                  <span className="num">
-                    {p.left > 0 && p.left < p.amount ? (
-                      <>
-                        <span className="faint" style={{ textDecoration: 'line-through', marginRight: 6 }}>
-                          {kr(p.amount)}
-                        </span>
-                        {kr(p.left)}
-                      </>
-                    ) : (
-                      kr(p.amount)
-                    )}
-                  </span>
-                </div>
+                <strong>{cap(first.bill)}</strong>
                 <div className="small muted">
-                  {dayLabel(p.date)} · {p.billed ? 'på regningen' : 'ikke fakturert ennå'} · betales innen {dayLabel(p.due)}
+                  {first.billed ? 'Fakturert' : `Faktureres ${dayLabel(closes)}`} · betales innen {dayLabel(first.due)}
                 </div>
-                {p.status !== 'paid' && (
-                  <div className="cc-countdown-bar">
-                    <div style={{ width: `${p.status === 'overdue' ? 100 : share * 100}%` }} />
-                  </div>
-                )}
               </div>
-              <div className={`cc-countdown ${t}`}>
-                {p.status === 'paid' ? (
-                  <>Betalt ✓</>
-                ) : p.status === 'overdue' ? (
-                  <>
-                    <strong>{-p.daysLeft} d</strong>
-                    <span>for sent{p.interest ? ` · ${kr(p.interest)} rente` : ''}</span>
-                  </>
-                ) : (
-                  <>
-                    <strong>{p.daysLeft} d</strong>
-                    <span>rentefritt</span>
-                  </>
-                )}
+              <div className="right">
+                <strong className="num">{kr(left)}</strong>
+                <div className="small muted">igjen</div>
               </div>
             </div>
-          );
-        })}
-      </div>
-      {c.purchases.length > 8 && (
-        <button className="link-btn" onClick={() => setAll((v) => !v)}>
-          {all ? 'Vis færre' : `Vis alle ${c.purchases.length}`}
+            {shown.map((p) => {
+              const t = tone(p);
+              const share = p.freeDays > 0 ? Math.max(0, Math.min(1, p.daysLeft / p.freeDays)) : 0;
+              return (
+                <div key={p.id} className={`cc-purchase ${t} ${p.kind !== 'purchase' ? 'cc-estimated' : ''}`}>
+                  <div className="grow" style={{ minWidth: 0 }}>
+                    <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap', gap: 8 }}>
+                      <span className="ellipsis" style={{ fontWeight: 550 }}>
+                        {p.payee}
+                      </span>
+                      <span className="num">
+                        {p.left > 0 && p.left < p.amount ? (
+                          <>
+                            <span className="faint" style={{ textDecoration: 'line-through', marginRight: 6 }}>
+                              {kr(p.amount)}
+                            </span>
+                            {kr(p.left)}
+                          </>
+                        ) : (
+                          kr(p.amount)
+                        )}
+                      </span>
+                    </div>
+                    <div className="small muted">
+                      {p.kind === 'unknown'
+                        ? 'Fra bankens tall: ikke en transaksjon appen har'
+                        : p.kind === 'opening'
+                          ? `Saldoen ${dayLabel(p.date)}: gjeld fra før`
+                          : `Kjøpt ${dayLabel(p.date)} · ${p.freeDays} rentefrie dager i alt`}
+                    </div>
+                    {p.status !== 'paid' && (
+                      <div className="cc-countdown-bar">
+                        <div style={{ width: `${p.status === 'overdue' ? 100 : share * 100}%` }} />
+                      </div>
+                    )}
+                  </div>
+                  <div className={`cc-countdown ${t}`}>
+                    {p.status === 'paid' ? (
+                      <>Betalt ✓</>
+                    ) : p.status === 'overdue' ? (
+                      <>
+                        <strong>{-p.daysLeft} d</strong>
+                        <span>med renter{p.interest ? ` · ca. ${kr(p.interest)}` : ''}</span>
+                      </>
+                    ) : (
+                      <>
+                        <strong>{p.daysLeft === 0 ? 'I dag' : `${p.daysLeft} d`}</strong>
+                        <span>{p.daysLeft === 0 ? 'siste rentefrie dag' : 'til renter'}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {!all && (
+              <button className="link-btn" onClick={() => setOpen((o) => ({ ...o, [closes]: true }))}>
+                Vis alle {list.length}
+              </button>
+            )}
+          </div>
+        );
+      })}
+      {paidCount > 0 && (
+        <button className="link-btn" onClick={() => setShowPaid((v) => !v)}>
+          {showPaid ? 'Skjul betalte kjøp' : `Vis ${paidCount} betalte kjøp`}
         </button>
       )}
       {unpaid.some((p) => p.interest) && (
         <div className="small faint">
-          Betales ikke regningen i sin helhet innen forfall, beregnes renter fra kjøpsdato: ca.{' '}
+          Betales ikke en regning i sin helhet innen forfall, beregnes renter fra kjøpsdato: ca.{' '}
           {kr(Math.round((unpaid.reduce((s, p) => s + p.left, 0) * ((c.interest_rate ?? 0) / 10000) * 7) / 365))} per uke på det som er ubetalt nå.
         </div>
       )}
     </div>
+  );
+}
+
+/** The bill from the bank: what the card page starts from. Asks for it when it's missing or a newer one has come. */
+function BankBill({ c, onBill, onChanged }: { c: Card; onBill: () => void; onChanged: () => void }) {
+  const toast = useToast();
+  const b = c.bank.statement;
+  const diff = c.bank.appOwed - c.owed;
+  const match = async () => {
+    try {
+      await api.post(`/cards/${c.id}/match-balance`);
+      toast('Saldoen i Kontoer er justert. Gå gjennom justeringen for å gi den en kategori.');
+      onChanged();
+    } catch (e: any) {
+      toast(e.message, { error: true });
+    }
+  };
+  if (!b)
+    return (
+      <button className="callout info small cc-setup" onClick={onBill}>
+        <Icon name="alert" size={18} />
+        <div style={{ textAlign: 'left' }}>
+          <strong>Legg inn regningen fra banken.</strong> Appen ser ikke alt som har skjedd på kortet (for eksempel før dere startet, eller
+          kort uten synkronisering). Skriv inn «å betale» og forfall fra fakturaen, så regnes alt herfra.
+        </div>
+      </button>
+    );
+  return (
+    <div className="cc-bank">
+      <div className="row" style={{ flexWrap: 'nowrap', gap: 10 }}>
+        <Icon name="bank" size={18} />
+        <div className="grow small" style={{ minWidth: 0 }}>
+          <strong>Regningen fra banken:</strong> {kr(b.amount)}, forfall {dayLabel(b.due)}
+          <span className="muted"> · fakturadato {dayLabel(b.closed)}</span>
+          {b.balance !== null && b.balance_date && (
+            <span className="muted">
+              {' '}
+              · saldo {kr(b.balance)} {dayLabel(b.balance_date)}
+            </span>
+          )}
+        </div>
+        <button className="btn sm" onClick={onBill}>
+          {c.bank.newer ? 'Ny regning' : 'Endre'}
+        </button>
+      </div>
+      {c.bank.newer && (
+        <div className="small warn-text">
+          En ny regning ble laget {dayLabel(c.statement.closed)}. Til den er lagt inn, regner appen den ut fra transaksjonene.
+        </div>
+      )}
+      {Math.abs(diff) >= 100 && (
+        <div className="small muted">
+          Kontoer viser {kr(c.bank.appOwed)} skyldig på kortet, men etter bankens tall er det {kr(c.owed)}.{' '}
+          <button className="link-btn" onClick={match}>
+            Juster saldoen i Kontoer
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** "Nothing should cost interest until …": what to pay and by when. And what a given payment would cover. */
+function Planner({ c }: { c: Card }) {
+  const today = todayISO();
+  const unpaid = c.periods.filter((p) => p.left > 0);
+  const dues = [...new Set(unpaid.map((p) => p.due))].sort();
+  const [until, setUntil] = useState(dues.find((d) => d >= today) ?? dues[dues.length - 1] ?? today);
+  const [amount, setAmount] = useState(0);
+  if (!unpaid.length) return null;
+  const plan = payToStayFree(c.periods, until, today);
+  const what = amount > 0 ? whatIfPay(c.periods, amount, today) : null;
+  const short = (d: string) => `${Number(d.slice(8, 10))}.${Number(d.slice(5, 7))}`;
+  return (
+    <div className="cc-plan">
+      <div>
+        <strong>Unngå renter</strong>
+        <div className="small muted">Ingenting skal koste renter til og med:</div>
+      </div>
+      <div className="row" style={{ gap: 6 }}>
+        {dues.map((d) => (
+          <button key={d} className={`chip-btn ${until === d ? 'on' : ''}`} onClick={() => setUntil(d)}>
+            {short(d)}
+          </button>
+        ))}
+        <input className="input sm cc-plan-date" type="date" value={until} min={today} onChange={(e) => e.target.value && setUntil(e.target.value)} aria-label="Velg dato" />
+      </div>
+      {plan.total === 0 ? (
+        <div className="cc-plan-result good">
+          <strong>Ingenting må betales for å holde det rentefritt til og med {dayLabel(until)}.</strong>
+          {plan.later && (
+            <div className="small">
+              Neste frist er {dayLabel(plan.later.due)}: {kr(plan.later.amount)}
+              {plan.later.open ? ' så langt (perioden pågår ennå)' : ''}.
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className={`cc-plan-result ${plan.steps.some((s) => s.overdue) ? 'bad' : ''}`}>
+          <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <span>Betal</span>
+            <strong className="cc-plan-amount num">{kr(plan.total)}</strong>
+          </div>
+          <div className="small">
+            {plan.steps.length === 1 ? (
+              <>
+                innen {dayLabel(plan.steps[0].due)}
+                {plan.steps[0].overdue ? ': fristen er passert, så betal i dag for å stoppe rentene' : ''} ({plan.steps[0].label}).
+              </>
+            ) : (
+              <>Alt på én gang innen {dayLabel(plan.payBy!)}, eller fordelt:</>
+            )}
+          </div>
+          {plan.steps.length > 1 && (
+            <ul className="cc-plan-steps small">
+              {plan.steps.map((st) => (
+                <li key={st.closes}>
+                  <strong className="num">{kr(st.amount)}</strong> innen {dayLabel(st.due)} · {st.label}
+                  {st.overdue ? <span className="bad-text"> · forfalt, betal nå</span> : ''}
+                  {st.open ? <span className="muted"> · så langt</span> : ''}
+                </li>
+              ))}
+            </ul>
+          )}
+          {plan.growing && (
+            <div className="small muted">
+              Perioden som lukkes {dayLabel(plan.steps.find((s) => s.open)!.closes)} pågår ennå: nye kjøp før det kommer i tillegg.
+            </div>
+          )}
+          {plan.later && (
+            <div className="small muted">
+              Etter det: {kr(plan.later.amount)} innen {dayLabel(plan.later.due)}
+              {plan.later.open ? ' (så langt)' : ''}.
+            </div>
+          )}
+        </div>
+      )}
+      <div className="cc-plan-what">
+        <label className="small muted" htmlFor={`whatif-${c.id}`}>
+          Hva om vi betaler
+        </label>
+        <MoneyInput value={amount} onCommit={setAmount} placeholder="beløp" ariaLabel="Beløp å betale" />
+      </div>
+      {what && (
+        <div className="small">
+          {what.cleared.length > 0 && <>Dekker {what.cleared.map((b) => b.label).join(' og ')} helt. </>}
+          {what.next ? (
+            <>
+              Da gjenstår <strong>{kr(what.next.left)}</strong> av {what.next.label}, som må betales {what.next.overdue ? 'så fort som mulig (forfalt)' : `innen ${dayLabel(what.next.due)}`}{' '}
+              for å unngå renter{what.next.open ? ', pluss nye kjøp før perioden lukkes' : ''}.
+            </>
+          ) : (
+            <>Da er alt betalt{what.extra > 0 ? `, og ${kr(what.extra)} blir til gode på kortet` : ''} ✓</>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Legg inn regningen: the amount to pay and the dates, as the bank's bill says. Optionally the balance now. */
+function StatementEditor({ card, onClose, onSaved }: { card: Card; onClose: () => void; onSaved: () => void }) {
+  const toast = useToast();
+  const prev = card.bank.statement;
+  const fresh = !prev || card.bank.newer;
+  const [amount, setAmount] = useState(fresh ? 0 : prev!.amount);
+  const [due, setDue] = useState(fresh ? card.statement.due : prev!.due);
+  const [closed, setClosed] = useState(fresh ? card.statement.closed : prev!.closed);
+  const [minimum, setMinimum] = useState(fresh ? 0 : prev!.minimum ?? 0);
+  const [withBalance, setWithBalance] = useState(!fresh && prev!.balance !== null);
+  const [balance, setBalance] = useState(!fresh && prev!.balance !== null ? prev!.balance : 0);
+  const [balanceDate, setBalanceDate] = useState(!fresh && prev!.balance_date ? prev!.balance_date : todayISO());
+
+  const save = async () => {
+    try {
+      await api.post(`/cards/${card.id}/statement`, {
+        closed,
+        due,
+        amount,
+        minimum: minimum || null,
+        balance: withBalance ? balance : null,
+        balance_date: withBalance ? balanceDate : null,
+      });
+      toast('Regningen er lagt inn. Kortet regnes nå ut fra den');
+      onSaved();
+    } catch (e: any) {
+      toast(e.message, { error: true });
+    }
+  };
+  const remove = async () => {
+    try {
+      await api.del(`/cards/${card.id}/statement/${prev!.id}`);
+      toast('Regningen er fjernet. Appen regner ut fra transaksjonene igjen');
+      onSaved();
+    } catch (e: any) {
+      toast(e.message, { error: true });
+    }
+  };
+
+  return (
+    <Modal
+      title={`Regningen for ${card.name}`}
+      onClose={onClose}
+      footer={
+        <>
+          {prev && !fresh && (
+            <button className="btn ghost danger" onClick={remove} style={{ marginRight: 'auto' }}>
+              Fjern
+            </button>
+          )}
+          <button className="btn ghost" onClick={onClose}>
+            Avbryt
+          </button>
+          <button className="btn primary" onClick={save} disabled={!closed || !due || (withBalance && !balance)}>
+            Lagre
+          </button>
+        </>
+      }
+    >
+      <p className="small muted" style={{ margin: 0 }}>
+        Fra fakturaen eller nettbanken. Beløpet blir stående som fasit for denne regningen; alt etter fakturadatoen regnes ut fra transaksjonene.
+      </p>
+      <label className="field">
+        Å betale (hele regningen)
+        <MoneyInput value={amount} onCommit={setAmount} placeholder="f.eks. 4 812,50" autoFocus />
+      </label>
+      <div className="row" style={{ alignItems: 'flex-end' }}>
+        <label className="field" style={{ flex: '1 1 140px' }}>
+          Forfallsdato
+          <input className="input" type="date" value={due} onChange={(e) => setDue(e.target.value)} />
+        </label>
+        <label className="field" style={{ flex: '1 1 140px' }}>
+          Fakturadato
+          <input className="input" type="date" value={closed} max={todayISO()} onChange={(e) => setClosed(e.target.value)} />
+        </label>
+      </div>
+      <label className="field">
+        Minstebeløp (valgfritt)
+        <MoneyInput value={minimum} onCommit={setMinimum} placeholder="står på fakturaen" />
+      </label>
+      <label className="check small">
+        <input type="checkbox" checked={withBalance} onChange={(e) => setWithBalance(e.target.checked)} />
+        <span>
+          <strong>Legg også inn saldoen nå</strong>
+          <span className="muted"> · totalen banken sier dere skylder, med kjøp som ikke er fakturert. Da fanger appen opp kjøp og innbetalinger den ikke har sett.</span>
+        </span>
+      </label>
+      {withBalance && (
+        <div className="row" style={{ alignItems: 'flex-end' }}>
+          <label className="field" style={{ flex: '1 1 140px' }}>
+            Saldo (skyldig)
+            <MoneyInput value={balance} onCommit={setBalance} placeholder="fra nettbanken" />
+          </label>
+          <label className="field" style={{ flex: '1 1 140px' }}>
+            Per dato
+            <input className="input" type="date" value={balanceDate} min={closed} max={todayISO()} onChange={(e) => setBalanceDate(e.target.value)} />
+          </label>
+        </div>
+      )}
+    </Modal>
   );
 }
 
@@ -593,8 +931,11 @@ function PaymentHistory({ c }: { c: Card }) {
             {c.periods.map((p) => (
               <tr key={p.closes}>
                 <td>
-                  {p.label.replace(/^./, (x) => x.toUpperCase())}
-                  <div className="faint">forfall {dayLabel(p.due)}</div>
+                  {cap(p.label)}
+                  <div className="faint">
+                    forfall {dayLabel(p.due)}
+                    {p.fromBank ? ' · fra banken' : ''}
+                  </div>
                 </td>
                 <td className="right num">{kr(p.charged)}</td>
                 <td className="right num">{kr(p.paid)}</td>

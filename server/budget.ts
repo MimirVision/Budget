@@ -8,6 +8,7 @@
  */
 import { all, get, getSetting, run, tx, type DB } from './db.ts';
 import { addMonths, currentMonth, daysInMonth, monthDiff, todayISO } from '../shared/months.ts';
+import { effectiveTerms, latestStatement, ledger, type CardTerms } from './cardledger.ts';
 
 export interface CategoryRow {
   id: number;
@@ -291,6 +292,21 @@ export function getBudget(db: DB, month: string): BudgetMonth {
       endOf(month),
     ).map((r) => [r.pot, { accountId: r.account_id, owed: Math.max(0, r.owed), dueDay: r.due_day }]),
   );
+  // A bill entered from the bank is the truth for what's owed now (the app may not have the card's whole history).
+  if (month >= currentMonth())
+    for (const card of cards.values()) {
+      const bank = latestStatement(db, card.accountId);
+      if (!bank) continue;
+      const terms = get<CardTerms & { id: number }>(
+        db,
+        'SELECT id, statement_day, due_day, interest_rate, credit_limit, free_days, min_pay_pct, min_pay_kr FROM accounts WHERE id = ?',
+        card.accountId,
+      );
+      if (!terms) continue;
+      const t = effectiveTerms(terms, bank);
+      card.owed = Math.max(0, ledger(db, t, budgetStart(db), todayISO(), bank).owed);
+      card.dueDay = t.due_day;
+    }
 
   let totalAssigned = 0;
   let totalActivity = 0;

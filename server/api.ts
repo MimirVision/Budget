@@ -6,7 +6,7 @@ import { forgetImport, ingest, linkTransfer, rejectTransferSuggestion, ruleMatch
 import { previewCsv, type CsvMapping } from './import/csv.ts';
 import { overview } from './overview.ts';
 import { payday, syncHealth, tips } from './insights.ts';
-import { cardAlerts, cardOverview } from './cards.ts';
+import { cardAlerts, cardOverview, deleteStatement, matchBalance, saveStatement, type StatementInput } from './cards.ts';
 import { expectRefund, listRefunds } from './refunds.ts';
 import { addBill, deleteBill, listBills, syncBillTargets, updateBill, type BillInput } from './bills.ts';
 import { dismissDuplicates, findDuplicates, mergeDuplicates } from './duplicates.ts';
@@ -634,6 +634,29 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
 
   // ---------- Kredittkort ----------
   api.get('/cards', (c) => c.json(cardOverview(db)));
+
+  // The bill as the bank states it: from then on the card's numbers start from it.
+  api.post('/cards/:id/statement', async (c) => {
+    const body = await c.req.json<StatementInput>();
+    try {
+      return c.json({ id: saveStatement(db, Number(c.req.param('id')), body) });
+    } catch (e: any) {
+      return badRequest(e.message);
+    }
+  });
+
+  api.post('/cards/:id/match-balance', (c) => {
+    try {
+      return c.json({ diff: matchBalance(db, Number(c.req.param('id'))) });
+    } catch (e: any) {
+      return badRequest(e.message);
+    }
+  });
+
+  api.delete('/cards/:id/statement/:sid', (c) => {
+    deleteStatement(db, Number(c.req.param('id')), Number(c.req.param('sid')));
+    return c.json({ ok: true });
+  });
 
   // ---------- Duplicates ----------
   api.get('/duplicates', (c) => c.json(findDuplicates(db)));
