@@ -55,6 +55,8 @@ export function subtitle(c: CategoryRow, pace: number): { text: string; tone?: '
 
 /** The pill that shows what's left. Re-keyed on change so it gives a little "pop". */
 export function Pill({ c }: { c: CategoryRow }) {
+  // Colour only where it means something: money there (green), money missing (amber), overspent (red).
+  // An empty category with nothing missing stays plain, so the column isn't a wall of grey pills.
   const cls = c.available < 0 ? 'bad' : c.needed > 0 ? 'warn' : c.available > 0 ? 'good' : 'zero';
   return (
     <span key={c.available} className={`pill ${cls} num pop`}>

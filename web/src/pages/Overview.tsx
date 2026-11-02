@@ -181,8 +181,8 @@ export default function OverviewPage() {
   );
 
   const tiles = (
-    <div className="ov-tiles">
-      <div className="card ov-tile">
+    <div className="card ov-tiles">
+      <div className="ov-tile">
         <span className="ov-label">Brukt</span>
         <AnimatedMoney value={data.spending} className="ov-value" />
         {running && prevSameDay !== null ? (
@@ -191,7 +191,7 @@ export default function OverviewPage() {
           <Delta now={data.spending} prev={data.prevSpending} prevLabel={prevLabel} goodWhenUp={false} />
         )}
       </div>
-      <div className="card ov-tile">
+      <div className="ov-tile">
         <span className="ov-label">Inntekt</span>
         <AnimatedMoney value={data.income} className="ov-value" />
         {running && data.income === 0 ? (
@@ -202,20 +202,20 @@ export default function OverviewPage() {
       </div>
       {data.income === 0 && (data.pendingIncome > 0 || running) ? (
         // Salary not reviewed yet: "spent more than you earned" would be a false alarm.
-        <div className="card ov-tile">
+        <div className="ov-tile">
           <span className="ov-label">Til overs</span>
           <span className="ov-value faint">–</span>
           <span className="delta faint">{data.pendingIncome > 0 ? 'Gå gjennom innbetalingene først' : 'Venter på inntekt'}</span>
         </div>
       ) : (
-        <div className={`card ov-tile ${saved >= 0 ? 'good' : 'bad'}`}>
+        <div className={`ov-tile ${saved >= 0 ? 'good' : 'bad'}`}>
           <span className="ov-label">{saved >= 0 ? 'Til overs' : 'Brukt mer enn inntekt'}</span>
           <AnimatedMoney value={Math.abs(saved)} className="ov-value" />
           <span className="delta faint">{rate !== null ? `${Math.max(rate, 0)} % av inntekten spart` : 'Ingen inntekt registrert'}</span>
         </div>
       )}
       {data.forecast ? (
-        <div className="card ov-tile">
+        <div className="ov-tile">
           <span className="ov-label">Ligger an til</span>
           <AnimatedMoney value={data.forecast.projected} className="ov-value" />
           <span className="delta faint">
@@ -225,7 +225,7 @@ export default function OverviewPage() {
           </span>
         </div>
       ) : (
-        <div className="card ov-tile">
+        <div className="ov-tile">
           <span className="ov-label">Hverdag per dag</span>
           <AnimatedMoney value={data.stats.avgPerDay} className="ov-value" />
           <span className="delta faint">

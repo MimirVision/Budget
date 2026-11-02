@@ -204,12 +204,20 @@ export default function BudgetPage() {
           </button>
         </div>
       )}
-      <WrapUp month={month} startMonth={startMonth} onChanged={() => { load(); refresh(); }} />
       <Payday budget={budget} month={month} onChanged={() => { load(); refresh(); }} />
-      <Tips month={month} onChanged={() => { load(); refresh(); }} />
+      {/* Status first: what's left to assign and the month's totals, in one place. */}
+      <section className="budget-summary card" aria-label="Status for måneden">
+        <Hero budget={budget} onAuto={() => setAutoOpen(true)} />
+        <Stats budget={budget} />
+      </section>
       <Attention budget={budget} />
-      <Hero budget={budget} onAuto={() => setAutoOpen(true)} />
-      <Stats budget={budget} />
+      {/* On a phone the month's wrap-up and tips follow the status; on a PC they sit in the side column. */}
+      {mobile && (
+        <>
+          <WrapUp month={month} startMonth={startMonth} onChanged={() => { load(); refresh(); }} />
+          <Tips month={month} onChanged={() => { load(); refresh(); }} />
+        </>
+      )}
 
       {mobile ? (
         <>
@@ -313,15 +321,13 @@ export default function BudgetPage() {
               </div>
             ) : (
               <>
-                <div className="card card-pad tip">
-                  <span aria-hidden="true">💡</span>
-                  <div className="small">
-                    <strong>Tips:</strong> klikk på en kategori for å fordele med ett klikk, flytte penger eller se siste kjøp. Skriv regnestykker
-                    rett i Fordelt, som <code>1500+300</code>.
-                  </div>
-                </div>
+                <WrapUp month={month} startMonth={startMonth} onChanged={() => { load(); refresh(); }} />
+                <Tips month={month} onChanged={() => { load(); refresh(); }} />
                 <CardBills budget={budget} onCover={(c) => assign(c.id, c.assigned + c.needed)} />
                 <Upcoming items={recurring} />
+                <p className="panel-hint">
+                  Klikk på en kategori for å fordele, flytte penger eller se siste kjøp. Fordelt tar regnestykker, som <code>1500+300</code>.
+                </p>
               </>
             )}
           </div>
@@ -333,38 +339,33 @@ export default function BudgetPage() {
   );
 }
 
-/** The one number that matters most: money that still needs a job. */
+/**
+ * The one number that matters most: money that still needs a job. Negative is shown clearly but calmly: the
+ * amount in red with a short reason, not a red banner across the page.
+ */
 function Hero({ budget, onAuto }: { budget: BudgetMonth; onAuto: () => void }) {
   const rta = budget.readyToAssign;
   const state = rta > 0 ? 'positive' : rta < 0 ? 'negative' : 'zero';
   return (
     <div className={`hero ${state}`}>
       <div className="hero-main">
-        <div className="hero-label">{rta > 0 ? 'Klar til fordeling' : rta < 0 ? 'Fordelt mer enn dere har' : 'Hver krone har en jobb'}</div>
+        <div className="hero-label">
+          {rta < 0 && <Icon name="alert" size={14} />}
+          {rta === 0 && <Icon name="check" size={14} />}
+          Klar til fordeling
+        </div>
         <div className="hero-amount">
-          {rta === 0 ? (
-            <span className="done-check" aria-hidden="true">
-              <Icon name="check" size={28} />
-            </span>
-          ) : null}
           <AnimatedMoney value={rta} />
         </div>
-        <div className="hero-sub small">
-          {rta > 0 && 'Gi pengene en jobb: trykk på en kategori, eller la autofordeling gjøre det.'}
-          {rta < 0 && 'Ta tilbake penger fra en kategori til dette blir 0.'}
-          {rta === 0 && 'Bra jobbet! Neste lønn dukker opp her.'}
+        <div className="hero-sub">
+          {rta > 0 && 'Gi pengene en jobb: velg en kategori, eller autofordel.'}
+          {rta < 0 && 'Dere har fordelt mer enn dere har. Ta tilbake fra en kategori til dette blir 0.'}
+          {rta === 0 && 'Hver krone har en jobb. Neste lønn dukker opp her.'}
         </div>
       </div>
-      {rta > 0 && (
-        <button className="btn hero-btn" onClick={onAuto}>
-          <Icon name="magic" size={16} /> Autofordel
-        </button>
-      )}
-      {rta <= 0 && (
-        <button className="btn ghost hero-btn" onClick={onAuto}>
-          <Icon name="magic" size={16} /> Autofordel
-        </button>
-      )}
+      <button className={`btn sm ${rta > 0 ? 'primary' : ''} hero-btn`} onClick={onAuto}>
+        <Icon name="magic" size={15} /> Autofordel
+      </button>
     </div>
   );
 }
