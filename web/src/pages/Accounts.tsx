@@ -646,7 +646,7 @@ interface Preview {
   inflow: number;
   outflow: number;
   preview: Array<{ date: string; amount: number; description: string; payee: string }>;
-  balance: { amount: number; date: string } | null;
+  balance: { amount: number; date: string; computed?: boolean } | null;
 }
 
 /** Banks often export in Windows-1252 (æøå would turn into garbage as UTF-8). Try UTF-8 first, then fall back. */
@@ -845,7 +845,9 @@ function ImportWizard({ account, onClose, onDone }: { account: Account; onClose:
           </div>
           {preview.balance && (
             <div className="small">
-              <Icon name="bank" size={14} /> Saldo i filen {dayLabel(preview.balance.date)}: <Money value={preview.balance.amount} />
+              <Icon name="bank" size={14} /> {preview.balance.computed ? 'Saldo etter filen' : 'Saldo i filen'} {dayLabel(preview.balance.date)}:{' '}
+              <Money value={preview.balance.amount} />
+              {preview.balance.computed && <span className="muted"> (skyldig fra forrige faktura pluss alt i filen)</span>}
               <span className="muted">
                 {account.kind === 'credit' ? ' · brukes på Kredittkort-siden for å finne det appen ikke har sett' : ' · lagres som bankens saldo'}
               </span>
