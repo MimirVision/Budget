@@ -4702,3 +4702,390 @@ kbd {
   border-radius: 10px;
   background: var(--surface-2);
 }
+
+/* =====================================================================================================
+   Optional details (Innstillinger → Utseende → Detaljer). They add shape, not new theme colours: the group
+   tints below are toned to sit with the existing palette.
+   ===================================================================================================== */
+:root {
+  --t-blue: #2a78d6;
+  --t-orange: #dd7a2c;
+  --t-green: #2f9e5b;
+  --t-pink: #d14d80;
+  --t-indigo: #5b5bd0;
+  --t-teal: #0f8f84;
+  --t-purple: #8b5cd6;
+  --t-yellow: #c99a12;
+  --t-red: #d6453b;
+  --t-gray: #8a8a84;
+}
+:root[data-theme='dark'] {
+  --t-blue: #4b93e8;
+  --t-orange: #e8914a;
+  --t-green: #46b874;
+  --t-pink: #e06a96;
+  --t-indigo: #7b7be6;
+  --t-teal: #2bb3a5;
+  --t-purple: #a07be6;
+  --t-yellow: #e0b236;
+  --t-red: #ec6157;
+}
+
+/* Icon tiles and rings */
+.tile {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 28%;
+  background: var(--tile);
+  color: #fff;
+  font-weight: 650;
+  font-size: 12px;
+}
+.tile svg {
+  color: #fff;
+  stroke-width: 2.1;
+}
+.rings {
+  position: relative;
+  flex: none;
+}
+.rings svg {
+  display: block;
+}
+.ring-arc {
+  transition: stroke-dasharray 0.8s var(--ease);
+}
+.rings-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.05;
+}
+.rings-center strong {
+  font-size: 18px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+.rings-center span {
+  font-size: 10.5px;
+  opacity: 0.8;
+}
+
+/* Budget: rings in the summary banner (white on its colour), tiles and small rings on categories */
+.hero .rings {
+  color: #fff;
+}
+.hero-rings-key {
+  opacity: 0.85;
+}
+.cat-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.cat-cell .grow {
+  flex: 1;
+}
+.mini-ring {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  min-width: 70px;
+  justify-content: flex-end;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.mini-ring.none {
+  min-width: 22px;
+  width: 22px;
+  height: 22px;
+  margin-left: 48px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 4px var(--surface-2);
+}
+.mini-ring.warn {
+  color: var(--warn);
+}
+.mini-ring.bad {
+  color: var(--bad);
+  font-weight: 650;
+}
+.m-cat {
+  gap: 12px;
+}
+.m-cat .mini-ring {
+  min-width: 0;
+}
+.m-group-head .tile {
+  margin-right: 2px;
+}
+
+/* Kredittkort: card picture, payment ring and key facts on a quiet header */
+.cc-ident {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.cc-face.wallet {
+  background: var(--surface);
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+.cc-face.wallet .cc-face-name {
+  color: var(--text);
+}
+.cc-face.wallet .cc-face-sub,
+.cc-face.wallet .cc-face-owed span,
+.cc-face.wallet .cc-face-limit span {
+  color: var(--muted);
+  opacity: 1;
+}
+.cc-face.wallet .cc-face-owed strong {
+  color: var(--text);
+}
+.cc-face.wallet .cc-face-btn {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border);
+}
+.cc-face.wallet .cc-face-bar {
+  background: var(--surface-2);
+}
+.cc-face.wallet .cc-face-bar > div {
+  background: var(--brand);
+}
+.mini-card {
+  position: relative;
+  width: 50px;
+  height: 32px;
+  flex: none;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #fbfbfd 0%, #e6e6eb 55%, #d5d5db 100%);
+  box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.14), 0 2px 6px rgb(0 0 0 / 0.08);
+}
+.mini-card i {
+  position: absolute;
+  left: 7px;
+  top: 10px;
+  width: 9px;
+  height: 7px;
+  border-radius: 2px;
+  background: linear-gradient(135deg, #e9d7a6, #c9ad6a);
+}
+:root[data-theme='dark'] .mini-card {
+  background: linear-gradient(135deg, #4a4a4f 0%, #2f2f33 60%, #222225 100%);
+}
+.cc-face-row {
+  display: flex;
+  align-items: center;
+  gap: 16px 28px;
+  flex-wrap: wrap;
+}
+.cc-pay {
+  margin-left: auto;
+}
+.cc-face-facts {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  gap: 4px 26px;
+  margin: 0;
+}
+.cc-face-facts dt {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.cc-face-facts dd {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 620;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Gjennomgå: soft cards and filled fields */
+:root[data-soft-review='on'] .review-card {
+  border-color: transparent;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 6px 18px rgb(0 0 0 / 0.05);
+}
+:root[data-soft-review='on'] .review-card .select {
+  appearance: none;
+  -webkit-appearance: none;
+  border-color: transparent;
+  background-color: var(--surface-2);
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23868a85' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+/* Oversikt: key figures in a card, diverging bars, donut */
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0 14px;
+}
+.kpis > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  min-width: 0;
+}
+.kpis span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.kpis strong {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kpis small {
+  font-size: 11.5px;
+  color: var(--faint);
+}
+.diverge {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 12px;
+}
+.diverge-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) 92px;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 4px;
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+.diverge-row:hover {
+  background: var(--surface-2);
+}
+.diverge-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-weight: 550;
+}
+.diverge-track {
+  position: relative;
+  height: 10px;
+}
+.diverge-track::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -3px;
+  bottom: -3px;
+  width: 1px;
+  background: var(--border);
+}
+.diverge-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
+}
+.diverge-bar.over {
+  background: color-mix(in srgb, var(--bad) 75%, transparent);
+}
+.diverge-bar.under {
+  background: color-mix(in srgb, var(--good) 75%, transparent);
+}
+.diverge-val {
+  text-align: right;
+  font-weight: 600;
+  font-size: 13px;
+}
+.diverge-axis {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) 92px;
+  gap: 10px;
+  margin-top: 2px;
+  padding: 0 4px;
+}
+.diverge-axis-labels {
+  display: flex;
+  justify-content: space-between;
+  white-space: nowrap;
+}
+.donut-wrap {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.donut-total {
+  fill: var(--text);
+  font-size: 15px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+.donut-label {
+  fill: var(--muted);
+  font-size: 11px;
+}
+.donut-legend {
+  flex: 1;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+.donut-legend > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.donut-legend .grow {
+  flex: 1;
+  min-width: 0;
+}
+.donut-legend .swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+}
+@media (max-width: 860px) {
+  .cc-face-facts {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 16px;
+    width: 100%;
+  }
+  .cc-pay {
+    margin-left: 0;
+  }
+  .kpis strong {
+    font-size: 15px;
+  }
+  .hero .rings {
+    width: 72px !important;
+    height: 72px !important;
+  }
+  .hero .rings svg {
+    width: 72px;
+    height: 72px;
+  }
+  .hero .rings-center strong {
+    font-size: 14px;
+  }
+}

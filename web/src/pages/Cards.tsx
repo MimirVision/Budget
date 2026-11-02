@@ -8,6 +8,8 @@ import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { dayLabel as fullDay, kr } from '../format';
 import { useStore } from '../store';
+import { usePrefs } from '../prefs';
+import { Rings } from '../components/apple';
 import { Icon, Modal, MoneyInput, Skeleton, useToast } from '../components/ui';
 import { addDays, dayDiff, todayISO } from '../../../shared/months';
 import { payToStayFree, whatIfPay } from '../../../shared/cardplan';
@@ -160,6 +162,33 @@ export default function CardsPage() {
   );
 }
 
+/** Like Apple Card's payment wheel: days to the due date, the ring filling as the bill is paid. */
+function PayRing({ c }: { c: Card }) {
+  const bill = c.statement.amount;
+  const share = bill > 0 ? Math.min(1, c.statement.paid / bill) : 1;
+  const left = dayDiff(todayISO(), c.statement.due);
+  const owing = c.statement.left > 0;
+  return (
+    <div className="cc-pay">
+      <Rings
+        size={68}
+        stroke={7}
+        rings={[{ value: owing ? share : 1, color: c.statement.status === 'overdue' ? 'var(--bad)' : 'var(--good)' }]}
+        label={owing ? `${Math.round(share * 100)} % av regningen betalt, ${left} dager til forfall` : 'Regningen er betalt'}
+      >
+        {owing ? (
+          <>
+            <strong className="num">{Math.abs(left)}</strong>
+            <span>{left < 0 ? 'dg. sent' : 'dager'}</span>
+          </>
+        ) : (
+          <strong>✓</strong>
+        )}
+      </Rings>
+    </div>
+  );
+}
+
 /** All cards in one line: what's owed, and the next deadline. */
 function Total({ cards }: { cards: Card[] }) {
   const owed = cards.reduce((s, c) => s + c.owed, 0);
@@ -191,6 +220,7 @@ function Total({ cards }: { cards: Card[] }) {
 type Tab = 'buys' | 'bills' | 'insight';
 
 function CardPanel({ c, onEdit, onBill, onChanged }: { c: Card; onEdit: () => void; onBill: () => void; onChanged: () => void }) {
+  const wallet = usePrefs().prefs.cardWallet;
   const [tab, setTab] = useState<Tab>('buys');
   const used = c.credit_limit ? Math.min(100, (c.owed / c.credit_limit) * 100) : null;
   const source = c.bank.balance
@@ -202,11 +232,18 @@ function CardPanel({ c, onEdit, onBill, onChanged }: { c: Card; onEdit: () => vo
 
   return (
     <section className="card cc">
-      <div className="cc-face">
+      <div className={`cc-face ${wallet ? 'wallet' : ''}`}>
         <div className="cc-face-top">
-          <div style={{ minWidth: 0 }}>
-            <div className="cc-face-name">{c.name}</div>
-            <div className="cc-face-sub">{source}</div>
+          <div className="cc-ident">
+            {wallet && (
+              <span className="mini-card" aria-hidden="true">
+                <i />
+              </span>
+            )}
+            <div style={{ minWidth: 0 }}>
+              <div className="cc-face-name">{c.name}</div>
+              <div className="cc-face-sub">{source}</div>
+            </div>
           </div>
           <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
             <button className="btn sm cc-face-btn" onClick={onBill}>
@@ -217,10 +254,42 @@ function CardPanel({ c, onEdit, onBill, onChanged }: { c: Card; onEdit: () => vo
             </button>
           </div>
         </div>
-        <div className="cc-face-owed">
-          <span>Skyldig</span>
-          <strong>{kr(c.owed)}</strong>
-        </div>
+        {wallet ? (
+          <div className="cc-face-row">
+            <div className="cc-face-owed">
+              <span>Skyldig</span>
+              <strong>{kr(c.owed)}</strong>
+            </div>
+            <PayRing c={c} />
+            <dl className="cc-face-facts">
+              <div>
+                <dt>Neste betaling</dt>
+                <dd className="num">{c.statement.left > 0 ? kr(c.statement.left) : 'Ingen'}</dd>
+              </div>
+              <div>
+                <dt>Frist</dt>
+                <dd className={c.statement.status === 'overdue' ? 'bad-text' : ''}>
+                  {c.statement.left > 0 ? `${dayLabel(c.statement.due)}${c.statement.status === 'overdue' ? ' (forfalt)' : ''}` : '–'}
+                </dd>
+              </div>
+              <div>
+                <dt>Periode nå</dt>
+                <dd>
+                  {dayLabel(c.current.from)}–{dayLabel(c.current.closes)}
+                </dd>
+              </div>
+              <div>
+                <dt>Rentefritt for kjøp i dag</dt>
+                <dd>{days(c.freeToday.days)}</dd>
+              </div>
+            </dl>
+          </div>
+        ) : (
+          <div className="cc-face-owed">
+            <span>Skyldig</span>
+            <strong>{kr(c.owed)}</strong>
+          </div>
+        )}
         {used !== null && (
           <div className="cc-face-limit">
             <div className="cc-face-bar">

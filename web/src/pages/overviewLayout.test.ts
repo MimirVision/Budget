@@ -22,12 +22,12 @@ describe('Tilpass Oversikt', () => {
   });
 
   it('on a PC, moving within a column skips cards in the other column', () => {
-    const l = normalize(null); // ... trend(left), categories(left) ...
+    const l = normalize(null); // ... trend(left), cashflow(left), categories(left) ...
     const up = move(l, 'categories', -1, false);
-    expect(ids(up).indexOf('categories')).toBeLessThan(ids(up).indexOf('trend'));
-    const r = move(l, 'payees', -1, false); // right column: passes over the left-column 'days'
-    expect(ids(r).indexOf('payees')).toBeLessThan(ids(r).indexOf('budget') + 2);
+    expect(ids(up).indexOf('categories')).toBeLessThan(ids(up).indexOf('cashflow'));
+    const r = move(l, 'payees', -1, false); // right column: passes over the left-column cards before it
     expect(ids(r).indexOf('payees')).toBeLessThan(ids(r).indexOf('days'));
+    expect(ids(r)[ids(r).indexOf('payees') + 1]).toBe('budget'); // and lands just before the previous right-column card
   });
 
   it('changes column', () => {

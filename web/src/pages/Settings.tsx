@@ -721,6 +721,27 @@ function Appearance() {
           </div>
         </div>
       </div>
+      <div className="card card-pad">
+        <h3 style={{ marginBottom: 0 }}>Detaljer</h3>
+        <div className="small muted">Slå av og på det du liker. Fargene endres ikke.</div>
+        {(
+          [
+            ['budgetRings', 'Ringer i budsjettet', 'To ringer øverst: hvor mye av det fordelte som er brukt, og hvor langt i måneden dere er.'],
+            ['catIcons', 'Ikoner på kategoriene', 'En farget bokstav ved hver kategori, i fargen til gruppen den hører til.'],
+            ['catRing', 'Forbruk som ring', 'Hvor mye som er brukt av hver kategori, som en liten ring med prosent i stedet for en strek.'],
+            ['cardWallet', 'Kortbilde og betalingsring', 'Kredittkort: et lite kortbilde, en ring som teller ned til forfall, og nøkkeltallene øverst.'],
+            ['softReview', 'Myke kort i Gjennomgå', 'Kortene uten kant og kategorifeltene fylt med grått, som på iPhone.'],
+          ] as const
+        ).map(([key, title, help]) => (
+          <div key={key} className="pref-row">
+            <div className="grow">
+              <strong>{title}</strong>
+              <div className="small muted">{help}</div>
+            </div>
+            <Toggle label={title} on={prefs[key]} onChange={(v) => set({ [key]: v })} />
+          </div>
+        ))}
+      </div>
       <p className="small faint" style={{ margin: 0 }}>
         Utseendet lagres på denne enheten, så telefonen og PC-en kan se forskjellige ut.
       </p>

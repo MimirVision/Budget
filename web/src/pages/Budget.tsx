@@ -7,10 +7,12 @@ import { useSearchParams } from 'react-router-dom';
 import { api, type BudgetMonth, type CategoryRow, type Recurring } from '../api';
 import { kr, monthLabel } from '../format';
 import { useStore } from '../store';
+import { usePrefs } from '../prefs';
+import { Rings, Tile, groupTint } from '../components/apple';
 import { useIsMobile, useStoredState } from '../hooks';
 import { AnimatedMoney, Icon, Modal, MoneyInput, Skeleton, haptic, useToast } from '../components/ui';
 import { addMonths, currentMonth } from '../../../shared/months';
-import { Attention, AutoAssignMenu, CardBills, Payday, Tips, WrapUp, CategoryDetail, Pill, Upcoming, UsageBar, Welcome, subtitle } from './budgetParts';
+import { Attention, AutoAssignMenu, CardBills, Payday, Tips, WrapUp, CategoryDetail, Pill, Upcoming, UsageBar, Welcome, subtitle, usage } from './budgetParts';
 
 type Filter = 'all' | 'needs' | 'over' | 'money';
 const FILTERS: Array<{ id: Filter; label: string; test: (c: CategoryRow) => boolean }> = [
@@ -33,6 +35,7 @@ export default function BudgetPage() {
   const [recurring, setRecurring] = useState<Recurring[]>([]);
   const { summary, refresh, version } = useStore();
   const mobile = useIsMobile();
+  const { prefs } = usePrefs();
   const toast = useToast();
   // Before "Start på nytt" the months are history: what's assigned there no longer counts, so it can't be edited.
   const startIso = useStore().summary?.budgetStart ?? null;
@@ -222,6 +225,7 @@ export default function BudgetPage() {
                 <section key={g.id} className="card m-group">
                   <button className="m-group-head" onClick={() => toggleGroup(g.id)} aria-expanded={open}>
                     <Icon name={open ? 'down' : 'right'} size={16} />
+                    {prefs.catIcons && <Tile color={groupTint(g.name).color} icon={groupTint(g.name).icon} size={22} />}
                     <span className="spacer">{g.name}</span>
                     <span className="num small muted">{kr(available)}</span>
                   </button>
@@ -230,11 +234,13 @@ export default function BudgetPage() {
                       const sub = subtitle(c, budget.pace);
                       return (
                         <button key={c.id} className="m-cat" onClick={() => setSelected(c.id)} style={{ opacity: c.hidden ? 0.5 : 1 }}>
+                          {prefs.catIcons && <Tile color={groupTint(g.name).color} letter={c.name} size={30} />}
                           <div className="m-cat-main">
                             <span className="m-cat-name">{c.name}</span>
                             {sub && <span className={`m-cat-sub ${sub.tone ?? ''}`}>{sub.text}</span>}
-                            <UsageBar c={c} pace={budget.pace} />
+                            {!prefs.catRing && <UsageBar c={c} pace={budget.pace} />}
                           </div>
+                          {prefs.catRing && <MiniRing c={c} pace={budget.pace} tint={groupTint(g.name).color} />}
                           <Pill c={c} />
                         </button>
                       );
@@ -275,6 +281,7 @@ export default function BudgetPage() {
                         key={g.id}
                         id={g.id}
                         name={g.name}
+                        tint={prefs.catIcons ? groupTint(g.name) : null}
                         open={open}
                         onToggle={() => toggleGroup(g.id)}
                         totals={{ assigned: sum('assigned'), activity: sum('activity'), available: sum('available') }}
@@ -285,6 +292,9 @@ export default function BudgetPage() {
                             <CategoryLine
                               key={c.id}
                               c={c}
+                              tint={groupTint(g.name).color}
+                              icons={prefs.catIcons}
+                              ring={prefs.catRing}
                               pace={budget.pace}
                               selected={selected === c.id}
                               onSelect={() => setSelected(c.id === selected ? null : c.id)}
@@ -335,10 +345,29 @@ export default function BudgetPage() {
 
 /** The one number that matters most: money that still needs a job. */
 function Hero({ budget, onAuto }: { budget: BudgetMonth; onAuto: () => void }) {
+  const { prefs } = usePrefs();
   const rta = budget.readyToAssign;
   const state = rta > 0 ? 'positive' : rta < 0 ? 'negative' : 'zero';
+  const spent = -budget.activity;
+  const share = budget.assigned > 0 ? Math.max(0, spent / budget.assigned) : 0;
+  const pace = budget.pace > 0 ? budget.pace : 1;
   return (
     <div className={`hero ${state}`}>
+      {prefs.budgetRings && (
+        <Rings
+          size={92}
+          stroke={10}
+          gap={3}
+          label={`${Math.round(share * 100)} % av det som er fordelt er brukt, ${Math.round(pace * 100)} % av måneden er gått`}
+          rings={[
+            { value: share, color: '#ffffff', track: 'rgb(255 255 255 / 0.22)' },
+            { value: pace, color: 'rgb(255 255 255 / 0.62)', track: 'rgb(255 255 255 / 0.14)' },
+          ]}
+        >
+          <strong className="num">{Math.round(share * 100)}%</strong>
+          <span>brukt</span>
+        </Rings>
+      )}
       <div className="hero-main">
         <div className="hero-label">{rta > 0 ? 'Klar til fordeling' : rta < 0 ? 'Fordelt mer enn dere har' : 'Hver krone har en jobb'}</div>
         <div className="hero-amount">
@@ -353,6 +382,12 @@ function Hero({ budget, onAuto }: { budget: BudgetMonth; onAuto: () => void }) {
           {rta > 0 && 'Gi pengene en jobb: trykk på en kategori, eller la autofordeling gjøre det.'}
           {rta < 0 && 'Ta tilbake penger fra en kategori til dette blir 0.'}
           {rta === 0 && 'Bra jobbet! Neste lønn dukker opp her.'}
+          {prefs.budgetRings && (
+            <span className="hero-rings-key">
+              {' '}
+              Ytre ring: brukt av fordelt. Indre: dag {Math.max(1, Math.round(pace * daysIn(budget.month)))} av {daysIn(budget.month)}.
+            </span>
+          )}
         </div>
       </div>
       {rta > 0 && (
@@ -366,6 +401,22 @@ function Hero({ budget, onAuto }: { budget: BudgetMonth; onAuto: () => void }) {
         </button>
       )}
     </div>
+  );
+}
+
+const daysIn = (month: string) => new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
+
+/** A category's spending as a small ring, with the share beside it. */
+function MiniRing({ c, pace, tint }: { c: CategoryRow; pace: number; tint: string }) {
+  const u = usage(c, pace);
+  if (!u.show) return <span className="mini-ring none" aria-hidden="true" />;
+  const over = c.available < 0;
+  const color = over ? 'var(--bad)' : u.fast ? 'var(--warn)' : tint;
+  return (
+    <span className={`mini-ring ${over ? 'bad' : u.fast ? 'warn' : ''}`} title={`${Math.round(u.ratio * 100)} % brukt${u.fast ? ', raskere enn kalenderen' : ''}`}>
+      <Rings size={22} stroke={4} gap={0} rings={[{ value: over ? 1 : u.ratio, color }]} label={`${Math.round(u.ratio * 100)} % brukt`} />
+      <span className="num">{over ? 'Over' : `${Math.round(u.ratio * 100)} %`}</span>
+    </span>
   );
 }
 
@@ -394,6 +445,7 @@ function GroupRows({
   open,
   onToggle,
   totals,
+  tint,
   onAdded,
   children,
 }: {
@@ -402,6 +454,7 @@ function GroupRows({
   open: boolean;
   onToggle: () => void;
   totals: { assigned: number; activity: number; available: number };
+  tint: { color: string; icon: string } | null;
   onAdded: () => void;
   children: ReactNode;
 }) {
@@ -412,8 +465,9 @@ function GroupRows({
     <>
       <tr className="group" onClick={onToggle}>
         <td>
-          <span className="row" style={{ gap: 4 }}>
+          <span className="row" style={{ gap: 6 }}>
             <Icon name={open ? 'down' : 'right'} size={14} />
+            {tint && <Tile color={tint.color} icon={tint.icon} size={20} />}
             {name}
             <button
               className="icon-btn add-cat"
@@ -463,6 +517,9 @@ function GroupRows({
 
 function CategoryLine({
   c,
+  tint,
+  icons,
+  ring,
   pace,
   selected,
   onSelect,
@@ -470,6 +527,9 @@ function CategoryLine({
   readOnly,
 }: {
   c: CategoryRow;
+  tint: string;
+  icons: boolean;
+  ring: boolean;
   pace: number;
   selected: boolean;
   onSelect: () => void;
@@ -480,11 +540,15 @@ function CategoryLine({
   return (
     <tr className={`cat ${selected ? 'selected' : ''}`} onClick={onSelect}>
       <td>
-        <div className="cat-name" style={{ opacity: c.hidden ? 0.5 : 1 }}>
-          {c.name}
+        <div className="cat-cell" style={{ opacity: c.hidden ? 0.5 : 1 }}>
+          {icons && <Tile color={tint} letter={c.name} size={26} />}
+          <div className="grow" style={{ minWidth: 0 }}>
+            <div className="cat-name">{c.name}</div>
+            {sub && <div className={`cat-sub ${sub.tone ?? ''}`}>{sub.text}</div>}
+            {!ring && <UsageBar c={c} pace={pace} />}
+          </div>
+          {ring && <MiniRing c={c} pace={pace} tint={tint} />}
         </div>
-        {sub && <div className={`cat-sub ${sub.tone ?? ''}`}>{sub.text}</div>}
-        <UsageBar c={c} pace={pace} />
       </td>
       <td onClick={(e) => e.stopPropagation()}>
         <MoneyInput
