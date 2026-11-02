@@ -32,6 +32,8 @@ export interface CardOverview extends CardTerms {
   on_budget: number;
   /** Terms filled in? Without them some numbers are estimates. */
   configured: boolean;
+  /** Dates the app had to guess: the statement day (month end assumed) and the due date (20 days later assumed). */
+  guessed: { statementDay: boolean; due: boolean };
   owed: number;
   available: number | null;
   /** The last closed billing period and its bill. */
@@ -167,6 +169,7 @@ export function cardOverview(db: DB, today = todayISO()): CardOverview[] {
     return {
       ...card, // the terms as saved (what the bill fills in is used above, not shown as if it were saved)
       configured: !!(c.interest_rate && (c.due_day || c.free_days)),
+      guessed: { statementDay: !card.statement_day && !bank, due: !card.due_day && !card.free_days && !bank },
       owed,
       bank: {
         statement: bank,

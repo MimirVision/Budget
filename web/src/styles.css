@@ -4661,3 +4661,44 @@ kbd {
     font-size: 24px;
   }
 }
+.cc-guess {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--warn-soft);
+  color: var(--text);
+}
+.cc-guess svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--warn);
+}
+.cc-days.big {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-radius: 12px;
+  padding: 6px 10px;
+  min-width: 72px;
+  line-height: 1.15;
+}
+.cc-days.big strong {
+  font-size: 20px;
+}
+.cc-days.big span {
+  font-size: 11px;
+  font-weight: 550;
+}
+.cc-group-head {
+  align-items: center;
+}
+.cc-terms-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+}

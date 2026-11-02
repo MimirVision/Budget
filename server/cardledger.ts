@@ -15,6 +15,9 @@
  */
 import { all, get, type DB } from './db.ts';
 import { addDays, addMonths, dayDiff, daysInMonth } from '../shared/months.ts';
+import { closeIn, closesAround, dueFor } from '../shared/carddates.ts';
+
+export { closeIn, closesAround, dueFor };
 
 export interface CardTerms {
   statement_day: number | null;
@@ -63,6 +66,9 @@ export interface Purchase {
   /** purchase: a transaction. unknown: from the bank's numbers, not a transaction the app has. opening: the
    *  balance the card had when the app started (not a purchase as such). */
   kind: 'purchase' | 'unknown' | 'opening';
+  /** A cash withdrawal or a top-up of another wallet (Revolut and the like): many banks treat these as cash,
+   *  with interest from day one and a fee, so the interest-free deadline may not apply. */
+  cashLike: boolean;
 }
 
 export interface Period {
@@ -95,33 +101,7 @@ const isOpening = (r: { payee: string }) => r.payee === 'Startsaldo';
 /** Lines that only make the app's balance match the bank's. An entered bill already does that. */
 const isBalanceFix = (r: { payee: string }) => r.payee === 'Startsaldo' || r.payee === 'Saldojustering';
 const PAYMENT = /innbetal|betaling|payment|overføring|nedbetal/i;
-
-const clampDay = (month: string, day: number) => `${month}-${String(Math.min(day, daysInMonth(month))).padStart(2, '0')}`;
-
-/** The day a billing period closes in a given month. Month end when the statement day isn't set. */
-export function closeIn(month: string, statementDay: number | null) {
-  return clampDay(month, statementDay ?? 31);
-}
-
-/** The most recent close before `date`, and the next one on or after it (a period is open through its close day). */
-export function closesAround(date: string, statementDay: number | null) {
-  const month = date.slice(0, 7);
-  const thisClose = closeIn(month, statementDay);
-  const last = date > thisClose ? thisClose : closeIn(addMonths(month, -1), statementDay);
-  const next = date > thisClose ? closeIn(addMonths(month, 1), statementDay) : thisClose;
-  return { last, next, before: (close: string) => closeIn(addMonths(close.slice(0, 7), -1), statementDay) };
-}
-
-/** When the bill for the period closing on `close` is due. */
-export function dueFor(close: string, prevClose: string, t: CardTerms): { due: string; estimate: boolean } {
-  if (t.due_day) {
-    const sameMonth = clampDay(close.slice(0, 7), t.due_day);
-    return { due: sameMonth > close ? sameMonth : clampDay(addMonths(close.slice(0, 7), 1), t.due_day), estimate: false };
-  }
-  // "Up to N interest-free days" counts from the first day of the period.
-  if (t.free_days) return { due: addDays(prevClose, t.free_days), estimate: false };
-  return { due: addDays(close, 20), estimate: true };
-}
+export const CASH_LIKE = /\b(kontantuttak|minibank|atm|cash withdrawal|revolut|skrill|neteller|paysafe|western union|moneygram)\b/i;
 
 export function latestStatement(db: DB, accountId: number): CardStatement | null {
   return get<CardStatement>(db, 'SELECT * FROM card_statements WHERE account_id = ? ORDER BY closed DESC, id DESC LIMIT 1', accountId) ?? null;
@@ -391,9 +371,15 @@ export function ledger(
 
   const sum = (st: Period['status']) => ordered.filter((b) => b.status === st).reduce((x, b) => x + b.left, 0);
   const rate = t.interest_rate ? t.interest_rate / 10000 : null;
-  // Interest on what's overdue, from the start of each period (Norwegian cards charge from the purchase date).
+  // Interest so far on what's overdue: on each unpaid purchase, from its own date (Norwegian cards charge from the
+  // purchase date when the bill isn't paid in full by its due date).
   const accruedInterest = rate
-    ? Math.round(ordered.filter((b) => b.status === 'overdue').reduce((x, b) => x + (b.left * rate * dayDiff(b.from, today)) / 365, 0))
+    ? Math.round(
+        ordered
+          .filter((b) => b.status === 'overdue')
+          .flatMap((b) => charges.get(b.closes) ?? [])
+          .reduce((x, ch) => x + (Math.max(0, ch.left) * rate * Math.max(0, dayDiff(ch.date, today))) / 365, 0),
+      )
     : null;
 
   // Every purchase from the last bill on, and anything older that isn't paid, with its deadline.
@@ -422,6 +408,7 @@ export function ledger(
         bill: billed(b) ? b.label : UNBILLED_LABEL,
         closes: b.closes,
         kind: ch.kind,
+        cashLike: ch.kind === 'purchase' && CASH_LIKE.test(ch.payee),
       });
     }
   // Most urgent first: by deadline, oldest purchase first (the order payments pay them down); paid ones last.
