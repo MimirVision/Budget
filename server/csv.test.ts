@@ -61,3 +61,22 @@ describe('previewCsv', () => {
     expect(p.rows.map((r) => r.amount)).toEqual([-10000, -20000, -5000, 35000]);
   });
 });
+
+describe('balance from the file', () => {
+  it('reads the Saldo on the newest row, and works out that a credit card balance is debt', () => {
+    // Newest first, purchases positive (inverted), balance positive and growing with each purchase.
+    const text = ['Dato;Beskrivelse;Beløp;Saldo', '05.11.2026;Rema;200,00;5 302,00', '03.11.2026;Kiwi;100,00;5 102,00', '01.11.2026;Elkjøp;300,00;5 002,00', '31.10.2026;XXL;50,00;4 702,00'].join('\n');
+    const p = previewCsv(text, 'credit');
+    expect(p.mapping.invert).toBe(true);
+    expect(p.balance).toEqual({ amount: -530200, date: '2026-11-05' });
+  });
+
+  it('keeps the sign when the balance moves with the amounts (a bank account, oldest first)', () => {
+    const text = ['Dato;Beskrivelse;Inn;Ut;Saldo', '01.11.2026;Lønn;30 000,00;;31 000,00', '02.11.2026;Rema;;500,00;30 500,00'].join('\n');
+    expect(previewCsv(text, 'checking').balance).toEqual({ amount: 3050000, date: '2026-11-02' });
+  });
+
+  it('has no balance when the file has none', () => {
+    expect(previewCsv('Dato;Beskrivelse;Beløp\n01.11.2026;Rema;-500,00', 'checking').balance).toBeNull();
+  });
+});

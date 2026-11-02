@@ -221,4 +221,33 @@ describe('Kredittkort', () => {
     expect(() => saveStatement(db, card, { closed: '2026-10-31', due: '2026-10-20', amount: 1 }, '2026-11-02')).toThrow(/etter fakturadatoen/);
     expect(() => saveStatement(db, card, { closed: '2026-10-31', due: '2026-11-20', amount: 100, minimum: 200 }, '2026-11-02')).toThrow(/Minstebeløpet/);
   });
+
+  it('uses the balance from a CSV or sync, with or without an entered bill', () => {
+    const { db, tx, card } = setup();
+    tx('2026-10-05', -100000, 'Elkjøp');
+    tx('2026-11-03', -20000, 'Rema');
+    // The CSV said 1 700 owed on 4.11; the app only explains 1 200: 500 of older debt goes on the last closed bill.
+    run(db, "UPDATE accounts SET bank_balance = -170000, bank_balance_at = '2026-11-04 23:59:59' WHERE id = ?", card);
+    let [c] = cardOverview(db, '2026-11-05');
+    expect(c.owed).toBe(170000);
+    expect(c.bank.balance).toEqual({ owed: 170000, date: '2026-11-04', source: 'csv' });
+    expect(c.breakdown).toMatchObject({ nextBill: 150000, unbilled: 20000 });
+    expect(c.purchases.find((p) => p.id === -2)).toMatchObject({ amount: 50000, due: '2026-11-20' });
+
+    // Kontoer can be matched without a bill, and nothing is counted twice afterwards.
+    expect(matchBalance(db, card, '2026-11-05')).toBe(-50000);
+    [c] = cardOverview(db, '2026-11-05');
+    expect(c.owed).toBe(170000);
+    expect(c.bank.appOwed).toBe(170000);
+
+    // With a bill, a newer bank balance fills in after it; an older one is left out.
+    saveStatement(db, card, { closed: '2026-10-31', due: '2026-11-20', amount: 160000 }, '2026-11-05');
+    [c] = cardOverview(db, '2026-11-05');
+    // Bill 1 600 + Rema 200 would be 1 800, but the bank said 1 700: a payment of 100 the app hasn't seen.
+    expect(c.owed).toBe(170000);
+    expect(c.breakdown).toMatchObject({ nextBill: 150000, unbilled: 20000 });
+    run(db, "UPDATE accounts SET bank_balance_at = '2026-10-20 10:00:00' WHERE id = ?", card);
+    [c] = cardOverview(db, '2026-11-05');
+    expect(c.bank.balance).toBeNull();
+  });
 });

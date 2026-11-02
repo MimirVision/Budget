@@ -155,6 +155,36 @@ interface Row {
   raw_description: string;
   transfer_id: number | null;
   kind?: Purchase['kind'];
+  /** A date in the billing period this belongs to, when that isn't the period of its own date. */
+  bucket?: string;
+}
+
+/** What the bank says is owed in total on a day. */
+export interface BalanceCheck {
+  owed: number;
+  date: string;
+  source: 'manual' | 'csv' | 'sync';
+}
+
+/**
+ * The newest balance the bank has given: typed in with the bill, or the account's bank balance from a CSV's
+ * Saldo column or a sync. A balance from before the entered bill says nothing new, so it's left out.
+ */
+export function balanceCheck(db: DB, accountId: number, s: CardStatement | null): BalanceCheck | null {
+  const manual: BalanceCheck | null = s && s.balance !== null && s.balance_date ? { owed: s.balance, date: s.balance_date, source: 'manual' } : null;
+  const acc = get<{ bank_balance: number | null; bank_balance_at: string | null; synced: number }>(
+    db,
+    'SELECT bank_balance, bank_balance_at, EXISTS(SELECT 1 FROM connection_accounts WHERE account_id = accounts.id) AS synced FROM accounts WHERE id = ?',
+    accountId,
+  );
+  const bank: BalanceCheck | null =
+    acc && acc.bank_balance !== null && acc.bank_balance_at
+      ? { owed: -acc.bank_balance, date: acc.bank_balance_at.slice(0, 10), source: acc.synced ? 'sync' : 'csv' }
+      : null;
+  const usable = (b: BalanceCheck | null) => b && (!s || b.date >= s.closed);
+  const options = [manual, bank].filter(usable) as BalanceCheck[];
+  // The newest wins; on the same day, what was typed in.
+  return options.sort((a, b) => b.date.localeCompare(a.date))[0] ?? null;
 }
 
 /**
@@ -162,7 +192,14 @@ interface Row {
  * bill it starts at the budget start; the opening balance then counts as the bill before it, since that's
  * where debt from before the start most likely sits.
  */
-export function ledger(db: DB, t: CardTerms & { id: number }, start: string, today: string, s: CardStatement | null) {
+export function ledger(
+  db: DB,
+  t: CardTerms & { id: number },
+  start: string,
+  today: string,
+  s: CardStatement | null,
+  check: BalanceCheck | null = null,
+) {
   const select = (from: string) =>
     all<Row>(
       db,
@@ -233,27 +270,31 @@ export function ledger(db: DB, t: CardTerms & { id: number }, start: string, tod
     charges.set(bill.closes, items);
 
     rows = raw.filter((r) => r.date > s.closed);
-    // The balance from the bank: what it doesn't explain happened between the bill and that day.
-    if (s.balance !== null && s.balance_date) {
-      const at = s.balance_date;
-      const appOwed = s.amount - rows.filter((r) => r.date <= at).reduce((sum, r) => sum + r.amount, 0);
-      const diff = s.balance - appOwed;
-      if (diff !== 0) {
-        const extra: Row = {
-          id: -2,
-          date: at,
-          amount: -diff,
-          payee: diff > 0 ? 'Kjøp banken har, men ikke appen' : 'Innbetalinger banken har, men ikke appen',
-          raw_description: '',
-          transfer_id: diff < 0 ? -1 : null,
-          kind: 'unknown',
-        };
-        const i = rows.findIndex((r) => r.date > at);
-        rows.splice(i < 0 ? rows.length : i, 0, extra);
-      }
-    }
   } else {
     rows = select(start);
+  }
+
+  // The balance from the bank (typed in, from a CSV's Saldo column, or from a sync): whatever the app's own
+  // transactions don't explain up to that day is filled in. After an entered bill it's new purchases or payments
+  // the app hasn't seen; without one it's most likely older debt, so it goes on the last closed bill.
+  if (check && check.date >= (s ? s.closed : start) && check.date <= today) {
+    const at = check.date;
+    const appOwed = (s ? s.amount : 0) - rows.filter((r) => r.date <= at).reduce((sum, r) => sum + r.amount, 0);
+    const diff = check.owed - appOwed;
+    if (diff !== 0) {
+      const extra: Row = {
+        id: -2,
+        date: at,
+        amount: -diff,
+        payee: diff > 0 ? (s ? 'Kjøp banken har, men ikke appen' : 'Saldo i banken som appen ikke har') : 'Innbetalinger banken har, men ikke appen',
+        raw_description: '',
+        transfer_id: diff < 0 ? -1 : null,
+        kind: 'unknown',
+        bucket: s ? undefined : closesAround(at, t.statement_day).last,
+      };
+      const i = rows.findIndex((r) => r.date > at);
+      rows.splice(i < 0 ? rows.length : i, 0, extra);
+    }
   }
 
   const billed = (b: Period) => b.closes < today || (!!s && b.closes <= s.closed);
@@ -262,7 +303,7 @@ export function ledger(db: DB, t: CardTerms & { id: number }, start: string, tod
       const opening = isOpening(r);
       // The balance at the start is older debt: it belongs to the bill before the start, not to new purchases.
       // An unknown amount from the bank's balance belongs after the entered bill, never on it.
-      const bucketDate = opening ? addDays(r.date, -1) : s && r.date <= s.closed ? addDays(s.closed, 1) : r.date;
+      const bucketDate = r.bucket ?? (opening ? addDays(r.date, -1) : s && r.date <= s.closed ? addDays(s.closed, 1) : r.date);
       charge(bucketDate, {
         id: r.id,
         date: r.date,

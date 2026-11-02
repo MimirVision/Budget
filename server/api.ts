@@ -43,6 +43,18 @@ function psuOf(c: any): PsuContext | undefined {
   return ip && userAgent ? { ip, userAgent } : undefined;
 }
 
+/** Keeps the newest balance the bank has reported for an account. `date` is YYYY-MM-DD. */
+function rememberBankBalance(db: DB, accountId: number, amount: number, date: string) {
+  run(
+    db,
+    "UPDATE accounts SET bank_balance = ?, bank_balance_at = ? WHERE id = ? AND (bank_balance_at IS NULL OR substr(bank_balance_at, 1, 10) <= ?)",
+    amount,
+    `${date} 23:59:59`,
+    accountId,
+    date,
+  );
+}
+
 function badRequest(message: string): never {
   const e: any = new Error(message);
   e.status = 400;
@@ -896,6 +908,7 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
       inflow: p.rows.filter((r) => r.amount > 0).reduce((s, r) => s + r.amount, 0),
       outflow: p.rows.filter((r) => r.amount < 0).reduce((s, r) => s + r.amount, 0),
       preview: p.rows.slice(0, 8).map((r) => ({ ...r, payee: cleanPayee(r.description) })),
+      balance: p.balance,
     });
   });
 
@@ -915,6 +928,8 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
     const rows = withImportHashes(p.rows);
     const result = ingest(db, accountId, rows.slice(offset, offset + limit), 'csv');
     const next = offset + limit < rows.length ? offset + limit : null;
+    // The bank's balance at the end of the file, unless a newer one is already known (from a sync or a newer file).
+    if (next === null && p.balance) rememberBankBalance(db, accountId, p.balance.amount, p.balance.date);
     return c.json({ ...result, total: rows.length, next });
   });
 
