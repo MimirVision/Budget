@@ -4425,3 +4425,239 @@ kbd {
 .cc-group-head > .right {
   text-align: right;
 }
+
+/* Kredittkort v3: one answer, then tabs */
+.cc-total {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.cc-total > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cc-total strong {
+  font-size: 18px;
+}
+.cc-face-btn.icon-only {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.cc-face-sub {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cc-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+.cc-answer.good {
+  background: var(--good-soft);
+}
+.cc-answer.bad {
+  background: var(--bad-soft);
+}
+.cc-answer.bad .cc-answer-big {
+  color: var(--bad);
+}
+.cc-answer-q {
+  display: flex;
+  align-items: center;
+  gap: 8px 10px;
+  flex-wrap: wrap;
+  color: var(--muted);
+}
+.cc-answer-dates {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.cc-answer-dates .chip-btn {
+  padding: 4px 10px;
+  font-size: 13px;
+}
+.cc-date {
+  width: auto;
+  height: 30px;
+  min-height: 0;
+  padding: 2px 8px;
+  font-size: 13px;
+}
+.cc-answer-line {
+  display: flex;
+  align-items: baseline;
+  gap: 4px 12px;
+  flex-wrap: wrap;
+}
+.cc-answer-big {
+  font-size: 26px;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+}
+.cc-answer-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cc-answer-steps li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.cc-answer-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: center;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in oklab, var(--text) 10%, transparent);
+  color: var(--muted);
+}
+.cc-answer-facts .link-btn {
+  margin-left: auto;
+}
+.cc-whatif {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cc-whatif .input {
+  max-width: 140px;
+  flex: none;
+}
+.cc-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cc-notes > div {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.cc-notes .link-btn {
+  flex: none;
+  white-space: nowrap;
+}
+.cc-tabs {
+  align-self: stretch;
+  display: flex;
+}
+.cc-tabs button {
+  flex: 1;
+}
+.cc-group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 14px 0 4px;
+}
+.cc-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--border);
+}
+.cc-row.paid {
+  opacity: 0.5;
+}
+.cc-row .right {
+  text-align: right;
+}
+.cc-row-amount {
+  flex: none;
+}
+.cc-days {
+  flex: none;
+  min-width: 54px;
+  text-align: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.cc-days.good {
+  background: var(--good-soft);
+  color: var(--good);
+}
+.cc-days.warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.cc-days.bad {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+.cc-list {
+  display: flex;
+  flex-direction: column;
+}
+.cc-list > strong {
+  padding-bottom: 6px;
+}
+.cc-chip {
+  margin-left: 6px;
+  font-size: 11px;
+}
+.cc-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.cc-fact.warn {
+  background: var(--warn-soft);
+}
+.cc-fact.bad {
+  background: var(--bad-soft);
+}
+.cc-terms {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.cc-empty {
+  padding: 8px 0;
+}
+.cc-row > .grow,
+.cc-group-head > .grow {
+  flex: 1;
+}
+.cc-group-head {
+  align-items: flex-end;
+}
+@media (max-width: 860px) {
+  .cc-whatif {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .cc-whatif .input {
+    max-width: none;
+  }
+  .cc-answer-big {
+    font-size: 24px;
+  }
+}

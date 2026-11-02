@@ -646,6 +646,7 @@ interface Preview {
   inflow: number;
   outflow: number;
   preview: Array<{ date: string; amount: number; description: string; payee: string }>;
+  balance: { amount: number; date: string } | null;
 }
 
 /** Banks often export in Windows-1252 (æøå would turn into garbage as UTF-8). Try UTF-8 first, then fall back. */
@@ -842,6 +843,14 @@ function ImportWizard({ account, onClose, onDone }: { account: Account; onClose:
             {preview.alreadyImported > 0 && <span className="muted"> · {preview.alreadyImported} er importert fra før (hoppes over)</span>}
             {preview.skipped > 0 && <span className="muted"> · {preview.skipped} rader hoppet over (ventende, reversert eller uleselig)</span>}
           </div>
+          {preview.balance && (
+            <div className="small">
+              <Icon name="bank" size={14} /> Saldo i filen {dayLabel(preview.balance.date)}: <Money value={preview.balance.amount} />
+              <span className="muted">
+                {account.kind === 'credit' ? ' · brukes på Kredittkort-siden for å finne det appen ikke har sett' : ' · lagres som bankens saldo'}
+              </span>
+            </div>
+          )}
           {preview.warnings.map((w) => (
             <div key={w} className="callout warn small">
               <Icon name="alert" size={18} />

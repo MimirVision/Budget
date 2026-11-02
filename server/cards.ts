@@ -10,8 +10,10 @@ import { all, get, run, type DB } from './db.ts';
 import { budgetStart, getBudget } from './budget.ts';
 import { addDays, dayDiff, todayISO } from '../shared/months.ts';
 import {
+  balanceCheck,
   closesAround,
   dueFor,
+  type BalanceCheck,
   effectiveTerms,
   latestStatement,
   ledger,
@@ -46,7 +48,7 @@ export interface CardOverview extends CardTerms {
     fromBank: boolean;
   };
   /** The bill entered from the bank, if any, and what the app's own balance says. */
-  bank: { statement: CardStatement | null; newer: boolean; appOwed: number };
+  bank: { statement: CardStatement | null; newer: boolean; appOwed: number; balance: BalanceCheck | null };
   /** The period running now. */
   current: { from: string; closes: string; spent: number; due: string };
   /** Bought today: interest-free until… */
@@ -95,7 +97,8 @@ export function cardOverview(db: DB, today = todayISO()): CardOverview[] {
     const lastDue = bank && bank.closed === last ? { due: bank.due, estimate: false } : dueFor(last, prev, c);
     const nextDue = dueFor(next, last, c);
 
-    const book = ledger(db, c, start, today, bank);
+    const check = balanceCheck(db, card.id, bank);
+    const book = ledger(db, c, start, today, bank, check);
     const owed = Math.max(0, book.owed);
     // What the app's own balance (Kontoer) says, to show when it doesn't match the bank.
     const appOwed = -(get<{ s: number }>(db, 'SELECT COALESCE(SUM(amount), 0) AS s FROM transactions WHERE account_id = ? AND date >= ? AND date <= ?', c.id, start, today)!.s);
@@ -170,6 +173,7 @@ export function cardOverview(db: DB, today = todayISO()): CardOverview[] {
         // A newer bill has closed since the one entered: worked out from transactions until it's entered too.
         newer: !!bank && last > bank.closed,
         appOwed,
+        balance: check,
       },
       available: c.credit_limit ? c.credit_limit - owed : null,
       statement: { closed: last, due: lastPeriod?.due ?? lastDue.due, amount: billed, paid, left, status, minimum, dueIsEstimate: lastDue.estimate, fromBank: !!lastPeriod?.fromBank },
@@ -239,15 +243,17 @@ export function saveStatement(db: DB, accountId: number, input: StatementInput, 
  */
 export function matchBalance(db: DB, accountId: number, today = todayISO()): number {
   const c = cardOverview(db, today).find((x) => x.id === accountId);
-  if (!c?.bank.statement) throw new Error('Legg inn regningen fra banken først');
+  if (!c || (!c.bank.statement && !c.bank.balance)) throw new Error('Legg inn regningen eller saldoen fra banken først');
   const diff = c.bank.appOwed - c.owed;
+  // Without an entered bill the adjustment is dated with the bank's balance, so it isn't counted twice.
+  const date = !c.bank.statement && c.bank.balance ? c.bank.balance.date : today;
   if (diff !== 0)
     run(
       db,
       `INSERT INTO transactions(account_id, date, amount, payee, raw_description, reviewed, source)
        VALUES (?, ?, ?, 'Saldojustering', 'Saldojustering', 0, 'manual')`,
       accountId,
-      today,
+      date,
       diff,
     );
   return diff;

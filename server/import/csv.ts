@@ -13,6 +13,7 @@ export interface CsvMapping {
   outflow?: number;
   fee?: number;
   state?: number; // Revolut: only COMPLETED rows are real
+  balance?: number; // the account balance after each row (Saldo), when the bank includes it
   dateFormat: 'dmy' | 'ymd' | 'mdy';
   invert: boolean; // credit card exports often show purchases as positive numbers
 }
@@ -21,6 +22,7 @@ export interface ParsedRow {
   date: string;
   amount: number; // øre
   description: string;
+  balance?: number; // øre, as printed (sign not yet worked out)
 }
 
 export interface CsvPreview {
@@ -31,6 +33,8 @@ export interface CsvPreview {
   rows: ParsedRow[];
   skipped: number;
   warnings: string[];
+  /** The balance after the newest row, in the app's sign (debt is negative), if the file has a Saldo column. */
+  balance: { amount: number; date: string } | null;
 }
 
 export function splitCsv(text: string, delimiter: string): string[][] {
@@ -143,6 +147,7 @@ const HEADER_HINTS = {
   outflow: /^(ut|ut fra konto|uttak|debit|debet|utgående|utbetaling|money out|paid out)$/i,
   fee: /^(fee|gebyr)$/i,
   state: /^(state|status)$/i,
+  balance: /^(saldo|balance|bokført saldo|saldo i nok|saldo nok|saldo \(nok\))$/i,
 };
 
 function findCol(headers: string[], re: RegExp, exclude: number[] = []): number | undefined {
@@ -175,6 +180,7 @@ export function detectMapping(rows: string[][], delimiter: string): { mapping: C
       amount: lower.indexOf('amount'),
       fee: lower.indexOf('fee') >= 0 ? lower.indexOf('fee') : undefined,
       state: lower.indexOf('state') >= 0 ? lower.indexOf('state') : undefined,
+      balance: lower.indexOf('balance') >= 0 ? lower.indexOf('balance') : undefined,
     };
   } else if (headerRow >= 0) {
     const date = findCol(headers, HEADER_HINTS.date) ?? 0;
@@ -182,7 +188,8 @@ export function detectMapping(rows: string[][], delimiter: string): { mapping: C
     const inflow = findCol(headers, HEADER_HINTS.inflow);
     const outflow = findCol(headers, HEADER_HINTS.outflow);
     const amount = findCol(headers, HEADER_HINTS.amount);
-    mapping = { ...mapping, date, description };
+    const balance = findCol(headers, HEADER_HINTS.balance);
+    mapping = { ...mapping, date, description, balance };
     if (inflow !== undefined && outflow !== undefined) Object.assign(mapping, { inflow, outflow });
     else if (amount !== undefined) mapping.amount = amount;
     if (lower.some((h) => h.includes('ut fra konto'))) format = 'DNB';
@@ -237,7 +244,8 @@ export function applyMapping(rows: string[][], mapping: CsvMapping): { rows: Par
       continue;
     }
     if (mapping.invert) amount = -amount;
-    out.push({ date, amount, description: (r[mapping.description] ?? '').trim() });
+    const balance = mapping.balance !== undefined ? parseAmount(r[mapping.balance]) : null;
+    out.push({ date, amount, description: (r[mapping.description] ?? '').trim(), ...(balance !== null ? { balance } : {}) });
   }
   return { rows: out, skipped };
 }
@@ -263,6 +271,7 @@ export function previewCsv(text: string, accountKind: string, override?: Partial
   if (parsed.rows.length === 0) warnings.push('Fant ingen transaksjoner å lese. Sjekk kolonnevalgene under.');
 
   return {
+    balance: fileBalance(parsed.rows, accountKind),
     format: detected.format,
     headers: mapping.headerRow >= 0 ? rows[mapping.headerRow] : (rows[0] ?? []).map((_, i) => `Kolonne ${i + 1}`),
     sample: rows.slice(mapping.headerRow + 1, mapping.headerRow + 6),
@@ -271,4 +280,27 @@ export function previewCsv(text: string, accountKind: string, override?: Partial
     skipped: parsed.skipped,
     warnings,
   };
+}
+
+/**
+ * The balance at the end of the file: the Saldo on the newest row. Files are newest-first or oldest-first, so
+ * the order decides which of the newest day's rows came last. The sign is worked out from the file itself:
+ * the balance moves by each row's amount, one way or the other. With nothing to go on, a positive balance on a
+ * credit card is what's owed.
+ */
+export function fileBalance(rows: ParsedRow[], accountKind: string): { amount: number; date: string } | null {
+  const withBalance = rows.filter((r) => r.balance !== undefined);
+  if (!withBalance.length) return null;
+  const newestFirst = withBalance.length > 1 && withBalance[0].date > withBalance[withBalance.length - 1].date;
+  const chrono = newestFirst ? [...withBalance].reverse() : withBalance;
+  let same = 0;
+  let flipped = 0;
+  for (let i = 1; i < chrono.length; i++) {
+    const delta = chrono[i].balance! - chrono[i - 1].balance!;
+    if (delta === chrono[i].amount) same++;
+    else if (delta === -chrono[i].amount) flipped++;
+  }
+  const last = chrono[chrono.length - 1];
+  const sign = flipped > same || (same === 0 && flipped === 0 && accountKind === 'credit' && last.balance! > 0) ? -1 : 1;
+  return { amount: sign * last.balance!, date: last.date };
 }
