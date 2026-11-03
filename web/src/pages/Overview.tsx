@@ -709,69 +709,130 @@ function BudgetVsActual({ budget, month }: { budget: NonNullable<OverviewData['b
 
 const WEEKDAYS = ['man', 'tir', 'ons', 'tor', 'fre', 'lør', 'søn'];
 
-/** Kalender: everyday spending per day, darker = more. Bills are left out so payday doesn't drown everything. */
+/** "1 234" for under 10 000 kr, "12k" above: short enough to fit in a calendar cell. */
+function compactKr(ore: number) {
+  const k = Math.round(ore / 100);
+  if (k < 10000) return k.toLocaleString('nb-NO');
+  return `${Math.round(k / 1000)}k`;
+}
+
+/** ISO week number, as Norwegian calendars count them. */
+function isoWeek(date: string) {
+  const d = new Date(`${date}T12:00:00Z`);
+  const day = (d.getUTCDay() + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - day + 3);
+  const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  return 1 + Math.round(((d.getTime() - firstThursday.getTime()) / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
+}
+
+/**
+ * Dag for dag: everyday spending per day (bills left out, so payday doesn't drown everything), with the amount in
+ * each day, a total per week, and the month's key figures above. Darker means more, by quartile of the days with
+ * spending, so one big day doesn't wash out the rest.
+ */
 function Calendar({ data, month }: { data: OverviewData; month: string }) {
-  const [hover, setHover] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
   const days = data.calendar;
   const all = Array.from({ length: Number(`${month}-01` <= todayISO() ? daysInMonthOf(month) : 0) }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`);
   if (!all.length) return null;
   const byDate = new Map(days.map((d) => [d.date, d.spent]));
   const spentDays = days.filter((d) => d.spent > 0).map((d) => d.spent).sort((a, b) => a - b);
-  // Steps by quartile of the days with spending, so one big day doesn't wash the rest out.
   const q = (p: number) => spentDays[Math.min(spentDays.length - 1, Math.floor(p * spentDays.length))] ?? 0;
   const cuts = [q(0.25), q(0.5), q(0.75)];
   const level = (v: number) => (v <= 0 ? 0 : v <= cuts[0] ? 1 : v <= cuts[1] ? 2 : v <= cuts[2] ? 3 : 4);
   const offset = (new Date(`${month}-01T12:00:00Z`).getUTCDay() + 6) % 7;
   const today = todayISO();
-  const h = hover ? { date: hover, spent: byDate.get(hover) ?? 0 } : null;
+  // Weeks of seven slots (empty before the 1st and after the last day).
+  const slots: Array<string | null> = [...Array(offset).fill(null), ...all];
+  while (slots.length % 7) slots.push(null);
+  const weeks = Array.from({ length: slots.length / 7 }, (_, i) => slots.slice(i * 7, i * 7 + 7));
+  const weekTotal = (w: Array<string | null>) => w.reduce((s, d) => s + (d ? byDate.get(d) ?? 0 : 0), 0);
+  const maxWeek = Math.max(1, ...weeks.map(weekTotal));
+  const sel = picked ? { date: picked, spent: byDate.get(picked) ?? 0 } : null;
+  const big = data.stats.biggestDay;
+
   return (
     <ChartCard
       title="Dag for dag"
       sub="Hverdagsforbruk per dag, uten faste regninger. Mørkere betyr mer."
       table={<SimpleTable head={['Dag', 'Brukt']} rows={days.map((d) => [dayLabel(d.date), kr(d.spent)])} />}
     >
-      <div className="cal">
-        {WEEKDAYS.map((w) => (
-          <span key={w} className="cal-head">
-            {w}
-          </span>
-        ))}
-        {Array.from({ length: offset }, (_, i) => (
-          <span key={`pad-${i}`} />
-        ))}
-        {all.map((date) => {
-          const future = date > today;
-          const v = byDate.get(date) ?? 0;
-          return (
-            <span
-              key={date}
-              className={`cal-day l${future ? 'x' : level(v)} ${hover === date ? 'on' : ''}`}
-              onMouseEnter={() => !future && setHover(date)}
-              onMouseLeave={() => setHover(null)}
-              onClick={() => !future && setHover(hover === date ? null : date)}
-              title={future ? '' : `${dayLabel(date)}: ${v ? kr(v) : 'ingen hverdagsforbruk'}`}
-            >
-              {Number(date.slice(8))}
+      <div className="kpis">
+        <div>
+          <span>Snitt per dag</span>
+          <strong>{compactKr(data.stats.avgPerDay)} kr</strong>
+          <small>{data.stats.days} dager så langt</small>
+        </div>
+        <div>
+          <span>Uten forbruk</span>
+          <strong className="good-text">
+            {data.stats.noSpendDays} {data.stats.noSpendDays === 1 ? 'dag' : 'dager'}
+          </strong>
+          <small>av {data.stats.days}</small>
+        </div>
+        <div>
+          <span>Dyreste dag</span>
+          <strong>{big ? `${compactKr(big.spent)} kr` : '–'}</strong>
+          <small>{big ? dayLabel(big.date) : 'ingen kjøp ennå'}</small>
+        </div>
+      </div>
+
+      <div className="cal2" role="grid" aria-label="Forbruk per dag">
+        <div className="cal2-row head" role="row">
+          {WEEKDAYS.map((w) => (
+            <span key={w} role="columnheader">
+              {w}
             </span>
+          ))}
+          <span role="columnheader" className="cal2-week-h">
+            Uke
+          </span>
+        </div>
+        {weeks.map((w, i) => {
+          const total = weekTotal(w);
+          const first = w.find(Boolean)!;
+          return (
+            <div key={i} className="cal2-row" role="row">
+              {w.map((date, j) => {
+                if (!date) return <span key={`e${j}`} className="cal2-day empty" />;
+                const future = date > today;
+                const v = byDate.get(date) ?? 0;
+                const lvl = future ? 'x' : level(v);
+                return (
+                  <button
+                    key={date}
+                    role="gridcell"
+                    className={`cal2-day l${lvl} ${date === today ? 'today' : ''} ${picked === date ? 'on' : ''}`}
+                    disabled={future}
+                    onClick={() => setPicked(picked === date ? null : date)}
+                    title={future ? '' : `${dayLabel(date)}: ${v ? kr(v) : 'ingen hverdagsforbruk'}`}
+                  >
+                    <span className="cal2-num">{Number(date.slice(8))}</span>
+                    {!future && (v > 0 ? <span className="cal2-amt num">{compactKr(v)}</span> : <span className="cal2-zero">✓</span>)}
+                  </button>
+                );
+              })}
+              <span className="cal2-week" title={`Uke ${isoWeek(first)}: ${kr(total)}`}>
+                <small>Uke {isoWeek(first)}</small>
+                <strong className="num">{total ? compactKr(total) : '–'}</strong>
+                <span className="cal2-week-bar">
+                  <span style={{ width: `${(total / maxWeek) * 100}%` }} />
+                </span>
+              </span>
+            </div>
           );
         })}
       </div>
+
       <div className="cal-foot">
         <span className="small muted">
-          {h ? (
+          {sel ? (
             <>
-              <strong>{dayLabel(h.date)}</strong>: {h.spent ? kr(h.spent) : 'ingen hverdagsforbruk 🎉'}
+              <strong>{dayLabel(sel.date)}</strong>: {sel.spent ? kr(sel.spent) : 'ingen hverdagsforbruk'} ·{' '}
+              <Link to={`/transactions?month=${month}`}>se kjøpene</Link>
             </>
           ) : (
-            <>
-              <strong>{data.stats.noSpendDays}</strong> dager uten forbruk
-              {data.stats.biggestDay && (
-                <>
-                  {' '}
-                  · dyreste dag {dayLabel(data.stats.biggestDay.date)} ({kr(data.stats.biggestDay.spent)})
-                </>
-              )}
-            </>
+            <>Trykk på en dag for beløpet. ✓ = ingen hverdagsforbruk.</>
           )}
         </span>
         <span className="cal-scale small faint" aria-hidden>
