@@ -14,6 +14,19 @@ export function useIsMobile(): boolean {
   return mobile;
 }
 
+/** True on wide screens (a laptop at full size or larger), where the side column has room for more. */
+export function useIsWide(): boolean {
+  const query = '(min-width: 1480px)';
+  const [wide, setWide] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const on = () => setWide(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return wide;
+}
+
 /** useState that remembers its value in this browser (e.g. collapsed groups). Falls back silently if storage is blocked. */
 export function useStoredState<T>(key: string, initial: T) {
   const [value, setValue] = useState<T>(() => {

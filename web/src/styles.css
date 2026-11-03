@@ -5089,3 +5089,59 @@ kbd {
     font-size: 14px;
   }
 }
+
+/* ---------- Wide screens: use the room for more information, not wider gaps ---------- */
+.wide-only {
+  display: none;
+}
+@media (min-width: 1480px) {
+  .main {
+    max-width: 1500px;
+    margin: 0 auto;
+    padding-left: 40px;
+    padding-right: 40px;
+  }
+  .grid-2 {
+    grid-template-columns: minmax(0, 1fr) 380px;
+    gap: 24px;
+  }
+  /* Last month and the 3-month average beside this month's spending. */
+  .budget-table .wide-only {
+    display: table-cell;
+  }
+  .budget-table td.over-avg {
+    color: var(--warn);
+    font-weight: 600;
+  }
+}
+@media (min-width: 1800px) {
+  .main {
+    max-width: 1680px;
+  }
+  .grid-2 {
+    grid-template-columns: minmax(0, 1fr) 420px;
+  }
+}
+/* The month's wrap-up as a side-column card on wide screens: figures stacked, no gradient. */
+.panel .card.wrapup {
+  background: var(--surface);
+  padding: 14px 16px;
+}
+.panel .wrapup-stats {
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+.panel .wrapup-stats > div {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.panel .wrapup-stats strong {
+  font-size: 15px;
+}
+.panel .wrapup-line,
+.panel .wrapup-sweep {
+  font-size: 13px;
+}

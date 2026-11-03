@@ -9,7 +9,7 @@ import { kr, monthLabel } from '../format';
 import { useStore } from '../store';
 import { usePrefs } from '../prefs';
 import { Rings, Tile, groupTint } from '../components/apple';
-import { useIsMobile, useStoredState } from '../hooks';
+import { useIsMobile, useIsWide, useStoredState } from '../hooks';
 import { AnimatedMoney, Icon, Modal, MoneyInput, Skeleton, haptic, useToast } from '../components/ui';
 import { addMonths, currentMonth } from '../../../shared/months';
 import { Attention, AutoAssignMenu, CardBills, Payday, Tips, WrapUp, CategoryDetail, Pill, Upcoming, UsageBar, Welcome, subtitle, usage } from './budgetParts';
@@ -35,6 +35,8 @@ export default function BudgetPage() {
   const [recurring, setRecurring] = useState<Recurring[]>([]);
   const { summary, refresh, version } = useStore();
   const mobile = useIsMobile();
+  // On a wide screen the month's wrap-up and tips sit in the side column instead of across the whole page.
+  const wide = useIsWide() && !mobile;
   const { prefs } = usePrefs();
   const toast = useToast();
   // Before "Start på nytt" the months are history: what's assigned there no longer counts, so it can't be edited.
@@ -207,9 +209,9 @@ export default function BudgetPage() {
           </button>
         </div>
       )}
-      <WrapUp month={month} startMonth={startMonth} onChanged={() => { load(); refresh(); }} />
+      {!wide && <WrapUp month={month} startMonth={startMonth} onChanged={() => { load(); refresh(); }} />}
       <Payday budget={budget} month={month} onChanged={() => { load(); refresh(); }} />
-      <Tips month={month} onChanged={() => { load(); refresh(); }} />
+      {!wide && <Tips month={month} onChanged={() => { load(); refresh(); }} />}
       <Attention budget={budget} />
       <Hero budget={budget} onAuto={() => setAutoOpen(true)} />
       <Stats budget={budget} />
@@ -269,6 +271,8 @@ export default function BudgetPage() {
                     <th>Kategori</th>
                     <th>Fordelt</th>
                     <th>Brukt</th>
+                    <th className="wide-only" title="Det kategorien brukte forrige måned">Forrige mnd</th>
+                    <th className="wide-only" title="Snittforbruk de tre siste månedene">Snitt 3 mnd</th>
                     <th>Tilgjengelig</th>
                   </tr>
                 </thead>
@@ -284,7 +288,13 @@ export default function BudgetPage() {
                         tint={prefs.catIcons ? groupTint(g.name) : null}
                         open={open}
                         onToggle={() => toggleGroup(g.id)}
-                        totals={{ assigned: sum('assigned'), activity: sum('activity'), available: sum('available') }}
+                        totals={{
+                          assigned: sum('assigned'),
+                          activity: sum('activity'),
+                          available: sum('available'),
+                          last: g.shown.reduce((s, c) => s + c.lastMonthActivity, 0),
+                          avg: g.shown.reduce((s, c) => s + c.avgActivity, 0),
+                        }}
                         onAdded={load}
                       >
                         {open &&
@@ -330,6 +340,8 @@ export default function BudgetPage() {
                     rett i Fordelt, som <code>1500+300</code>.
                   </div>
                 </div>
+                {wide && <WrapUp month={month} startMonth={startMonth} onChanged={() => { load(); refresh(); }} />}
+                {wide && <Tips month={month} onChanged={() => { load(); refresh(); }} />}
                 <CardBills budget={budget} onCover={(c) => assign(c.id, c.assigned + c.needed)} />
                 <Upcoming items={recurring} />
               </>
@@ -453,7 +465,7 @@ function GroupRows({
   name: string;
   open: boolean;
   onToggle: () => void;
-  totals: { assigned: number; activity: number; available: number };
+  totals: { assigned: number; activity: number; available: number; last: number; avg: number };
   tint: { color: string; icon: string } | null;
   onAdded: () => void;
   children: ReactNode;
@@ -484,11 +496,13 @@ function GroupRows({
         </td>
         <td className="num">{kr(totals.assigned)}</td>
         <td className="num">{kr(totals.activity)}</td>
+        <td className="num wide-only">{kr(totals.last)}</td>
+        <td className="num wide-only">{kr(totals.avg)}</td>
         <td className="num">{kr(totals.available)}</td>
       </tr>
       {adding && (
         <tr>
-          <td colSpan={4}>
+          <td colSpan={6}>
             <form
               className="row"
               onSubmit={async (e) => {
@@ -560,6 +574,10 @@ function CategoryLine({
         />
       </td>
       <td className="num muted">{c.activity ? kr(c.activity) : '–'}</td>
+      <td className="num faint wide-only">{c.lastMonthActivity ? kr(c.lastMonthActivity) : '–'}</td>
+      <td className={`num faint wide-only ${c.avgActivity && c.activity < c.avgActivity ? 'over-avg' : ''}`} title={c.avgActivity && c.activity < c.avgActivity ? 'Brukt mer enn snittet allerede denne måneden' : undefined}>
+        {c.avgActivity ? kr(c.avgActivity) : '–'}
+      </td>
       <td>
         <Pill c={c} />
       </td>
