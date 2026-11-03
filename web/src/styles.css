@@ -5145,3 +5145,49 @@ kbd {
 .panel .wrapup-sweep {
   font-size: 13px;
 }
+
+/* Kolonner: choose the budget table's columns */
+.col-picker {
+  position: relative;
+}
+.col-picker .btn .faint {
+  font-weight: 500;
+  margin-left: 2px;
+}
+.col-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  width: 270px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.col-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 7px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.col-option:hover {
+  background: var(--surface-2);
+}
+.col-option input {
+  margin-top: 3px;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--brand);
+}
+.col-option > span {
+  display: flex;
+  flex-direction: column;
+  font-size: 13.5px;
+}
