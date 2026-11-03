@@ -5191,3 +5191,152 @@ kbd {
   flex-direction: column;
   font-size: 13.5px;
 }
+
+/* ---------- Hvor pengene gikk ---------- */
+.wm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+.wm-group {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.wm-group.open {
+  background: color-mix(in srgb, var(--wm) 4%, var(--surface));
+}
+.wm-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) 128px 16px;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 9px 14px;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.wm-row:hover {
+  background: color-mix(in srgb, var(--wm) 7%, transparent);
+}
+.wm-row.head {
+  padding: 11px 14px;
+}
+.wm-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.wm-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+.wm-title > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wm-title strong {
+  font-size: 14.5px;
+}
+.wm-title small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.wm-cats {
+  border-top: 1px solid color-mix(in srgb, var(--wm) 14%, var(--border));
+  padding: 4px 0 6px;
+}
+.wm-cats .wm-row {
+  padding: 6px 14px 6px 50px;
+}
+.wm-cats .wm-title > span {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.wm-track {
+  position: relative;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+.wm-track.light {
+  height: 8px;
+}
+.wm-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: inherit;
+  transition: width 0.5s var(--ease);
+}
+.wm-bar.prev {
+  background: color-mix(in srgb, var(--wm) 22%, transparent);
+}
+.wm-bar.now {
+  background: var(--wm);
+}
+.wm-track.light .wm-bar.now {
+  background: color-mix(in srgb, var(--wm) 75%, var(--surface));
+}
+.wm-amount {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.25;
+}
+.wm-amount strong {
+  font-size: 15px;
+}
+.wm-prev,
+.wm-diff {
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.wm-prev {
+  color: var(--faint);
+}
+.wm-diff.up {
+  color: var(--bad);
+  font-weight: 600;
+}
+.wm-diff.down {
+  color: var(--good);
+  font-weight: 600;
+}
+.wm-chev {
+  color: var(--faint);
+}
+.wm-more {
+  margin-top: 8px;
+  align-self: flex-start;
+}
+.wm-cats .wm-more {
+  margin: 4px 0 2px 50px;
+}
+@media (max-width: 860px) {
+  .wm-row {
+    grid-template-columns: minmax(0, 1fr) 108px 14px;
+    row-gap: 6px;
+  }
+  .wm-row .wm-track {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .wm-cats .wm-row {
+    padding-left: 14px;
+  }
+  .wm-cats .wm-more {
+    margin-left: 14px;
+  }
+}

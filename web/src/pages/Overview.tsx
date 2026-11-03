@@ -10,6 +10,7 @@ import { useStore } from '../store';
 import { useIsMobile, useStoredState } from '../hooks';
 import { AnimatedMoney, Icon, Money, Skeleton } from '../components/ui';
 import { Arranged, normalize, type Layout } from './overviewLayout';
+import { Tile, groupTint } from '../components/apple';
 import { CashflowCard, DonutCard, RecurringCard, VsUsualCard } from './overviewExtra';
 import { CashflowChart, ChartCard, NetWorthChart, PaceChart, SimpleTable, type WorthRow } from '../components/charts';
 import { addMonths, currentMonth, daysInMonth, todayISO } from '../../../shared/months';
@@ -411,21 +412,44 @@ function buildInsights(d: OverviewData, prevLabel: string, partial = false) {
   return out.slice(0, 3);
 }
 
+/**
+ * Hvor pengene gikk: groups and their categories, biggest first. Each bar is this period in the group's colour, with
+ * the previous period as a pale bar behind it, so "more or less than last time" reads at a glance. Groups and
+ * categories with nothing spent are tucked away behind a link.
+ */
 function Categories({ data, month, span, prevLabel }: { data: OverviewData; month: string; span: number; prevLabel: string }) {
   const navigate = useNavigate();
-  // Groups start open, so the categories are visible without a tap; tap a group to fold it away.
-  // On the phone they start folded to keep the page short; empty groups always do.
   const mobile = useIsMobile();
-  const [closed, setClosed] = useState<string[]>(() =>
-    data.groups.filter((g) => mobile || g.spent <= 0).map((g) => String(g.id)),
-  );
-  const max = Math.max(1, ...data.groups.map((g) => Math.max(g.spent, g.prevSpent)));
+  // A running month compared with a whole one would always look "lower", so then the difference isn't coloured.
+  const running = span === 1 && month === currentMonth();
+  const groups = [...data.groups].sort((a, b) => b.spent - a.spent || b.prevSpent - a.prevSpent);
+  const active = groups.filter((g) => g.spent > 0);
+  const quiet = groups.filter((g) => g.spent <= 0);
+  const [closed, setClosed] = useState<string[]>(() => (mobile ? active.slice(1).map((g) => String(g.id)) : []));
+  const [showQuiet, setShowQuiet] = useState(false);
+  const [showAll, setShowAll] = useState<string[]>([]);
+  const shownGroups = showQuiet ? groups : active;
+  const max = Math.max(1, ...shownGroups.map((g) => Math.max(g.spent, g.prevSpent)));
   const total = Math.max(1, data.spending);
-  const open1 = (key: string) => setClosed((c) => (c.includes(key) ? c.filter((k) => k !== key) : [...c, key]));
+  const toggle = (list: string[], key: string) => (list.includes(key) ? list.filter((k) => k !== key) : [...list, key]);
+  const prevName = prevLabel.replace(/^samme dag /, '');
+
+  const diff = (now: number, prev: number) => {
+    if (!prev) return <span className="wm-prev">Ingenting {prevName}</span>;
+    const d = now - prev;
+    if (running) return <span className="wm-prev">{prevName[0].toUpperCase() + prevName.slice(1)}: {kr(prev)}</span>;
+    if (Math.abs(d) < 100) return <span className="wm-prev">Som {prevName}</span>;
+    return (
+      <span className={`wm-diff ${d > 0 ? 'up' : 'down'}`}>
+        {d > 0 ? '▲' : '▼'} {kr(Math.abs(d))}
+      </span>
+    );
+  };
+
   return (
     <ChartCard
       title="Hvor pengene gikk"
-      sub={<>Trykk på en gruppe for å folde den, og på en kategori for kjøpene. Den mørke streken viser {prevLabel}.</>}
+      sub={<>Størst først. Den lyse streken bak er {prevName}. Trykk på en kategori for å se kjøpene.</>}
       table={
         <SimpleTable
           head={['Kategori', 'Brukt', prevLabel[0].toUpperCase() + prevLabel.slice(1)]}
@@ -434,50 +458,84 @@ function Categories({ data, month, span, prevLabel }: { data: OverviewData; mont
       }
     >
       <SplitBar fixed={data.fixedSpending} total={data.spending} />
-      <div className="breakdown">
-        {data.groups.map((g) => {
+      {active.length === 0 && <div className="small muted" style={{ padding: '12px 0' }}>Ingenting brukt i perioden ennå.</div>}
+      <div className="wm">
+        {shownGroups.map((g) => {
           const key = String(g.id);
           const isOpen = !closed.includes(key);
-          const cmax = Math.max(1, ...g.categories.map((c) => Math.max(c.spent, c.prevSpent)));
+          const tint = g.id === null ? { color: 'var(--faint)', icon: 'list' } : groupTint(g.name);
+          const cats = [...g.categories].sort((a, b) => b.spent - a.spent || b.prevSpent - a.prevSpent);
+          const spentCats = cats.filter((c) => c.spent > 0);
+          const restCats = cats.filter((c) => c.spent <= 0);
+          const visibleCats = showAll.includes(key) ? cats : spentCats;
+          const cmax = Math.max(1, ...visibleCats.map((c) => Math.max(c.spent, c.prevSpent)));
+          const share = Math.round((Math.max(0, g.spent) / total) * 100);
           return (
-            <div key={key} className={`bd-group ${isOpen ? 'open' : ''}`}>
-              <button className="bd-row" onClick={() => open1(key)} aria-expanded={isOpen}>
-                <span className="bd-name">
-                  <Icon name={isOpen ? 'down' : 'right'} size={14} />
-                  {g.name}
+            <section key={key} className={`wm-group ${isOpen ? 'open' : ''}`} style={{ '--wm': tint.color } as React.CSSProperties}>
+              <button className="wm-row head" onClick={() => setClosed((c) => toggle(c, key))} aria-expanded={isOpen}>
+                <span className="wm-name">
+                  <Tile color={tint.color} icon={tint.icon} size={26} />
+                  <span className="wm-title">
+                    <strong>{g.name}</strong>
+                    <small>{g.spent > 0 ? `${share} % av forbruket` : 'Ingenting brukt'}</small>
+                  </span>
                 </span>
-                <span className="bd-track">
-                  <span className="bd-fill" style={{ width: `${(Math.max(0, g.spent) / max) * 100}%` }} />
-                  {g.prevSpent > 0 && <span className="bd-prev" style={{ left: `${(g.prevSpent / max) * 100}%` }} />}
+                <Bar now={g.spent} prev={g.prevSpent} max={max} />
+                <span className="wm-amount">
+                  <strong className="num">{kr(g.spent)}</strong>
+                  {diff(g.spent, g.prevSpent)}
                 </span>
-                <span className="bd-amount num">
-                  {kr(g.spent)}
-                  <small>{Math.round((Math.max(0, g.spent) / total) * 100)} %</small>
-                </span>
+                <Icon name={isOpen ? 'up' : 'down'} size={15} className="wm-chev" />
               </button>
-              {isOpen &&
-                g.categories.map((c) => (
-                  <button
-                    key={String(c.id)}
-                    className="bd-row sub"
-                    onClick={() => navigate(`/transactions?category=${c.id ?? 'none'}${span === 1 ? `&month=${month}` : ''}`)}
-                  >
-                    <span className="bd-name">{c.name}</span>
-                    <span className="bd-track">
-                      <span className="bd-fill light" style={{ width: `${(Math.max(0, c.spent) / cmax) * 100}%` }} />
-                      {c.prevSpent > 0 && <span className="bd-prev" style={{ left: `${(c.prevSpent / cmax) * 100}%` }} />}
-                    </span>
-                    <span className="bd-amount num">
-                      {kr(c.spent)}
-                      <small>{c.count} kjøp</small>
-                    </span>
-                  </button>
-                ))}
-            </div>
+              {isOpen && (
+                <div className="wm-cats">
+                  {visibleCats.map((c) => (
+                    <button
+                      key={String(c.id)}
+                      className="wm-row"
+                      onClick={() => navigate(`/transactions?category=${c.id ?? 'none'}${span === 1 ? `&month=${month}` : ''}`)}
+                    >
+                      <span className="wm-name">
+                        <span className="wm-title">
+                          <span>{c.name}</span>
+                          <small>{c.count ? `${c.count} kjøp` : 'Ingen kjøp'}</small>
+                        </span>
+                      </span>
+                      <Bar now={c.spent} prev={c.prevSpent} max={cmax} light />
+                      <span className="wm-amount">
+                        <span className="num">{kr(c.spent)}</span>
+                        {diff(c.spent, c.prevSpent)}
+                      </span>
+                      <span className="wm-chev" />
+                    </button>
+                  ))}
+                  {restCats.length > 0 && !showAll.includes(key) && (
+                    <button className="link-btn wm-more" onClick={() => setShowAll((s) => [...s, key])}>
+                      Vis {restCats.length} uten kjøp
+                    </button>
+                  )}
+                </div>
+              )}
+            </section>
           );
         })}
       </div>
+      {quiet.length > 0 && (
+        <button className="link-btn wm-more" onClick={() => setShowQuiet((v) => !v)}>
+          {showQuiet ? 'Skjul grupper uten forbruk' : `Vis ${quiet.length} ${quiet.length === 1 ? 'gruppe' : 'grupper'} uten forbruk`}
+        </button>
+      )}
     </ChartCard>
+  );
+}
+
+/** This period as a solid bar in the group's colour, the previous one as a pale bar behind it. */
+function Bar({ now, prev, max, light }: { now: number; prev: number; max: number; light?: boolean }) {
+  return (
+    <span className={`wm-track ${light ? 'light' : ''}`} aria-hidden="true">
+      {prev > 0 && <span className="wm-bar prev" style={{ width: `${(prev / max) * 100}%` }} />}
+      {now > 0 && <span className="wm-bar now" style={{ width: `${(Math.max(0, now) / max) * 100}%` }} />}
+    </span>
   );
 }
 
