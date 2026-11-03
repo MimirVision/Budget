@@ -37,6 +37,12 @@ export default function BudgetPage() {
   const mobile = useIsMobile();
   // On a wide screen the month's wrap-up and tips sit in the side column instead of across the whole page.
   const wide = useIsWide() && !mobile;
+  // Which columns the budget table shows. Saved per device; until chosen, wide screens also show last month and the
+  // 3-month average.
+  const [savedCols, setSavedCols] = useStoredState<ColKey[] | null>('budget.columns', null);
+  const colList: ColKey[] = savedCols ?? (wide ? ['spent', 'last', 'avg', 'usage'] : ['spent', 'usage']);
+  const cols: Cols = { spent: colList.includes('spent'), last: colList.includes('last'), avg: colList.includes('avg'), usage: colList.includes('usage') };
+  const toggleCol = (k: ColKey) => setSavedCols(colList.includes(k) ? colList.filter((x) => x !== k) : [...colList, k]);
   const { prefs } = usePrefs();
   const toast = useToast();
   // Before "Start på nytt" the months are history: what's assigned there no longer counts, so it can't be edited.
@@ -160,9 +166,12 @@ export default function BudgetPage() {
         )}
       </div>
       {!mobile && (
-        <label className="check small muted">
-          <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> Vis skjulte
-        </label>
+        <div className="row" style={{ gap: 12, flexWrap: 'nowrap' }}>
+          <ColumnPicker cols={cols} onToggle={toggleCol} />
+          <label className="check small muted">
+            <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> Vis skjulte
+          </label>
+        </div>
       )}
     </div>
   );
@@ -270,9 +279,9 @@ export default function BudgetPage() {
                   <tr>
                     <th>Kategori</th>
                     <th>Fordelt</th>
-                    <th>Brukt</th>
-                    <th className="wide-only" title="Det kategorien brukte forrige måned">Forrige mnd</th>
-                    <th className="wide-only" title="Snittforbruk de tre siste månedene">Snitt 3 mnd</th>
+                    {cols.spent && <th>Brukt</th>}
+                    {cols.last && <th title="Det kategorien brukte forrige måned">Forrige mnd</th>}
+                    {cols.avg && <th title="Snittforbruk de tre siste månedene">Snitt 3 mnd</th>}
                     <th>Tilgjengelig</th>
                   </tr>
                 </thead>
@@ -288,6 +297,7 @@ export default function BudgetPage() {
                         tint={prefs.catIcons ? groupTint(g.name) : null}
                         open={open}
                         onToggle={() => toggleGroup(g.id)}
+                        cols={cols}
                         totals={{
                           assigned: sum('assigned'),
                           activity: sum('activity'),
@@ -305,6 +315,7 @@ export default function BudgetPage() {
                               tint={groupTint(g.name).color}
                               icons={prefs.catIcons}
                               ring={prefs.catRing}
+                              cols={cols}
                               pace={budget.pace}
                               selected={selected === c.id}
                               onSelect={() => setSelected(c.id === selected ? null : c.id)}
@@ -451,12 +462,64 @@ function Stats({ budget }: { budget: BudgetMonth }) {
   );
 }
 
+type ColKey = 'spent' | 'last' | 'avg' | 'usage';
+type Cols = Record<ColKey, boolean>;
+const COLUMNS: Array<{ key: ColKey; label: string; help: string }> = [
+  { key: 'spent', label: 'Brukt', help: 'Det som er brukt denne måneden' },
+  { key: 'last', label: 'Forrige mnd', help: 'Det kategorien brukte forrige måned' },
+  { key: 'avg', label: 'Snitt 3 mnd', help: 'Snittforbruket de tre siste månedene' },
+  { key: 'usage', label: 'Forbruk', help: 'Ring eller strek for hvor mye som er brukt' },
+];
+
+/** "Kolonner": choose which columns the budget table shows. Fordelt and Tilgjengelig are always there. */
+function ColumnPicker({ cols, onToggle }: { cols: Cols; onToggle: (k: ColKey) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [open]);
+  const shown = COLUMNS.filter((c) => cols[c.key]).length;
+  return (
+    <div className="col-picker" ref={ref}>
+      <button className="btn sm ghost" onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-haspopup="true">
+        <Icon name="filter" size={15} /> Kolonner
+        <span className="faint">{shown + 2}</span>
+      </button>
+      {open && (
+        <div className="col-menu" role="menu">
+          <div className="small muted" style={{ padding: '2px 4px 6px' }}>
+            Fordelt og Tilgjengelig vises alltid.
+          </div>
+          {COLUMNS.map((c) => (
+            <label key={c.key} className="col-option">
+              <input type="checkbox" checked={cols[c.key]} onChange={() => onToggle(c.key)} />
+              <span>
+                <strong>{c.label}</strong>
+                <span className="small muted">{c.help}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GroupRows({
   id,
   name,
   open,
   onToggle,
   totals,
+  cols,
   tint,
   onAdded,
   children,
@@ -466,6 +529,7 @@ function GroupRows({
   open: boolean;
   onToggle: () => void;
   totals: { assigned: number; activity: number; available: number; last: number; avg: number };
+  cols: Cols;
   tint: { color: string; icon: string } | null;
   onAdded: () => void;
   children: ReactNode;
@@ -495,14 +559,14 @@ function GroupRows({
           </span>
         </td>
         <td className="num">{kr(totals.assigned)}</td>
-        <td className="num">{kr(totals.activity)}</td>
-        <td className="num wide-only">{kr(totals.last)}</td>
-        <td className="num wide-only">{kr(totals.avg)}</td>
+        {cols.spent && <td className="num">{kr(totals.activity)}</td>}
+        {cols.last && <td className="num">{kr(totals.last)}</td>}
+        {cols.avg && <td className="num">{kr(totals.avg)}</td>}
         <td className="num">{kr(totals.available)}</td>
       </tr>
       {adding && (
         <tr>
-          <td colSpan={6}>
+          <td colSpan={3 + Number(cols.spent) + Number(cols.last) + Number(cols.avg)}>
             <form
               className="row"
               onSubmit={async (e) => {
@@ -534,6 +598,7 @@ function CategoryLine({
   tint,
   icons,
   ring,
+  cols,
   pace,
   selected,
   onSelect,
@@ -544,6 +609,7 @@ function CategoryLine({
   tint: string;
   icons: boolean;
   ring: boolean;
+  cols: Cols;
   pace: number;
   selected: boolean;
   onSelect: () => void;
@@ -559,9 +625,9 @@ function CategoryLine({
           <div className="grow" style={{ minWidth: 0 }}>
             <div className="cat-name">{c.name}</div>
             {sub && <div className={`cat-sub ${sub.tone ?? ''}`}>{sub.text}</div>}
-            {!ring && <UsageBar c={c} pace={pace} />}
+            {cols.usage && !ring && <UsageBar c={c} pace={pace} />}
           </div>
-          {ring && <MiniRing c={c} pace={pace} tint={tint} />}
+          {cols.usage && ring && <MiniRing c={c} pace={pace} tint={tint} />}
         </div>
       </td>
       <td onClick={(e) => e.stopPropagation()}>
@@ -573,11 +639,16 @@ function CategoryLine({
           disabled={readOnly}
         />
       </td>
-      <td className="num muted">{c.activity ? kr(c.activity) : '–'}</td>
-      <td className="num faint wide-only">{c.lastMonthActivity ? kr(c.lastMonthActivity) : '–'}</td>
-      <td className={`num faint wide-only ${c.avgActivity && c.activity < c.avgActivity ? 'over-avg' : ''}`} title={c.avgActivity && c.activity < c.avgActivity ? 'Brukt mer enn snittet allerede denne måneden' : undefined}>
-        {c.avgActivity ? kr(c.avgActivity) : '–'}
-      </td>
+      {cols.spent && <td className="num muted">{c.activity ? kr(c.activity) : '–'}</td>}
+      {cols.last && <td className="num faint">{c.lastMonthActivity ? kr(c.lastMonthActivity) : '–'}</td>}
+      {cols.avg && (
+        <td
+          className={`num faint ${c.avgActivity && c.activity < c.avgActivity ? 'over-avg' : ''}`}
+          title={c.avgActivity && c.activity < c.avgActivity ? 'Brukt mer enn snittet allerede denne måneden' : undefined}
+        >
+          {c.avgActivity ? kr(c.avgActivity) : '–'}
+        </td>
+      )}
       <td>
         <Pill c={c} />
       </td>
