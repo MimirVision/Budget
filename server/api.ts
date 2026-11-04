@@ -396,11 +396,17 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
   api.patch('/categories/:id', async (c) => {
     const id = Number(c.req.param('id'));
     const body = await c.req.json();
-    const fields = ['name', 'hidden', 'group_id', 'target_type', 'target_amount', 'target_date', 'note'] as const;
+    const fields = ['name', 'hidden', 'group_id', 'target_type', 'target_amount', 'target_date', 'note', 'icon'] as const;
     for (const f of fields) {
       if (body[f] === undefined) continue;
       let value = body[f];
       if (f === 'hidden') value = value ? 1 : 0;
+      if (f === 'icon') {
+        // One emoji (it can be several code points, like a flag or a skin tone), or nothing for the letter.
+        value = typeof value === 'string' ? value.trim() : '';
+        if ([...value].length > 8 || /[\p{L}\p{N}]/u.test(value)) badRequest('Velg en emoji');
+        value = value || null;
+      }
       if (f === 'name') value = String(value).trim();
       if (f === 'target_type' && !['monthly', 'by_date', 'balance', null].includes(value)) badRequest('Ukjent måltype');
       run(db, `UPDATE categories SET ${f} = ? WHERE id = ?`, value, id);

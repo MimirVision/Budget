@@ -31,14 +31,33 @@ export function nameTint(name: string): string {
   return `var(${palette[h % palette.length]})`;
 }
 
-/** A rounded square with a white symbol or letter on a colour, like the icons in Settings. */
-export function Tile({ color, icon, letter, size = 28 }: { color: string; icon?: string; letter?: string; size?: number }) {
+/**
+ * A rounded square with a white symbol or letter on a colour, like the icons in Settings. With an emoji it sits on
+ * a soft wash of the colour instead, so the emoji's own colours show.
+ */
+export function Tile({ color, icon, letter, emoji, size = 28 }: { color: string; icon?: string; letter?: string; emoji?: string | null; size?: number }) {
+  if (emoji)
+    return (
+      <span className="tile emoji" style={{ '--tile': color, width: size, height: size, fontSize: Math.round(size * 0.6) } as CSSProperties} aria-hidden="true">
+        {emoji}
+      </span>
+    );
   return (
     <span className="tile" style={{ '--tile': color, width: size, height: size } as CSSProperties} aria-hidden="true">
       {icon ? <Icon name={icon} size={Math.round(size * 0.58)} /> : <span>{(letter ?? '?').trim().charAt(0).toUpperCase()}</span>}
     </span>
   );
 }
+
+/** Emojis to pick from for a category, grouped the way a household budget usually is. */
+export const CATEGORY_EMOJIS: Array<{ label: string; items: string[] }> = [
+  { label: 'Bolig og regninger', items: ['🏠', '🏡', '🔑', '💡', '⚡', '💧', '🔥', '📺', '📱', '🌐', '🛡️', '🧾', '🏦', '🧹', '🛠️', '🪴'] },
+  { label: 'Mat og hverdag', items: ['🛒', '🥦', '🍎', '🥖', '🧀', '🍕', '🍔', '🍣', '☕', '🍷', '🍺', '🥡', '🧴', '🧻', '💊', '🩺'] },
+  { label: 'Transport', items: ['🚗', '⛽', '🔌', '🅿️', '🚌', '🚆', '🚲', '🛴', '✈️', '⛴️', '🚕', '🛞'] },
+  { label: 'Barn og familie', items: ['👶', '🧸', '🎒', '🏫', '👨‍👩‍👧', '🍼', '🐶', '🐱', '🎂', '🎁'] },
+  { label: 'Fritid og kos', items: ['🎉', '🎬', '🎮', '🎵', '📚', '⚽', '🏋️', '⛷️', '🏕️', '🎣', '💇', '👗', '👟', '💄', '🛍️', '🎨'] },
+  { label: 'Sparing og mål', items: ['💰', '🐷', '💎', '📈', '🏖️', '🌍', '🎯', '🛟', '💳', '🎓', '💍', '🚀'] },
+];
 
 /**
  * Concentric progress rings. Each ring is a share from 0 to 1 (more than 1 wraps once more, the way an

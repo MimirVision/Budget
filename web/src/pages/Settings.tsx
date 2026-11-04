@@ -727,7 +727,7 @@ function Appearance() {
         {(
           [
             ['budgetRings', 'Ringer i budsjettet', 'To ringer øverst: hvor mye av det fordelte som er brukt, og hvor langt i måneden dere er.'],
-            ['catIcons', 'Ikoner på kategoriene', 'En farget bokstav ved hver kategori, i fargen til gruppen den hører til.'],
+            ['catIcons', 'Ikoner på kategoriene', 'En farget bokstav ved hver kategori, eller en emoji du velger under Ikon når du åpner kategorien.'],
             ['catRing', 'Forbruk som ring', 'Hvor mye som er brukt av hver kategori, som en liten ring med prosent i stedet for en strek.'],
             ['cardWallet', 'Kortbilde og betalingsring', 'Kredittkort: et lite kortbilde, en ring som teller ned til forfall, og nøkkeltallene øverst.'],
             ['softReview', 'Myke kort i Gjennomgå', 'Kortene uten kant og kategorifeltene fylt med grått, som på iPhone.'],

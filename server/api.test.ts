@@ -149,3 +149,22 @@ describe('undo delete', () => {
     expect(get<any>(db, 'SELECT COUNT(*) AS n FROM forgotten_imports').n).toBe(0); // the sync knows it again
   });
 });
+
+describe('category icons', () => {
+  it('keeps an emoji for a category, shows it on Budsjett, and goes back to the letter when cleared', async () => {
+    const { db, app } = setup();
+    const id = get<{ id: number }>(db, "SELECT id FROM categories WHERE name = 'Dagligvarer'")!.id;
+    const patch = (icon: unknown) =>
+      app.request(`/api/categories/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ icon }) });
+    const budgetIcon = async () =>
+      (await (await app.request('/api/budget/2026-10')).json()).groups.flatMap((g: any) => g.categories).find((c: any) => c.id === id).icon;
+
+    expect((await patch('🛒')).status).toBe(200);
+    expect(await budgetIcon()).toBe('🛒');
+    expect((await patch('👨‍👩‍👧')).status).toBe(200); // a family emoji is several code points
+    expect((await patch('Mat')).status).toBe(400); // letters are not an icon
+    expect(await budgetIcon()).toBe('👨‍👩‍👧');
+    expect((await patch('')).status).toBe(200);
+    expect(await budgetIcon()).toBeNull();
+  });
+});

@@ -19,6 +19,8 @@ export interface CategoryRow {
   target_amount: number | null;
   target_date: string | null;
   note: string | null;
+  /** An emoji chosen for the category, or null for its first letter. */
+  icon: string | null;
   assigned: number;
   activity: number;
   available: number;
@@ -323,6 +325,7 @@ export function getBudget(db: DB, month: string): BudgetMonth {
       target_amount: c.target_amount,
       target_date: c.target_date,
       note: c.note,
+      icon: c.icon ?? null,
       assigned: assigned.get(c.id) ?? 0,
       activity: activity.get(c.id) ?? 0,
       available: reset ? walkReset(reset.get(c.id), month).available : (assignedCum.get(c.id) ?? 0) + (activityCum.get(c.id) ?? 0),

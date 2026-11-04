@@ -194,6 +194,7 @@ export default function BudgetPage() {
     <CategoryDetail
       key={current.id}
       cat={current}
+      tint={groupTint(budget.groups.find((g) => g.id === current.group_id)?.name).color}
       month={month}
       all={all}
       rta={budget.readyToAssign}
@@ -253,7 +254,7 @@ export default function BudgetPage() {
                       const sub = subtitle(c, budget.pace);
                       return (
                         <button key={c.id} className="m-cat" onClick={() => setSelected(c.id)} style={{ opacity: c.hidden ? 0.5 : 1 }}>
-                          {prefs.catIcons && <Tile color={groupTint(g.name).color} letter={c.name} size={30} />}
+                          {prefs.catIcons && <Tile color={groupTint(g.name).color} letter={c.name} emoji={c.icon} size={30} />}
                           <div className="m-cat-main">
                             <span className="m-cat-name">{c.name}</span>
                             {sub && <span className={`m-cat-sub ${sub.tone ?? ''}`}>{sub.text}</span>}
@@ -656,7 +657,7 @@ function CategoryLine({
     <tr className={`cat ${selected ? 'selected' : ''}`} onClick={onSelect}>
       <td>
         <div className="cat-cell" style={{ opacity: c.hidden ? 0.5 : 1 }}>
-          {icons && <Tile color={tint} letter={c.name} size={26} />}
+          {icons && <Tile color={tint} letter={c.name} emoji={c.icon} size={26} />}
           <div className="grow" style={{ minWidth: 0 }}>
             <div className="cat-name">{c.name}</div>
             {sub && <div className={`cat-sub ${sub.tone ?? ''}`}>{sub.text}</div>}
