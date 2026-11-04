@@ -243,16 +243,25 @@ export function initSchema(db: DB) {
   seedDefaults(db);
 }
 
+const open = new WeakSet<DB>();
+
+/** Runs `fn` in one transaction. A tx inside another joins the outer one (SQLite can't nest BEGIN). */
 export function tx<T>(db: DB, fn: () => T): T {
-  if (db.transaction) return db.transaction(fn);
-  db.exec('BEGIN');
+  if (open.has(db)) return fn();
+  open.add(db);
   try {
-    const result = fn();
-    db.exec('COMMIT');
-    return result;
-  } catch (e) {
-    db.exec('ROLLBACK');
-    throw e;
+    if (db.transaction) return db.transaction(fn);
+    db.exec('BEGIN');
+    try {
+      const result = fn();
+      db.exec('COMMIT');
+      return result;
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+  } finally {
+    open.delete(db);
   }
 }
 

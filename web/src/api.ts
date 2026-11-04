@@ -202,3 +202,29 @@ export interface Attachment {
   size: number;
   created_at: string;
 }
+
+/** One entry on Mottakere: everyone the money goes to or comes from. */
+export interface PayeeRow {
+  payee: string;
+  count: number;
+  spent: number;
+  received: number;
+  last: string;
+  category_id: number | null;
+  usual_category_id: number | null;
+  usual_category: string | null;
+  aliases: string[];
+}
+
+/** What changed when a payee got a category, so it can be undone. */
+export interface PayeeApplied {
+  changed: number;
+  before: Array<{ id: number; category_id: number | null; reviewed: number }>;
+  previous: number | null;
+}
+
+/** Puts back what a payee's category changed: the transactions (90 at a time) and the payee's own rule. */
+export async function undoPayeeCategory(payee: string, applied: PayeeApplied) {
+  for (let i = 0; i < applied.before.length; i += 90) await api.post('/transactions/bulk-restore', { items: applied.before.slice(i, i + 90) });
+  await api.post('/payees/category', { payee, category_id: applied.previous, only_rule: true });
+}

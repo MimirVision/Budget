@@ -34,6 +34,7 @@ export default function TransactionsPage() {
   const category = params.get('category') ?? '';
   const month = params.get('month') ?? '';
   const q = params.get('q') ?? '';
+  const payee = params.get('payee') ?? '';
 
   const setFilter = (key: string, value: string) => {
     const next = new URLSearchParams(params);
@@ -49,15 +50,16 @@ export default function TransactionsPage() {
       if (category) qs.set('category', category);
       if (month) qs.set('month', month);
       if (q) qs.set('q', q);
+      if (payee) qs.set('payee', payee);
       const r = await api.get<{ transactions: Transaction[]; total: number }>(`/transactions?${qs}`);
       setRows((prev) => (offset ? [...prev, ...r.transactions] : r.transactions));
       setTotal(r.total);
       if (!offset) {
         // Reserved purchases only make sense in the plain list, not when filtering by category, month or text.
-        setPending(category || month || q ? [] : await api.get<Pending[]>(`/pending${account ? `?account=${account}` : ''}`));
+        setPending(category || month || q || payee ? [] : await api.get<Pending[]>(`/pending${account ? `?account=${account}` : ''}`));
       }
     },
-    [account, category, month, q],
+    [account, category, month, q, payee],
   );
   useEffect(() => {
     load();
@@ -86,13 +88,13 @@ export default function TransactionsPage() {
   if (!summary) return null;
   const acc = summary.accounts.find((a) => String(a.id) === account);
   const cat = summary.categories.find((c) => String(c.id) === category);
-  const filtered = !!(account || category || month || q);
+  const filtered = !!(account || category || month || q || payee);
 
   return (
     <>
       <div className="page-head">
         <div>
-          <h1>{acc ? acc.name : 'Transaksjoner'}</h1>
+          <h1>{acc ? acc.name : payee || 'Transaksjoner'}</h1>
           <div className="sub">
             {acc ? (
               <>
@@ -173,6 +175,19 @@ export default function TransactionsPage() {
           </button>
         )}
       </div>
+      {payee && (
+        <div className="payee-filter">
+          <span className="chip">
+            Mottaker: {payee}
+            <button onClick={() => setFilter('payee', '')} aria-label="Fjern mottakerfilter">
+              <Icon name="close" size={12} />
+            </button>
+          </span>
+          <Link to="/payees" className="small">
+            Fast kategori og navn under Mottakere →
+          </Link>
+        </div>
+      )}
       {category === 'none' && <div className="callout info small" style={{ marginBottom: 12 }}>Viser transaksjoner uten kategori.</div>}
       {month && <div className="small muted" style={{ marginBottom: 8 }}>{monthLabel(month)}</div>}
 

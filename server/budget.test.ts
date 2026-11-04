@@ -99,6 +99,16 @@ describe('budget', () => {
     expect(readyToAssign(db)).toBe(0);
   });
 
+  it('auto-assign can plan with pay that has not come yet', () => {
+    const sb1 = account('SpareBank 1');
+    addTx(sb1, '2026-10-01', 100_000, 'Lønn');
+    run(db, "UPDATE categories SET target_type = 'monthly', target_amount = 200000 WHERE id IN (?, ?)", cat('Boliglån'), cat('Strøm'));
+    // 1 000 kr in the account and 3 000 kr on the way: 4 000 kr to give out, the rest stays missing.
+    autoAssign(db, '2026-10', 'targets', undefined, 300_000);
+    expect(row('2026-10', 'Boliglån').assigned + row('2026-10', 'Strøm').assigned).toBe(400_000);
+    expect(readyToAssign(db)).toBe(-300_000);
+  });
+
   it('split transactions count in each category', () => {
     const sb1 = account('SpareBank 1');
     const id = addTx(sb1, '2026-10-02', -100_000, null);

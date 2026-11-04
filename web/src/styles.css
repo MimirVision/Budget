@@ -5682,3 +5682,150 @@ kbd {
 .bill-row .bill-status {
   display: block;
 }
+
+/* ---------- Mottakere ---------- */
+.payee-intro {
+  margin: -8px 0 14px;
+  max-width: 70ch;
+}
+.payee-tools {
+  margin-bottom: 14px;
+}
+.payee-search {
+  position: relative;
+  flex: 1 1 240px;
+}
+.payee-search .input {
+  padding-left: 34px;
+}
+.payee-search svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--faint);
+  pointer-events: none;
+}
+.payee-list {
+  padding: 0;
+  overflow: hidden;
+}
+.payee-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 120px minmax(180px, 240px) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+.payee-row:first-child {
+  border-top: none;
+}
+.payee-row.busy {
+  opacity: 0.55;
+}
+.payee-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+.payee-amount {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-weight: 600;
+}
+.payee-cat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+.payee-cat .select {
+  width: 100%;
+}
+.payee-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.payee-more {
+  width: 100%;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+}
+@media (max-width: 860px) {
+  .payee-tools .seg {
+    width: 100%;
+  }
+  .payee-tools .seg button {
+    flex: 1;
+    padding-inline: 6px;
+  }
+  .payee-row {
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    grid-template-areas:
+      'tile name amount'
+      'cat cat actions';
+    row-gap: 8px;
+    gap: 8px 12px;
+    padding: 12px 14px;
+  }
+  .payee-row > .tile {
+    grid-area: tile;
+  }
+  .payee-name {
+    grid-area: name;
+  }
+  .payee-amount {
+    grid-area: amount;
+  }
+  .payee-cat {
+    grid-area: cat;
+  }
+  .payee-actions {
+    grid-area: actions;
+    align-self: start;
+  }
+  .payee-actions .btn {
+    padding-inline: 8px;
+  }
+}
+
+/* A transaction list narrowed to one payee */
+.payee-filter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.payee-filter .chip {
+  font-size: 13px;
+  padding: 4px 6px 4px 10px;
+  color: var(--text);
+}
+.payee-filter .chip button {
+  display: inline-flex;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px;
+}
+
+/* Autofordel: take the coming pay into account */
+.auto-expected {
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.auto-expected input {
+  margin-top: 2px;
+}
+.payee-row > .tile span {
+  font-size: 15px;
+}

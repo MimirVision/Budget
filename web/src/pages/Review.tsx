@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, type Transaction } from '../api';
+import { api, undoPayeeCategory, type PayeeApplied, type Transaction } from '../api';
 import { dayLabel, kr } from '../format';
 import { useStore } from '../store';
 import { CategorySelect, Icon, Money, Skeleton, haptic, useToast } from '../components/ui';
@@ -60,9 +60,21 @@ export default function ReviewPage() {
     // Optimistically hide it so the list feels instant.
     setItems((list) => list?.filter((x) => x.id !== t.id) ?? null);
     haptic();
-    await api.patch(`/transactions/${t.id}`, categoryId ? { category_id: categoryId, remember } : { reviewed: true });
+    const r = await api.patch<{ appliedToOthers: PayeeApplied | null }>(`/transactions/${t.id}`, categoryId ? { category_id: categoryId, remember } : { reviewed: true });
     const cat = summary?.categories.find((c) => c.id === categoryId);
-    toast(cat ? `${t.payee} → ${cat.name}${remember ? ' (huskes)' : ''}` : `${t.payee} godkjent`, { action: undo(t.id) });
+    const applied = r.appliedToOthers;
+    if (cat && applied?.changed)
+      toast(`${t.payee} → ${cat.name}, og ${applied.changed} ${applied.changed === 1 ? 'annen' : 'andre'} fra dem`, {
+        action: {
+          label: 'Angre',
+          run: async () => {
+            await undoPayeeCategory(t.payee, applied);
+            await api.patch(`/transactions/${t.id}`, { reviewed: false });
+            await after();
+          },
+        },
+      });
+    else toast(cat ? `${t.payee} → ${cat.name}${remember ? ' (huskes)' : ''}` : `${t.payee} godkjent`, { action: undo(t.id) });
     await after();
   };
 

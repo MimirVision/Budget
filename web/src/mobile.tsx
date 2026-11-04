@@ -18,6 +18,7 @@ const TITLES: Record<string, { title: string; sub?: boolean }> = {
   '/accounts': { title: 'Kontoer', sub: true },
   '/settings': { title: 'Innstillinger', sub: true },
   '/duplicates': { title: 'Duplikater', sub: true },
+  '/payees': { title: 'Mottakere', sub: true },
 };
 
 /** The bar at the top. Shows the page name once you've scrolled past the big title. */
