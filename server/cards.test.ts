@@ -366,4 +366,27 @@ describe('Kredittkort', () => {
     syncCardBalances(db, '2026-11-06');
     expect(all(db, "SELECT amount FROM transactions WHERE source = 'cardsync'")).toEqual([{ amount: -20000 }]);
   });
+
+  it('does not adjust for a transfer when the bank balance already has it, before it is booked', () => {
+    const { db, card, tx } = setup();
+    run(db, "INSERT INTO settings(key, value) VALUES ('budget_start', '2026-11-01')");
+    tx('2026-11-02', -50000, 'Kiwi');
+    run(db, "INSERT INTO transactions(account_id, date, amount, payee, reviewed, source) VALUES (?, '2026-11-04', -300000, 'Overføring: Revolut', 1, 'transfer')", card);
+    // This bank's balance counts transactions that are still pending.
+    run(db, "UPDATE accounts SET bank_balance = -350000, bank_balance_at = '2026-11-04T08:00:00Z' WHERE id = ?", card);
+    syncCardBalances(db, '2026-11-04');
+    expect(all(db, "SELECT amount FROM transactions WHERE source = 'cardsync'")).toEqual([]);
+  });
+
+  it('removes an old adjustment that a not-yet-booked transfer caused', () => {
+    const { db, card, tx } = setup();
+    run(db, "INSERT INTO settings(key, value) VALUES ('budget_start', '2026-11-01')");
+    tx('2026-11-02', -50000, 'Kiwi');
+    run(db, "INSERT INTO transactions(account_id, date, amount, payee, reviewed, source) VALUES (?, '2026-11-04', -300000, 'Overføring: Revolut', 1, 'transfer')", card);
+    // What the earlier version left behind.
+    run(db, "INSERT INTO transactions(account_id, date, amount, payee, reviewed, source) VALUES (?, '2026-11-04', 300000, 'Saldojustering', 1, 'cardsync')", card);
+    run(db, "UPDATE accounts SET bank_balance = -50000, bank_balance_at = '2026-11-04T08:00:00Z' WHERE id = ?", card);
+    syncCardBalances(db, '2026-11-04');
+    expect(all(db, "SELECT amount FROM transactions WHERE source = 'cardsync'")).toEqual([]);
+  });
 });

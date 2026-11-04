@@ -267,9 +267,9 @@ export function syncCardBalances(db: DB, today = todayISO()) {
       continue;
     }
     const owed = ledger(db, effectiveTerms(card, bank), start, today, bank, check).owed;
-    // What the app made itself that the bank hasn't booked yet: the other half of a transfer you marked, or
-    // something typed in by hand, from the last few days before the bank's balance. The bank's balance can't
-    // include it yet, and when the bank's own row arrives it takes this one over. Not a difference to fix.
+    // What the app made itself that the bank may not have booked yet: the other half of a transfer you marked, or
+    // something typed in by hand, from the last few days before the bank's balance. When the bank's own row
+    // arrives it takes this one over.
     const waiting = check
       ? get<{ s: number }>(
           db,
@@ -282,10 +282,15 @@ export function syncCardBalances(db: DB, today = todayISO()) {
           start,
         )!.s
       : 0;
-    const appOwed = -(get<{ s: number }>(db, 'SELECT COALESCE(SUM(amount), 0) AS s FROM transactions WHERE account_id = ? AND date >= ? AND date <= ?', card.id, start, today)!.s) + waiting;
-    const diff = appOwed - owed; // > 0: the app thinks more is owed than the bank does
-    if (Math.abs(diff) < 1) continue;
-    const amount = (auto?.amount ?? 0) + diff;
+    const appOwed = -(get<{ s: number }>(db, 'SELECT COALESCE(SUM(amount), 0) AS s FROM transactions WHERE account_id = ? AND date >= ? AND date <= ?', card.id, start, today)!.s);
+    // Banks differ in whether the balance they report already has transactions that aren't booked yet, so both
+    // readings are tried, and the one that needs the smallest adjustment wins. A transfer you just marked then
+    // never causes one, whichever kind of balance the bank sends. (diff > 0: the app thinks more is owed.)
+    const now = auto?.amount ?? 0;
+    const amount = [appOwed - owed, appOwed + waiting - owed]
+      .map((diff) => now + diff)
+      .reduce((best, a) => (Math.abs(a) < Math.abs(best) ? a : best));
+    if (Math.abs(amount - now) < 1) continue;
     const date = today < start ? start : today;
     if (auto && amount === 0) run(db, 'DELETE FROM transactions WHERE id = ?', auto.id);
     else if (auto) run(db, 'UPDATE transactions SET amount = ?, date = ? WHERE id = ?', amount, date, auto.id);
