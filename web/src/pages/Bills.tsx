@@ -4,7 +4,8 @@
  */
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '../api';
+import { api, type IncomeOutlook } from '../api';
+import { IncomeEditor, IncomeList, newIncome, type IncomeDraft } from './income';
 import { dayLabel, kr, relativeDay } from '../format';
 import { useStore } from '../store';
 import { CategorySelect, Icon, Modal, MoneyInput, Skeleton, haptic, useToast } from '../components/ui';
@@ -63,7 +64,12 @@ export default function BillsPage() {
   const { refresh, changed } = useStore();
   const toast = useToast();
 
-  const load = () => api.get<Data>('/bills').then(setData);
+  const [incomes, setIncomes] = useState<IncomeOutlook | null>(null);
+  const [incomeDraft, setIncomeDraft] = useState<IncomeDraft | null>(null);
+  const load = () => {
+    api.get<IncomeOutlook>('/incomes').then(setIncomes);
+    return api.get<Data>('/bills').then(setData);
+  };
   useEffect(() => {
     load();
   }, []);
@@ -168,6 +174,8 @@ export default function BillsPage() {
         </div>
       )}
 
+      <IncomeList outlook={incomes} onEdit={setIncomeDraft} onAdd={() => setIncomeDraft(newIncome())} />
+
       {data.suggestions.length > 0 && (
         <section className="card bills-suggest">
           <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
@@ -214,6 +222,16 @@ export default function BillsPage() {
         måneden.
       </p>
 
+      {incomeDraft && (
+        <IncomeEditor
+          draft={incomeDraft}
+          onClose={() => setIncomeDraft(null)}
+          onSaved={() => {
+            setIncomeDraft(null);
+            load();
+          }}
+        />
+      )}
       {editing && (
         <BillEditor
           draft={editing}

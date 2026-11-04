@@ -6,6 +6,7 @@ import { forgetImport, ingest, linkTransfer, rejectTransferSuggestion, ruleMatch
 import { previewCsv, type CsvMapping } from './import/csv.ts';
 import { overview } from './overview.ts';
 import { payday, syncHealth, tips } from './insights.ts';
+import { addIncome, deleteIncome, incomeOutlook, updateIncome } from './incomes.ts';
 import { cardAlerts, cardOverview, deleteStatement, matchBalance, saveStatement, syncCardBalances, type StatementInput } from './cards.ts';
 import { expectRefund, listRefunds } from './refunds.ts';
 import { addBill, deleteBill, listBills, syncBillTargets, updateBill, type BillInput } from './bills.ts';
@@ -240,14 +241,42 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
     tx(db, () => {
       for (const [id, amount] of entries) if (Number.isFinite(amount)) setAssigned(db, month, Number(id), amount);
     });
-    return c.json(getBudget(db, month));
+    return c.json(budgetView(month));
+  });
+
+  // ---------- Forventet inntekt ----------
+  api.get('/incomes', (c) => {
+    const month = c.req.query('month') ?? currentMonth();
+    if (!MONTH.test(month)) badRequest('Måned må se slik ut: 2026-10');
+    return c.json(incomeOutlook(db, month));
+  });
+  api.post('/incomes', async (c) => {
+    try {
+      return c.json({ id: addIncome(db, await c.req.json()) });
+    } catch (e: any) {
+      return badRequest(e.message);
+    }
+  });
+  api.put('/incomes/:id', async (c) => {
+    try {
+      updateIncome(db, Number(c.req.param('id')), await c.req.json());
+      return c.json({ ok: true });
+    } catch (e: any) {
+      return badRequest(e.message);
+    }
+  });
+  api.delete('/incomes/:id', (c) => {
+    deleteIncome(db, Number(c.req.param('id')));
+    return c.json({ ok: true });
   });
 
   // ---------- Budget ----------
+  /** The month's budget, with the expected pay beside it (Klar til fordeling itself only counts money that has come). */
+  const budgetView = (month: string) => ({ ...getBudget(db, month), expected: incomeOutlook(db, month) });
   api.get('/budget/:month', (c) => {
     const month = c.req.param('month');
     if (!MONTH.test(month)) badRequest('Måned må se slik ut: 2026-10');
-    return c.json(getBudget(db, month));
+    return c.json(budgetView(month));
   });
 
   /** Months before "Start på nytt" are history: what's assigned there doesn't count, so changing it would vanish. */
@@ -262,7 +291,7 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
     if (!Number.isFinite(amount)) badRequest('Beløpet må være et tall');
     assertEditable(c.req.param('month'));
     setAssigned(db, c.req.param('month'), Number(c.req.param('categoryId')), amount);
-    return c.json(getBudget(db, c.req.param('month')));
+    return c.json(budgetView(c.req.param('month')));
   });
 
   api.post('/budget/:month/auto', async (c) => {
@@ -277,7 +306,7 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
     assertEditable(c.req.param('month'));
     if (!(amount > 0)) badRequest('Beløpet må være større enn null');
     moveMoney(db, c.req.param('month'), from, to, amount);
-    return c.json(getBudget(db, c.req.param('month')));
+    return c.json(budgetView(c.req.param('month')));
   });
 
   /** Spent and assigned for one category over the last months, for the little chart in the category panel. */

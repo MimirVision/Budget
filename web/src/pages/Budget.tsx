@@ -5,7 +5,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, type BudgetMonth, type CategoryRow, type Recurring } from '../api';
-import { kr, monthLabel } from '../format';
+import { dayLabel, kr, monthLabel } from '../format';
+import { IncomeEditor, PayCard, newIncome, type IncomeDraft } from './income';
 import { useStore } from '../store';
 import { usePrefs } from '../prefs';
 import { Rings, Tile, groupTint } from '../components/apple';
@@ -32,6 +33,7 @@ export default function BudgetPage() {
   const [showHidden, setShowHidden] = useState(false);
   const [collapsed, setCollapsed] = useStoredState<number[]>('budget.collapsed', []);
   const [autoOpen, setAutoOpen] = useState(false);
+  const [incomeDraft, setIncomeDraft] = useState<IncomeDraft | null>(null);
   const [recurring, setRecurring] = useState<Recurring[]>([]);
   const { summary, refresh, version } = useStore();
   const mobile = useIsMobile();
@@ -227,6 +229,11 @@ export default function BudgetPage() {
 
       {mobile ? (
         <>
+          {budget.expected && (budget.expected.items.length > 0 || budget.readyToAssign < 0) && (
+            <div style={{ marginBottom: 12 }}>
+              <PayCard budget={budget} onEdit={setIncomeDraft} onAdd={() => setIncomeDraft(newIncome())} />
+            </div>
+          )}
           {filters}
           <div className="stack" style={{ gap: 12 }}>
             {groups.map((g) => {
@@ -353,6 +360,7 @@ export default function BudgetPage() {
                 </div>
                 {wide && <WrapUp month={month} startMonth={startMonth} onChanged={() => { load(); refresh(); }} />}
                 {wide && <Tips month={month} onChanged={() => { load(); refresh(); }} />}
+                <PayCard budget={budget} onEdit={setIncomeDraft} onAdd={() => setIncomeDraft(newIncome())} />
                 <CardBills budget={budget} onCover={(c) => assign(c.id, c.assigned + c.needed)} />
                 <Upcoming items={recurring} />
               </>
@@ -362,6 +370,16 @@ export default function BudgetPage() {
       )}
 
       {autoOpen && <AutoAssignMenu budget={budget} onPick={auto} onClose={() => setAutoOpen(false)} />}
+      {incomeDraft && (
+        <IncomeEditor
+          draft={incomeDraft}
+          onClose={() => setIncomeDraft(null)}
+          onSaved={() => {
+            setIncomeDraft(null);
+            load();
+          }}
+        />
+      )}
     </>
   );
 }
@@ -369,8 +387,13 @@ export default function BudgetPage() {
 /** The one number that matters most: money that still needs a job. */
 function Hero({ budget, onAuto }: { budget: BudgetMonth; onAuto: () => void }) {
   const { prefs } = usePrefs();
-  const rta = budget.readyToAssign;
-  const state = rta > 0 ? 'positive' : rta < 0 ? 'negative' : 'zero';
+  const actual = budget.readyToAssign;
+  // Expected pay still to come: assigning ahead of it isn't "more than you have", only ahead of time.
+  const pending = budget.expected?.pending ?? 0;
+  const next = budget.expected?.next ?? null;
+  const planned = actual < 0 && pending > 0 && actual + pending >= 0;
+  const rta = planned ? actual + pending : actual;
+  const state = planned ? 'planned' : rta > 0 ? 'positive' : rta < 0 ? 'negative' : 'zero';
   const spent = -budget.activity;
   const share = budget.assigned > 0 ? Math.max(0, spent / budget.assigned) : 0;
   const pace = budget.pace > 0 ? budget.pace : 1;
@@ -392,7 +415,15 @@ function Hero({ budget, onAuto }: { budget: BudgetMonth; onAuto: () => void }) {
         </Rings>
       )}
       <div className="hero-main">
-        <div className="hero-label">{rta > 0 ? 'Klar til fordeling' : rta < 0 ? 'Fordelt mer enn dere har' : 'Hver krone har en jobb'}</div>
+        <div className="hero-label">
+          {planned
+            ? 'Klar til fordeling etter lønn'
+            : rta > 0
+              ? 'Klar til fordeling'
+              : rta < 0
+                ? 'Fordelt mer enn dere har'
+                : 'Hver krone har en jobb'}
+        </div>
         <div className="hero-amount">
           {rta === 0 ? (
             <span className="done-check" aria-hidden="true">
@@ -402,9 +433,12 @@ function Hero({ budget, onAuto }: { budget: BudgetMonth; onAuto: () => void }) {
           <AnimatedMoney value={rta} />
         </div>
         <div className="hero-sub small">
-          {rta > 0 && 'Gi pengene en jobb: trykk på en kategori, eller la autofordeling gjøre det.'}
-          {rta < 0 && 'Ta tilbake penger fra en kategori til dette blir 0.'}
-          {rta === 0 && 'Bra jobbet! Neste lønn dukker opp her.'}
+          {planned && next && `Fordelt på forhånd: ${kr(actual)} nå, og ${kr(pending)} ventes (${next.name} ${dayLabel(next.date)}).`}
+          {!planned && pending > 0 && next && rta >= 0 && `${kr(pending)} ventes i tillegg (${next.name} ${dayLabel(next.date)}). `}
+          {!planned && pending > 0 && rta < 0 && `Selv med ${kr(pending)} som ventes, er det fordelt ${kr(-(rta + pending))} for mye. `}
+          {!planned && rta > 0 && 'Gi pengene en jobb: trykk på en kategori, eller la autofordeling gjøre det.'}
+          {!planned && rta < 0 && pending === 0 && 'Ta tilbake penger fra en kategori til dette blir 0.'}
+          {!planned && rta === 0 && pending === 0 && 'Bra jobbet! Neste lønn dukker opp her.'}
           {prefs.budgetRings && (
             <span className="hero-rings-key">
               {' '}
@@ -413,12 +447,12 @@ function Hero({ budget, onAuto }: { budget: BudgetMonth; onAuto: () => void }) {
           )}
         </div>
       </div>
-      {rta > 0 && (
+      {rta > 0 && !planned && (
         <button className="btn hero-btn" onClick={onAuto}>
           <Icon name="magic" size={16} /> Autofordel
         </button>
       )}
-      {rta <= 0 && (
+      {(rta <= 0 || planned) && (
         <button className="btn ghost hero-btn" onClick={onAuto}>
           <Icon name="magic" size={16} /> Autofordel
         </button>

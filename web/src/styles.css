@@ -5471,3 +5471,214 @@ kbd {
     font-size: 11px;
   }
 }
+
+/* ---------- Forventet inntekt ---------- */
+/* Assigned ahead of pay that's on its way: calm, not an alarm. */
+.hero.planned {
+  background: linear-gradient(135deg, #1f5f73, color-mix(in srgb, #1f5f73 72%, #8fd3e8));
+}
+:root[data-theme='dark'] .hero.planned {
+  background: linear-gradient(135deg, #17424f, #22596a);
+}
+.pay-card h3 {
+  font-size: 15px;
+}
+.pay-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0 6px;
+}
+.pay-progress .bar {
+  margin: 0;
+}
+.pay-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pay-dot {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--border);
+}
+.pay-dot.in {
+  background: var(--good);
+  border-color: var(--good);
+  color: #fff;
+}
+.pay-dot.late {
+  border-color: var(--warn);
+}
+.pay-plan {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pay-plan > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+.pay-plan dt {
+  color: var(--muted);
+}
+.pay-plan dd {
+  margin: 0;
+  font-weight: 650;
+  text-align: right;
+}
+.pay-plan dd small {
+  font-weight: 500;
+  color: var(--faint);
+}
+.pay-plan > div:last-child {
+  font-size: 14px;
+}
+
+/* ---------- Faste kostnader (Oversikt) ---------- */
+.fc-month {
+  margin: 14px 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.fc-split {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.fc-split > span {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.fc-split small {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.fc-split strong {
+  font-size: 20px;
+}
+.fc-bar {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.fc-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+  background: var(--good);
+}
+.fc-label {
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin: 14px 0 6px;
+}
+.fc-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 4px;
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+.fc-item:hover {
+  background: var(--surface-2);
+}
+.fc-date {
+  width: 38px;
+  height: 40px;
+  flex: none;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.05;
+}
+.fc-date small {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--bad);
+}
+.fc-date strong {
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.fc-amount {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.25;
+}
+.fc-amount small {
+  font-size: 11.5px;
+}
+.fc-cat {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 82px;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  padding: 3px 0;
+}
+.fc-cat .num {
+  text-align: right;
+}
+.fc-cat-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.fc-cat-track > span {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--t-blue, var(--series-1));
+}
+.fc-subs {
+  margin-top: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+.fc-subs strong {
+  color: var(--text);
+}
+.fc-item .grow {
+  flex: 1;
+}
+.bill-row .bill-status {
+  display: block;
+}
