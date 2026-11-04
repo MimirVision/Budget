@@ -6,7 +6,7 @@ import { forgetImport, ingest, linkTransfer, rejectTransferSuggestion, ruleMatch
 import { previewCsv, type CsvMapping } from './import/csv.ts';
 import { overview } from './overview.ts';
 import { payday, syncHealth, tips } from './insights.ts';
-import { cardAlerts, cardOverview, deleteStatement, matchBalance, saveStatement, type StatementInput } from './cards.ts';
+import { cardAlerts, cardOverview, deleteStatement, matchBalance, saveStatement, syncCardBalances, type StatementInput } from './cards.ts';
 import { expectRefund, listRefunds } from './refunds.ts';
 import { addBill, deleteBill, listBills, syncBillTargets, updateBill, type BillInput } from './bills.ts';
 import { dismissDuplicates, findDuplicates, mergeDuplicates } from './duplicates.ts';
@@ -186,6 +186,8 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
 
   // ---------- Overview ----------
   api.get('/summary', (c) => {
+    // Card balances follow the bank's numbers (see syncCardBalances) before they're shown anywhere.
+    syncCardBalances(db);
     const accounts = all<any>(
       db,
       `SELECT a.*, COALESCE((SELECT SUM(amount) FROM transactions t WHERE t.account_id = a.id AND t.date >= ?), 0) AS balance,
@@ -507,7 +509,7 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
       params.push(Number(q.account));
     }
     if (q.category === 'none')
-      where.push("t.category_id IS NULL AND t.transfer_id IS NULL AND t.source != 'freshstart' AND NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id)");
+      where.push("t.category_id IS NULL AND t.transfer_id IS NULL AND t.source NOT IN ('freshstart', 'cardsync') AND NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id)");
     else if (q.category) {
       where.push('(t.category_id = ? OR EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id AND s.category_id = ?))');
       params.push(Number(q.category), Number(q.category));
@@ -645,7 +647,10 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
   });
 
   // ---------- Kredittkort ----------
-  api.get('/cards', (c) => c.json(cardOverview(db)));
+  api.get('/cards', (c) => {
+    syncCardBalances(db);
+    return c.json(cardOverview(db));
+  });
 
   // The bill as the bank states it: from then on the card's numbers start from it.
   api.post('/cards/:id/statement', async (c) => {

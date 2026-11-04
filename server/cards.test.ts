@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { run } from './db.ts';
+import { all, get, run } from './db.ts';
+import { overview } from './overview.ts';
+import { getBudget } from './budget.ts';
 import { openDb } from './db-node.ts';
-import { cardAlerts, cardOverview, matchBalance, saveStatement } from './cards.ts';
+import { cardAlerts, cardOverview, matchBalance, saveStatement, syncCardBalances } from './cards.ts';
 
 function setup(terms: Record<string, number | null> = {}) {
   const db = openDb(':memory:');
@@ -311,5 +313,32 @@ describe('Kredittkort', () => {
     const by = Object.fromEntries(cardOverview(db, '2026-11-02')[0].purchases.map((p) => [p.payee, p]));
     expect(by['Revolut , Dublin, IRL'].cashLike).toBe(true);
     expect(by.Kiwi.cashLike).toBe(false);
+  });
+
+  it('keeps the app balance equal to the bank\'s with one automatic adjustment that is never spending', () => {
+    const { db, tx, card } = setup();
+    run(db, 'UPDATE accounts SET on_budget = 1 WHERE id = ?', card);
+    run(db, "INSERT INTO settings(key, value) VALUES ('budget_start', '2026-11-01')");
+    const cat = get<{ id: number }>(db, "SELECT id FROM categories WHERE name = 'Dagligvarer'")!.id;
+    run(db, "INSERT INTO transactions(account_id, date, amount, payee, category_id, reviewed) VALUES (?, '2026-11-02', -136700, 'Kiwi', ?, 1)", card, cat);
+    // The bank says 5 684 kr is owed; the app only knows 1 367 kr of it.
+    saveStatement(db, card, { closed: '2026-10-31', due: '2026-11-20', amount: 0, balance: 568400, balance_date: '2026-11-04' }, '2026-11-04');
+    const appOwed = () => -get<{ s: number }>(db, "SELECT SUM(amount) AS s FROM transactions WHERE account_id = ? AND date >= '2026-11-01'", card)!.s;
+    syncCardBalances(db, '2026-11-04');
+    expect(appOwed()).toBe(568400);
+    expect(cardOverview(db, '2026-11-04')[0].owed).toBe(568400); // the card page is unchanged
+    const auto = () => all<{ amount: number; reviewed: number; category_id: number | null }>(db, "SELECT amount, reviewed, category_id FROM transactions WHERE source = 'cardsync'");
+    expect(auto()).toEqual([{ amount: -431700, reviewed: 1, category_id: null }]);
+    // Not spending: Oversikt counts only Kiwi, and nothing is left uncategorised in the budget.
+    expect(overview(db, '2026-11', 1).spending).toBe(136700);
+    expect(getBudget(db, '2026-11').uncategorized.count).toBe(0);
+
+    // The missing purchases arrive: the same adjustment shrinks instead of a new one being added.
+    tx('2026-11-03', -431700, 'Elkjøp');
+    syncCardBalances(db, '2026-11-04');
+    expect(auto()).toEqual([]);
+    expect(appOwed()).toBe(568400);
+    syncCardBalances(db, '2026-11-04');
+    expect(all(db, "SELECT id FROM transactions WHERE source = 'cardsync'")).toEqual([]);
   });
 });

@@ -82,7 +82,7 @@ export function findDuplicates(db: DB, days = 400): { groups: DuplicateGroup[]; 
     `SELECT t.id, t.date, t.amount, t.payee, t.raw_description, t.source, t.account_id, a.name AS account_name,
             c.name AS category_name, t.reviewed, t.transfer_id, t.memo, t.external_id
        FROM transactions t JOIN accounts a ON a.id = t.account_id LEFT JOIN categories c ON c.id = t.category_id
-      WHERE t.date >= ? AND t.source != 'freshstart' AND t.payee != 'Startsaldo'
+      WHERE t.date >= ? AND t.source NOT IN ('freshstart', 'cardsync') AND t.payee != 'Startsaldo'
       ORDER BY t.account_id, t.amount, t.date, t.id`,
     from,
   );
@@ -111,7 +111,7 @@ export function findDuplicates(db: DB, days = 400): { groups: DuplicateGroup[]; 
     db,
     `SELECT a.account_id AS x, b.account_id AS y, COUNT(*) AS n
        FROM transactions a JOIN transactions b ON a.date = b.date AND a.amount = b.amount AND a.account_id < b.account_id
-      WHERE a.date >= ? AND a.transfer_id IS NULL AND b.transfer_id IS NULL AND a.source != 'freshstart' AND b.source != 'freshstart'
+      WHERE a.date >= ? AND a.transfer_id IS NULL AND b.transfer_id IS NULL AND a.source NOT IN ('freshstart', 'cardsync') AND b.source NOT IN ('freshstart', 'cardsync')
       GROUP BY x, y HAVING n >= 5`,
     addDays(todayISO(), -90),
   );

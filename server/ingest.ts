@@ -123,7 +123,7 @@ export function findTransferCandidate(db: DB, txnId: number): number | undefined
     db,
     `SELECT * FROM transactions
       WHERE account_id != ? AND amount = ? AND transfer_id IS NULL
-        AND date BETWEEN ? AND ? AND (reviewed = 0 OR category_id IS NULL) AND source != 'freshstart'
+        AND date BETWEEN ? AND ? AND (reviewed = 0 OR category_id IS NULL) AND source NOT IN ('freshstart', 'cardsync')
       ORDER BY abs(julianday(date) - julianday(?)) LIMIT 3`,
     t.account_id,
     -t.amount,
@@ -398,7 +398,7 @@ export function ingest(db: DB, accountId: number, incoming: IncomingTxn[], sourc
       const pool = all<{ id: number; amount: number; date: string; raw_description: string; suggested_transfer_id: number | null }>(
         db,
         `SELECT id, amount, date, raw_description, suggested_transfer_id FROM transactions
-          WHERE account_id != ? AND transfer_id IS NULL AND (reviewed = 0 OR category_id IS NULL) AND source != 'freshstart' AND date BETWEEN ? AND ?`,
+          WHERE account_id != ? AND transfer_id IS NULL AND (reviewed = 0 OR category_id IS NULL) AND source NOT IN ('freshstart', 'cardsync') AND date BETWEEN ? AND ?`,
         accountId,
         addDays(from, -5),
         addDays(to, 5),

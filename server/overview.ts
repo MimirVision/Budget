@@ -57,7 +57,7 @@ const lines = (start: string) => `
   WITH lines AS (
     SELECT t.id AS tid, t.date, t.amount, t.category_id, t.payee, t.account_id FROM transactions t
       JOIN accounts a ON a.id = t.account_id
-     WHERE a.on_budget = 1 AND t.payee != 'Startsaldo' AND t.date >= '${start}'
+     WHERE a.on_budget = 1 AND t.payee != 'Startsaldo' AND NOT (t.payee = 'Saldojustering' AND t.category_id IS NULL) AND t.date >= '${start}'
        AND (t.transfer_id IS NULL OR t.category_id IS NOT NULL)
        AND NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id)
     UNION ALL

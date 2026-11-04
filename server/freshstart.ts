@@ -49,7 +49,7 @@ export function previewFreshStart(db: DB, start: string): OpeningPreview[] {
     const balanceDay = a.bank_balance_at ? String(a.bank_balance_at).slice(0, 10) : '9999-12-31';
     const after = get<{ s: number }>(
       db,
-      'SELECT COALESCE(SUM(amount), 0) AS s FROM transactions WHERE account_id = ? AND date >= ? AND date <= ? AND source != ?',
+      "SELECT COALESCE(SUM(amount), 0) AS s FROM transactions WHERE account_id = ? AND date >= ? AND date <= ? AND source NOT IN (?, 'cardsync')",
       a.id,
       start,
       balanceDay,
