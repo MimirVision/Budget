@@ -407,9 +407,10 @@ export function moveMoney(db: DB, month: string, fromId: number | null, toId: nu
 export type AutoAssignMode = 'targets' | 'last_month_assigned' | 'last_month_spent' | 'average_spent' | 'reset';
 
 /** One-click budgeting. Only fills what's missing, and never assigns more than you have (except "reset"). */
-export function autoAssign(db: DB, month: string, mode: AutoAssignMode, categoryIds?: number[]) {
+/** `extra`: money not here yet that may be assigned too (the expected pay still to come). */
+export function autoAssign(db: DB, month: string, mode: AutoAssignMode, categoryIds?: number[], extra = 0) {
   const budget = getBudget(db, month);
-  let pool = budget.readyToAssign;
+  let pool = budget.readyToAssign + Math.max(0, extra);
   const cats = budget.groups
     .filter((g) => !g.hidden)
     .flatMap((g) => g.categories)

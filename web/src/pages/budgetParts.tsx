@@ -63,7 +63,18 @@ export function Pill({ c }: { c: CategoryRow }) {
   );
 }
 
-export function AutoAssignMenu({ budget, onPick, onClose }: { budget: BudgetMonth; onPick: (mode: string, label: string) => void; onClose: () => void }) {
+export function AutoAssignMenu({
+  budget,
+  onPick,
+  onClose,
+}: {
+  budget: BudgetMonth;
+  onPick: (mode: string, label: string, withExpected: boolean) => void;
+  onClose: () => void;
+}) {
+  const pending = budget.expected?.pending ?? 0;
+  const [withExpected, setWithExpected] = useState(pending > 0);
+  const pool = budget.readyToAssign + (withExpected ? pending : 0);
   const needed = budget.groups.flatMap((g) => g.categories).filter((c) => !c.hidden).reduce((s, c) => s + c.needed, 0);
   const options = [
     { mode: 'targets', title: 'Fyll opp målene mine', sub: needed > 0 ? `${kr(needed)} mangler denne måneden` : 'Alle mål er dekket', label: 'Mål fylt opp' },
@@ -74,18 +85,30 @@ export function AutoAssignMenu({ budget, onPick, onClose }: { budget: BudgetMont
   return (
     <Modal title="Autofordel" onClose={onClose}>
       <p className="muted small" style={{ margin: 0 }}>
-        Fordeler fra «Klar til fordeling» ({kr(budget.readyToAssign)}). Det fylles bare opp det som mangler, aldri mer enn dere har.
+        Fordeler fra «Klar til fordeling» ({kr(budget.readyToAssign)}){withExpected ? ` pluss lønnen som kommer (${kr(pending)})` : ''}. Det fylles bare opp
+        det som mangler, aldri mer enn {kr(Math.max(0, pool))}.
       </p>
+      {pending > 0 && (
+        <label className="check auto-expected">
+          <input type="checkbox" checked={withExpected} onChange={(e) => setWithExpected(e.target.checked)} />
+          <span>
+            Ta med forventet lønn <strong className="num">+{kr(pending)}</strong>
+            <span className="small faint" style={{ display: 'block' }}>
+              {budget.expected?.next ? `${budget.expected.next.name} kommer ${dayLabel(budget.expected.next.date)}` : 'Det dere venter å få denne måneden'}
+            </span>
+          </span>
+        </label>
+      )}
       <div className="stack" style={{ gap: 8 }}>
         {options.map((o) => (
-          <button key={o.mode} className="option" onClick={() => onPick(o.mode, o.label)}>
+          <button key={o.mode} className="option" onClick={() => onPick(o.mode, o.label, withExpected)}>
             <strong>{o.title}</strong>
             <span className="small muted">{o.sub}</span>
           </button>
         ))}
         <button
           className="btn ghost danger"
-          onClick={() => confirm('Sette alle kategorier til 0 fordelt denne måneden?') && onPick('reset', 'Nullstilt')}
+          onClick={() => confirm('Sette alle kategorier til 0 fordelt denne måneden?') && onPick('reset', 'Nullstilt', false)}
         >
           Nullstill denne måneden
         </button>

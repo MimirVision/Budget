@@ -64,8 +64,8 @@ export class Suggester {
   private categories = new Map<string, number>();
 
   constructor(db: DB) {
-    // Most specific (longest) pattern wins.
-    this.rules = all<Rule>(db, 'SELECT * FROM rules ORDER BY length(pattern) DESC, id DESC');
+    // Most specific wins: an exact name (a payee's own category) first, then the longest pattern.
+    this.rules = all<Rule>(db, "SELECT * FROM rules ORDER BY match_type = 'equals' DESC, length(pattern) DESC, id DESC");
     const hist = all<{ payee: string; outflow: number; category_id: number; n: number; last: string }>(
       db,
       `SELECT lower(t.payee) AS payee, t.amount < 0 AS outflow, t.category_id, COUNT(*) AS n, MAX(t.date) AS last

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, type Attachment, type Split, type Transaction } from '../api';
+import { useNavigate } from 'react-router-dom';
+import { api, undoPayeeCategory, type Attachment, type PayeeApplied, type Split, type Transaction } from '../api';
 import { dayLabel, kr } from '../format';
 import { useStore } from '../store';
 import { CategorySelect, Icon, Modal, MoneyInput, useToast } from './ui';
@@ -19,8 +20,9 @@ export function TransactionEditor({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const { summary, refresh } = useStore();
+  const { summary, refresh, changed } = useStore();
   const toast = useToast();
+  const navigate = useNavigate();
   const accounts = summary?.accounts.filter((a) => !a.closed) ?? [];
   const categories = summary?.categories ?? [];
   const isNew = !txn;
@@ -74,7 +76,21 @@ export function TransactionEditor({
           transfer_account_id: mode === 'transfer' ? transferAccount : undefined,
         });
       } else {
-        await api.patch(`/transactions/${txn!.id}`, { ...body, reviewed: true });
+        const r = await api.patch<{ appliedToOthers: PayeeApplied | null }>(`/transactions/${txn!.id}`, { ...body, reviewed: true });
+        const applied = r.appliedToOthers;
+        const name = payee.trim();
+        if (applied) {
+          const cat = categories.find((c) => c.id === categoryId)?.name ?? 'kategorien';
+          toast(applied.changed ? `${cat} er satt på ${applied.changed} ${applied.changed === 1 ? 'annen' : 'andre'} fra ${name}, og nye får den også` : `Nye fra ${name} får ${cat}`, {
+            action: {
+              label: 'Angre',
+              run: async () => {
+                await undoPayeeCategory(name, applied);
+                changed();
+              },
+            },
+          });
+        }
       }
       await refresh();
       onSaved();
@@ -85,7 +101,6 @@ export function TransactionEditor({
     }
   };
 
-  const { changed } = useStore();
   const remove = async () => {
     if (!txn) return;
     // No "are you sure?": deleting is instant, and "Angre" in the message puts it back.
@@ -145,6 +160,19 @@ export function TransactionEditor({
         <label className="field" style={{ flex: 1, minWidth: 160 }}>
           Mottaker
           <input className="input" value={payee} onChange={(e) => setPayee(e.target.value)} placeholder="f.eks. Rema 1000" />
+          {txn?.payee && (
+            <button
+              type="button"
+              className="link-btn small"
+              style={{ alignSelf: 'flex-start' }}
+              onClick={() => {
+                onClose();
+                navigate(`/transactions?payee=${encodeURIComponent(txn.payee)}`);
+              }}
+            >
+              Se alle fra {txn.payee}
+            </button>
+          )}
         </label>
         <label className="field" style={{ flex: 1, minWidth: 160 }}>
           Konto
@@ -179,7 +207,10 @@ export function TransactionEditor({
           {payee.trim() && categoryId && (
             <label className="check small">
               <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-              Bruk alltid denne kategorien for «{payee.trim()}»
+              <span>
+                Bruk alltid denne kategorien for «{payee.trim()}»
+                <span className="faint" style={{ display: 'block' }}>Gjelder alle kjøp fra dem, også de tidligere</span>
+              </span>
             </label>
           )}
         </>

@@ -78,6 +78,7 @@ export function CommandPalette({ onAdd, onSync }: { onAdd: () => void; onSync: (
       { key: 'p-acc', label: 'Kontoer', icon: 'bank', run: go('/accounts') },
       { key: 'p-set', label: 'Innstillinger', icon: 'settings', run: go('/settings') },
       { key: 'p-dup', label: 'Duplikater', icon: 'alert', run: go('/duplicates') },
+      { key: 'p-payees', label: 'Mottakere', icon: 'receipt', run: go('/payees') },
       { key: 'a-add', label: 'Legg til transaksjon', hint: 'Handling', icon: 'plus', run: () => (setOpen(false), onAdd()) },
       { key: 'a-sync', label: 'Synkroniser bankene nå', hint: 'Handling', icon: 'sync', run: () => (setOpen(false), onSync()) },
     ];

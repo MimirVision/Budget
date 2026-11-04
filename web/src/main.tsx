@@ -18,6 +18,7 @@ import SettingsPage from './pages/Settings';
 import DuplicatesPage from './pages/Duplicates';
 import BillsPage from './pages/Bills';
 import CardsPage from './pages/Cards';
+import PayeesPage from './pages/Payees';
 import { PageTransition, PullToRefresh, TopBar } from './mobile';
 import { AppVersion } from './version';
 import { InstallButton } from './install';
@@ -28,11 +29,12 @@ const PRIMARY = [
   { to: '/oversikt', label: 'Oversikt', icon: 'pie', hint: 'Se hvor de gikk' },
 ];
 /** Pages reached from "Mer": on the phone they get a back button at the top. */
-const SUB_PAGES = ['/bills', '/cards', '/accounts', '/settings', '/duplicates'];
+const SUB_PAGES = ['/bills', '/cards', '/accounts', '/settings', '/duplicates', '/payees'];
 
 const SECONDARY = [
   { to: '/review', label: 'Gjennomgå', icon: 'inbox' },
   { to: '/transactions', label: 'Transaksjoner', icon: 'list' },
+  { to: '/payees', label: 'Mottakere', icon: 'receipt' },
   { to: '/bills', label: 'Faste regninger', icon: 'calendar' },
   { to: '/cards', label: 'Kredittkort', icon: 'wallet' },
   { to: '/accounts', label: 'Kontoer', icon: 'bank' },
@@ -156,6 +158,7 @@ function Layout() {
           <Route path="/duplicates" element={<DuplicatesPage />} />
           <Route path="/bills" element={<BillsPage />} />
           <Route path="/cards" element={<CardsPage />} />
+          <Route path="/payees" element={<PayeesPage />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
         </PageTransition>
@@ -193,6 +196,10 @@ function Layout() {
             <Link to="/cards" className="more-tile">
               <Icon name="wallet" size={24} />
               Kredittkort
+            </Link>
+            <Link to="/payees" className="more-tile">
+              <Icon name="receipt" size={24} />
+              Mottakere
             </Link>
             <Link to="/accounts" className="more-tile">
               <Icon name="bank" size={24} />

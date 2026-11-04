@@ -102,7 +102,7 @@ export default function BudgetPage() {
     }
   };
 
-  const auto = async (mode: string, label: string) => {
+  const auto = async (mode: string, label: string, withExpected = false) => {
     const before = budget;
     const undo = before && {
       label: 'Angre',
@@ -116,7 +116,7 @@ export default function BudgetPage() {
     const n = ++seq.current;
     let r: { assigned: number; budget: BudgetMonth };
     try {
-      r = await api.post<{ assigned: number; budget: BudgetMonth }>(`/budget/${month}/auto`, { mode });
+      r = await api.post<{ assigned: number; budget: BudgetMonth }>(`/budget/${month}/auto`, { mode, withExpected });
     } catch (e: any) {
       toast(e.message, { error: true });
       return;
@@ -126,8 +126,9 @@ export default function BudgetPage() {
     refresh();
     haptic();
     if (mode !== 'reset' && r.assigned === 0) {
-      toast(before && before.readyToAssign <= 0 ? 'Ingenting igjen å fordele. Klar til fordeling er tom.' : 'Ingenting mangler, kategoriene er allerede dekket.');
-    } else if (mode !== 'reset') toast(`${label}: fordelte ${kr(r.assigned)}`, undo ? { action: undo } : undefined);
+      toast(before && before.readyToAssign + (withExpected ? (before.expected?.pending ?? 0) : 0) <= 0 ? 'Ingenting igjen å fordele. Klar til fordeling er tom.' : 'Ingenting mangler, kategoriene er allerede dekket.');
+    } else if (mode !== 'reset')
+      toast(`${label}: fordelte ${kr(r.assigned)}${withExpected && r.budget.readyToAssign < 0 ? `, ${kr(-r.budget.readyToAssign)} av det fra lønnen som kommer` : ''}`, undo ? { action: undo } : undefined);
     else if (undo) toast('Fordelingen er nullstilt', { action: undo });
   };
 

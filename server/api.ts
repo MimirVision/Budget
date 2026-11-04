@@ -6,6 +6,7 @@ import { forgetImport, ingest, linkTransfer, rejectTransferSuggestion, ruleMatch
 import { previewCsv, type CsvMapping } from './import/csv.ts';
 import { overview } from './overview.ts';
 import { payday, syncHealth, tips } from './insights.ts';
+import { listPayees, renamePayee, setPayeeCategory } from './payeeAdmin.ts';
 import { addIncome, deleteIncome, incomeOutlook, updateIncome } from './incomes.ts';
 import { cardAlerts, cardOverview, deleteStatement, matchBalance, saveStatement, syncCardBalances, type StatementInput } from './cards.ts';
 import { expectRefund, listRefunds } from './refunds.ts';
@@ -169,11 +170,6 @@ function propagate(db: DB, payee: string, categoryId: number, amount: number) {
   );
 }
 
-function rememberRule(db: DB, payee: string, categoryId: number) {
-  const existing = get<{ id: number }>(db, "SELECT id FROM rules WHERE match_type = 'equals' AND pattern = ? COLLATE NOCASE", payee);
-  if (existing) run(db, 'UPDATE rules SET category_id = ? WHERE id = ?', categoryId, existing.id);
-  else run(db, "INSERT INTO rules(match_type, pattern, category_id) VALUES ('equals', ?, ?)", payee, categoryId);
-}
 
 export function createApi(db: DB, appConfig: AppConfig = {}) {
   config = appConfig;
@@ -295,10 +291,13 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
   });
 
   api.post('/budget/:month/auto', async (c) => {
-    const { mode, categoryIds } = await c.req.json<{ mode: AutoAssignMode; categoryIds?: number[] }>();
-    assertEditable(c.req.param('month'));
-    const result = autoAssign(db, c.req.param('month'), mode, categoryIds);
-    return c.json({ ...result, budget: getBudget(db, c.req.param('month')) });
+    const { mode, categoryIds, withExpected } = await c.req.json<{ mode: AutoAssignMode; categoryIds?: number[]; withExpected?: boolean }>();
+    const month = c.req.param('month');
+    assertEditable(month);
+    // "Ta med forventet lønn": the pay still to come may be assigned too.
+    const extra = withExpected ? incomeOutlook(db, month).pending : 0;
+    const result = autoAssign(db, month, mode, categoryIds, extra);
+    return c.json({ ...result, budget: budgetView(month) });
   });
 
   api.post('/budget/:month/move', async (c) => {
@@ -543,6 +542,10 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
       where.push('(t.category_id = ? OR EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id AND s.category_id = ?))');
       params.push(Number(q.category), Number(q.category));
     }
+    if (q.payee) {
+      where.push('lower(t.payee) = lower(?)');
+      params.push(q.payee);
+    }
     if (q.month && MONTH.test(q.month)) {
       where.push('t.date BETWEEN ? AND ?');
       params.push(`${q.month}-01`, `${q.month}-31`);
@@ -591,6 +594,7 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
     const b = await c.req.json();
     const before = get<any>(db, 'SELECT * FROM transactions WHERE id = ?', id);
     if (!before) badRequest('Fant ikke transaksjonen');
+    let appliedToOthers: ReturnType<typeof setPayeeCategory> | null = null;
     tx(db, () => {
       for (const f of ['date', 'amount', 'payee', 'memo', 'account_id'] as const) {
         if (b[f] !== undefined) run(db, `UPDATE transactions SET ${f} = ? WHERE id = ?`, b[f], id);
@@ -601,7 +605,7 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
         if (b.category_id) {
           const payee = b.payee ?? before.payee;
           propagate(db, payee, b.category_id, before.amount);
-          if (b.remember) rememberRule(db, payee, b.category_id);
+          if (b.remember) appliedToOthers = setPayeeCategory(db, payee, b.category_id);
         }
       }
       if (Array.isArray(b.splits)) {
@@ -625,7 +629,26 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
       transferToAccount(db, id, b.transfer_account_id);
     }
     if (b.transfer_id) linkTransfer(db, id, b.transfer_id);
-    return c.json(shapeTxn(get(db, transactionQuery('t.id = ?'), id)));
+    return c.json({ ...shapeTxn(get(db, transactionQuery('t.id = ?'), id)), appliedToOthers });
+  });
+
+  // ---------- Mottakere ----------
+  api.get('/payees', (c) => c.json(listPayees(db)));
+  api.post('/payees/category', async (c) => {
+    const { payee, category_id, only_rule } = await c.req.json<{ payee: string; category_id: number | null; only_rule?: boolean }>();
+    try {
+      return c.json(setPayeeCategory(db, payee, category_id ? Number(category_id) : null, !!only_rule));
+    } catch (e: any) {
+      return badRequest(e.message);
+    }
+  });
+  api.post('/payees/rename', async (c) => {
+    const { from, to } = await c.req.json<{ from: string; to: string }>();
+    try {
+      return c.json(renamePayee(db, from, to));
+    } catch (e: any) {
+      return badRequest(e.message);
+    }
   });
 
   // ---------- Faste regninger ----------
