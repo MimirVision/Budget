@@ -247,6 +247,9 @@ export function saveStatement(db: DB, accountId: number, input: StatementInput, 
  * the budget and the reviews leave it out. The card page doesn't change either, since adjustments are left out of
  * its ledger.
  */
+/** How long the bank can take to book a transfer or a purchase typed in by hand. */
+const NOT_BOOKED_DAYS = 10;
+
 export function syncCardBalances(db: DB, today = todayISO()) {
   const start = budgetStart(db);
   const cards = all<CardTerms & { id: number }>(
@@ -264,7 +267,22 @@ export function syncCardBalances(db: DB, today = todayISO()) {
       continue;
     }
     const owed = ledger(db, effectiveTerms(card, bank), start, today, bank, check).owed;
-    const appOwed = -(get<{ s: number }>(db, 'SELECT COALESCE(SUM(amount), 0) AS s FROM transactions WHERE account_id = ? AND date >= ? AND date <= ?', card.id, start, today)!.s);
+    // What the app made itself that the bank hasn't booked yet: the other half of a transfer you marked, or
+    // something typed in by hand, from the last few days before the bank's balance. The bank's balance can't
+    // include it yet, and when the bank's own row arrives it takes this one over. Not a difference to fix.
+    const waiting = check
+      ? get<{ s: number }>(
+          db,
+          `SELECT COALESCE(SUM(amount), 0) AS s FROM transactions
+            WHERE account_id = ? AND source IN ('manual', 'transfer') AND external_id IS NULL AND import_hash IS NULL
+              AND payee NOT IN ('Startsaldo', 'Saldojustering') AND date > ? AND date <= ? AND date >= ?`,
+          card.id,
+          addDays(check.date, -NOT_BOOKED_DAYS),
+          check.date,
+          start,
+        )!.s
+      : 0;
+    const appOwed = -(get<{ s: number }>(db, 'SELECT COALESCE(SUM(amount), 0) AS s FROM transactions WHERE account_id = ? AND date >= ? AND date <= ?', card.id, start, today)!.s) + waiting;
     const diff = appOwed - owed; // > 0: the app thinks more is owed than the bank does
     if (Math.abs(diff) < 1) continue;
     const amount = (auto?.amount ?? 0) + diff;

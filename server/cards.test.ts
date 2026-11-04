@@ -20,7 +20,9 @@ function setup(terms: Record<string, number | null> = {}) {
       terms.min_pay_kr ?? 30000,
     ).lastInsertRowid,
   );
-  const tx = (date: string, amount: number, payee: string) => run(db, 'INSERT INTO transactions(account_id, date, amount, payee) VALUES (?, ?, ?, ?)', card, date, amount, payee);
+  // Card purchases come from the bank (a sync), like in real use.
+  const tx = (date: string, amount: number, payee: string) =>
+    run(db, "INSERT INTO transactions(account_id, date, amount, payee, source) VALUES (?, ?, ?, ?, 'enablebanking')", card, date, amount, payee);
   return { db, card, tx };
 }
 
@@ -320,7 +322,7 @@ describe('Kredittkort', () => {
     run(db, 'UPDATE accounts SET on_budget = 1 WHERE id = ?', card);
     run(db, "INSERT INTO settings(key, value) VALUES ('budget_start', '2026-11-01')");
     const cat = get<{ id: number }>(db, "SELECT id FROM categories WHERE name = 'Dagligvarer'")!.id;
-    run(db, "INSERT INTO transactions(account_id, date, amount, payee, category_id, reviewed) VALUES (?, '2026-11-02', -136700, 'Kiwi', ?, 1)", card, cat);
+    run(db, "INSERT INTO transactions(account_id, date, amount, payee, category_id, reviewed, source) VALUES (?, '2026-11-02', -136700, 'Kiwi', ?, 1, 'enablebanking')", card, cat);
     // The bank says 5 684 kr is owed; the app only knows 1 367 kr of it.
     saveStatement(db, card, { closed: '2026-10-31', due: '2026-11-20', amount: 0, balance: 568400, balance_date: '2026-11-04' }, '2026-11-04');
     const appOwed = () => -get<{ s: number }>(db, "SELECT SUM(amount) AS s FROM transactions WHERE account_id = ? AND date >= '2026-11-01'", card)!.s;
@@ -340,5 +342,28 @@ describe('Kredittkort', () => {
     expect(appOwed()).toBe(568400);
     syncCardBalances(db, '2026-11-04');
     expect(all(db, "SELECT id FROM transactions WHERE source = 'cardsync'")).toEqual([]);
+  });
+
+  it('does not adjust for a transfer the bank has not booked yet', () => {
+    const { db, card, tx } = setup();
+    run(db, "INSERT INTO settings(key, value) VALUES ('budget_start', '2026-11-01')");
+    tx('2026-11-02', -50000, 'Kiwi');
+    // You moved 3 000 kr from the card to Revolut today and marked it; the app made the card's half itself.
+    run(db, "INSERT INTO transactions(account_id, date, amount, payee, reviewed, source) VALUES (?, '2026-11-04', -300000, 'Overføring: Revolut', 1, 'transfer')", card);
+    // The bank's balance (synced today) doesn't have the transfer yet.
+    run(db, "UPDATE accounts SET bank_balance = -50000, bank_balance_at = '2026-11-04T08:00:00Z' WHERE id = ?", card);
+    syncCardBalances(db, '2026-11-04');
+    expect(all(db, "SELECT amount FROM transactions WHERE source = 'cardsync'")).toEqual([]);
+
+    // The bank books it: its row takes over the app's, and the balance includes it. Still nothing to adjust.
+    run(db, "UPDATE transactions SET source = 'enablebanking', external_id = 'x1' WHERE source = 'transfer'");
+    run(db, "UPDATE accounts SET bank_balance = -350000, bank_balance_at = '2026-11-05T08:00:00Z' WHERE id = ?", card);
+    syncCardBalances(db, '2026-11-05');
+    expect(all(db, "SELECT amount FROM transactions WHERE source = 'cardsync'")).toEqual([]);
+
+    // A purchase the bank really has and the app doesn't is still adjusted for.
+    run(db, "UPDATE accounts SET bank_balance = -370000, bank_balance_at = '2026-11-06T08:00:00Z' WHERE id = ?", card);
+    syncCardBalances(db, '2026-11-06');
+    expect(all(db, "SELECT amount FROM transactions WHERE source = 'cardsync'")).toEqual([{ amount: -20000 }]);
   });
 });
