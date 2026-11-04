@@ -7,6 +7,8 @@ import { useStore } from '../store';
 import { useIsMobile } from '../hooks';
 import { AnimatedMoney, Icon, Modal, Money, MoneyInput, haptic, useToast } from '../components/ui';
 import { addMonths, currentMonth, todayISO } from '../../../shared/months';
+import { CATEGORY_EMOJIS, Tile } from '../components/apple';
+import { usePrefs } from '../prefs';
 
 export const CADENCE: Record<Recurring['cadence'], string> = { weekly: 'ukentlig', monthly: 'månedlig', quarterly: 'kvartalsvis', yearly: 'årlig' };
 
@@ -123,6 +125,7 @@ export function AutoAssignMenu({
  */
 export function CategoryDetail({
   cat,
+  tint = 'var(--t-gray)',
   month,
   all,
   rta,
@@ -131,6 +134,8 @@ export function CategoryDetail({
   readOnly,
 }: {
   cat: CategoryRow;
+  /** The colour of the category's group, for its icon. */
+  tint?: string;
   month: string;
   all: CategoryRow[];
   rta: number;
@@ -143,6 +148,7 @@ export function CategoryDetail({
   const toast = useToast();
   const [moving, setMoving] = useState(false);
   const [editingTarget, setEditingTarget] = useState(false);
+  const [pickingIcon, setPickingIcon] = useState(false);
   const [recent, setRecent] = useState<Transaction[] | null>(null);
   const [history, setHistory] = useState<Array<{ month: string; spent: number; assigned: number | null }> | null>(null);
   useEffect(() => {
@@ -227,6 +233,9 @@ export function CategoryDetail({
         <button className="btn sm" onClick={() => setEditingTarget(true)}>
           <Icon name="calendar" size={16} /> {cat.target_type ? 'Endre mål' : 'Sett et mål'}
         </button>
+        <button className="btn sm icon-current" onClick={() => setPickingIcon(true)}>
+          <Tile color={tint} letter={cat.name} emoji={cat.icon} size={20} /> Ikon
+        </button>
       </div>
 
       {history && history.some((h) => h.spent > 0 || h.assigned) && <CategoryHistory rows={history} current={month} />}
@@ -276,6 +285,34 @@ export function CategoryDetail({
           }}
         />
       )}
+      {pickingIcon && (
+        <IconPicker
+          cat={cat}
+          tint={tint}
+          onClose={() => setPickingIcon(false)}
+          onPick={async (icon) => {
+            const before = cat.icon ?? null;
+            setPickingIcon(false);
+            try {
+              await api.patch(`/categories/${cat.id}`, { icon });
+            } catch (e: any) {
+              toast(e.message, { error: true });
+              return;
+            }
+            haptic();
+            await onChanged();
+            toast(icon ? `${cat.name} har fått ${icon}` : `${cat.name} viser forbokstaven igjen`, {
+              action: {
+                label: 'Angre',
+                run: async () => {
+                  await api.patch(`/categories/${cat.id}`, { icon: before ?? '' });
+                  await onChanged();
+                },
+              },
+            });
+          }}
+        />
+      )}
       {editingTarget && (
         <TargetEditor
           cat={cat}
@@ -287,6 +324,66 @@ export function CategoryDetail({
         />
       )}
     </div>
+  );
+}
+
+/** Choose a category's icon: one of the emojis, any other emoji, or just the first letter of its name. */
+export function IconPicker({
+  cat,
+  tint,
+  onClose,
+  onPick,
+}: {
+  cat: CategoryRow;
+  tint: string;
+  onClose: () => void;
+  onPick: (icon: string) => void;
+}) {
+  const { prefs } = usePrefs();
+  const [own, setOwn] = useState('');
+  const current = cat.icon ?? '';
+  const ownOk = own.trim() && [...own.trim()].length <= 8 && !/[\p{L}\p{N}]/u.test(own.trim());
+  return (
+    <Modal title={`Ikon for ${cat.name}`} onClose={onClose}>
+      {!prefs.catIcons && (
+        <div className="callout info small">Ikonene vises når «Ikoner på kategoriene» er på under Innstillinger → Detaljer.</div>
+      )}
+      <button className={`icon-pick-letter ${current ? '' : 'on'}`} onClick={() => onPick('')}>
+        <Tile color={tint} letter={cat.name} size={34} />
+        <span>
+          <strong>Forbokstav</strong>
+          <span className="small muted" style={{ display: 'block' }}>
+            «{cat.name.trim().charAt(0).toUpperCase()}» i fargen til gruppen
+          </span>
+        </span>
+      </button>
+      {CATEGORY_EMOJIS.map((g) => (
+        <div key={g.label}>
+          <p className="emoji-section">{g.label}</p>
+          <div className="emoji-grid">
+            {g.items.map((e) => (
+              <button key={e} className={current === e ? 'on' : ''} onClick={() => onPick(e)} aria-label={e} aria-pressed={current === e}>
+                {e}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+      <div className="row">
+        <span className="small muted spacer">Eller en annen emoji</span>
+        <input
+          className="input emoji-own"
+          value={own}
+          onChange={(e) => setOwn(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && ownOk && onPick(own.trim())}
+          placeholder="😀"
+          aria-label="Egen emoji"
+        />
+        <button className="btn sm" disabled={!ownOk} onClick={() => onPick(own.trim())}>
+          Bruk
+        </button>
+      </div>
+    </Modal>
   );
 }
 

@@ -228,6 +228,8 @@ const MIGRATIONS = [
   'ALTER TABLE accounts ADD COLUMN free_days INTEGER',
   'ALTER TABLE accounts ADD COLUMN min_pay_pct INTEGER',
   'ALTER TABLE accounts ADD COLUMN min_pay_kr INTEGER',
+  // The category's own icon on Budsjett: an emoji, or empty for the first letter of its name.
+  'ALTER TABLE categories ADD COLUMN icon TEXT',
 ];
 
 export function initSchema(db: DB) {

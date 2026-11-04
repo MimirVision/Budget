@@ -5829,3 +5829,65 @@ kbd {
 .payee-row > .tile span {
   font-size: 15px;
 }
+
+/* A category's own emoji: on a soft wash of its group's colour */
+.tile.emoji {
+  background: color-mix(in srgb, var(--tile) 16%, var(--surface));
+  font-weight: 400;
+  line-height: 1;
+}
+
+/* Category icon picker */
+.icon-current {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.icon-pick-letter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.icon-pick-letter.on,
+.emoji-grid button.on {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 30%, transparent);
+}
+.emoji-section {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
+  gap: 6px;
+}
+.emoji-grid button {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  line-height: 1;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.emoji-grid button:hover {
+  background: color-mix(in srgb, var(--brand) 10%, var(--surface-2));
+}
+.emoji-own {
+  max-width: 120px;
+  font-size: 18px;
+  text-align: center;
+}

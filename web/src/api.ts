@@ -52,6 +52,7 @@ export interface CategoryRow {
   target_amount: number | null;
   target_date: string | null;
   note: string | null;
+  icon?: string | null;
   assigned: number;
   activity: number;
   available: number;
