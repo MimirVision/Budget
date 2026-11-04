@@ -119,7 +119,7 @@ export function cashflowReport(db: DB, months = 12) {
             SUM(CASE WHEN g.is_income = 0 OR g.is_income IS NULL THEN -t.amount ELSE 0 END) AS spending
        FROM transactions t JOIN accounts a ON a.id = t.account_id
        LEFT JOIN categories c ON c.id = t.category_id LEFT JOIN category_groups g ON g.id = c.group_id
-      WHERE a.on_budget = 1 AND t.transfer_id IS NULL AND t.date >= ? AND t.date >= ? AND t.payee != 'Startsaldo'
+      WHERE a.on_budget = 1 AND t.transfer_id IS NULL AND t.date >= ? AND t.date >= ? AND t.payee != 'Startsaldo' AND NOT (t.payee = 'Saldojustering' AND t.category_id IS NULL)
       GROUP BY month`,
     `${start}-01`,
     budgetStart(db),

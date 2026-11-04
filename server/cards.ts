@@ -241,24 +241,54 @@ export function saveStatement(db: DB, accountId: number, input: StatementInput, 
 }
 
 /**
- * Makes the app's own balance for the card (Kontoer) match what the card page says is owed, with a
- * Saldojustering. The card page itself doesn't change: with a bill entered, adjustments are left out of it.
+ * Keeps each card's balance in the app (Kontoer, the sidebar, the budget) equal to what the card page says is
+ * owed, when the bank's own number is known (an entered bill, a CSV with a balance, or a sync). The difference is
+ * one automatic "Saldojustering" per card, updated in place. It has no category, so it's never spending: Oversikt,
+ * the budget and the reviews leave it out. The card page doesn't change either, since adjustments are left out of
+ * its ledger.
  */
+export function syncCardBalances(db: DB, today = todayISO()) {
+  const start = budgetStart(db);
+  const cards = all<CardTerms & { id: number }>(
+    db,
+    `SELECT id, statement_day, due_day, interest_rate, credit_limit, free_days, min_pay_pct, min_pay_kr
+       FROM accounts WHERE kind = 'credit' AND closed = 0`,
+  );
+  for (const card of cards) {
+    const bank = latestStatement(db, card.id);
+    const check = balanceCheck(db, card.id, bank);
+    const auto = get<{ id: number; amount: number }>(db, "SELECT id, amount FROM transactions WHERE account_id = ? AND source = 'cardsync'", card.id);
+    if (!bank && !check) {
+      // Nothing from the bank any more: the app's own transactions are all there is.
+      if (auto) run(db, 'DELETE FROM transactions WHERE id = ?', auto.id);
+      continue;
+    }
+    const owed = ledger(db, effectiveTerms(card, bank), start, today, bank, check).owed;
+    const appOwed = -(get<{ s: number }>(db, 'SELECT COALESCE(SUM(amount), 0) AS s FROM transactions WHERE account_id = ? AND date >= ? AND date <= ?', card.id, start, today)!.s);
+    const diff = appOwed - owed; // > 0: the app thinks more is owed than the bank does
+    if (Math.abs(diff) < 1) continue;
+    const amount = (auto?.amount ?? 0) + diff;
+    const date = today < start ? start : today;
+    if (auto && amount === 0) run(db, 'DELETE FROM transactions WHERE id = ?', auto.id);
+    else if (auto) run(db, 'UPDATE transactions SET amount = ?, date = ? WHERE id = ?', amount, date, auto.id);
+    else
+      run(
+        db,
+        `INSERT INTO transactions(account_id, date, amount, payee, raw_description, category_id, reviewed, source)
+         VALUES (?, ?, ?, 'Saldojustering', 'Automatisk: saldoen fra banken', NULL, 1, 'cardsync')`,
+        card.id,
+        date,
+        amount,
+      );
+  }
+}
+
+/** "Juster Kontoer" on the card page: the same as the automatic sync, on demand. Returns the change. */
 export function matchBalance(db: DB, accountId: number, today = todayISO()): number {
   const c = cardOverview(db, today).find((x) => x.id === accountId);
   if (!c || (!c.bank.statement && !c.bank.balance)) throw new Error('Legg inn regningen eller saldoen fra banken først');
   const diff = c.bank.appOwed - c.owed;
-  // Without an entered bill the adjustment is dated with the bank's balance, so it isn't counted twice.
-  const date = !c.bank.statement && c.bank.balance ? c.bank.balance.date : today;
-  if (diff !== 0)
-    run(
-      db,
-      `INSERT INTO transactions(account_id, date, amount, payee, raw_description, reviewed, source)
-       VALUES (?, ?, ?, 'Saldojustering', 'Saldojustering', 0, 'manual')`,
-      accountId,
-      date,
-      diff,
-    );
+  syncCardBalances(db, today);
   return diff;
 }
 
