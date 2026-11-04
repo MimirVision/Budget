@@ -14,6 +14,7 @@ import { dayLabel, kr, monthLabel, relativeDay } from '../format';
 import { useStore } from '../store';
 import { CashflowChart, ChartCard, SimpleTable, type FlowRow } from '../components/charts';
 import { Tile, groupTint } from '../components/apple';
+import { Icon } from '../components/ui';
 
 
 export function CashflowCard() {
@@ -155,12 +156,17 @@ interface BillLite {
   paid: { date: string; amount: number } | null;
 }
 
-/** What the fixed costs add up to, the subscriptions, and the next bills. */
+/**
+ * Faste kostnader: this month's fixed bills (paid, still to come), the next payments, what the fixed costs go to,
+ * the subscriptions per year, and how much of the expected pay the fixed costs take.
+ */
 export function RecurringCard() {
   const [data, setData] = useState<{ bills: BillLite[]; monthlyTotal: number } | null>(null);
+  const [income, setIncome] = useState<number>(0);
   const { version } = useStore();
   useEffect(() => {
     api.get<{ bills: BillLite[]; monthlyTotal: number }>('/bills?light=1').then(setData);
+    api.get<{ expected: number }>('/incomes').then((r) => setIncome(r.expected)).catch(() => setIncome(0));
   }, [version]);
   if (!data) return null;
   if (!data.bills.length)
@@ -168,49 +174,111 @@ export function RecurringCard() {
       <div className="card card-pad">
         <h3 style={{ marginBottom: 0 }}>Faste kostnader</h3>
         <div className="small muted" style={{ marginTop: 6 }}>
-          Ingen faste regninger lagt inn ennå. <Link to="/bills">Legg dem inn</Link>, så ser du hva de koster i året og hva som kommer.
+          Ingen faste regninger lagt inn ennå. <Link to="/bills">Legg dem inn</Link>, så ser du hva de koster, hva som er betalt og hva som kommer.
         </div>
       </div>
     );
-  const subs = data.bills.filter((b) => /abonn|stream|tv|musikk/i.test(`${b.category_name ?? ''} ${b.name}`));
-  const subsYear = subs.reduce((s, b) => s + b.monthly * 12, 0);
   const today = new Date().toISOString().slice(0, 10);
+  const month = today.slice(0, 7);
+  const thisMonth = data.bills.filter((b) => b.due.slice(0, 7) === month || b.paid?.date.slice(0, 7) === month);
+  const paid = thisMonth.filter((b) => b.paid);
+  const left = thisMonth.filter((b) => !b.paid);
+  const paidSum = paid.reduce((s, b) => s + (b.paid?.amount ?? 0), 0);
+  const leftSum = left.reduce((s, b) => s + b.amount, 0);
+  const share = paidSum + leftSum > 0 ? paidSum / (paidSum + leftSum) : 0;
   const next = data.bills
-    .filter((b) => !b.paid && b.due >= today)
+    .filter((b) => !b.paid)
     .sort((a, b) => a.due.localeCompare(b.due))
     .slice(0, 4);
+  // What the fixed costs go to, per category, as a monthly amount.
+  const byCat = new Map<string, number>();
+  for (const b of data.bills) byCat.set(b.category_name ?? 'Uten kategori', (byCat.get(b.category_name ?? 'Uten kategori') ?? 0) + b.monthly);
+  const cats = [...byCat.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const catMax = Math.max(1, ...cats.map((c) => c[1]));
+  const subs = data.bills.filter((b) => /abonn|stream|tv|musikk/i.test(`${b.category_name ?? ''} ${b.name}`));
+  const subsYear = subs.reduce((s, b) => s + b.monthly * 12, 0);
+  const ofIncome = income > 0 ? Math.round((data.monthlyTotal / income) * 100) : null;
+  const when = (d: string) => {
+    const days = Math.round((new Date(`${d}T12:00:00`).getTime() - new Date(`${today}T12:00:00`).getTime()) / 86400000);
+    return days < 0 ? { text: `${-days} d over`, tone: 'bad' } : days === 0 ? { text: 'i dag', tone: 'warn' } : { text: `om ${days} d`, tone: days <= 3 ? 'warn' : '' };
+  };
   return (
-    <div className="card card-pad">
-      <h3 style={{ marginBottom: 0 }}>Faste kostnader</h3>
-      <div className="small muted">Fra Faste regninger</div>
-      <div className="kpis">
-        <div>
-          <span>Per måned</span>
-          <strong>{kr(data.monthlyTotal)}</strong>
-          <small>{data.bills.length} regninger</small>
+    <div className="card card-pad fc">
+      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <h3 style={{ margin: 0 }}>Faste kostnader</h3>
+        <Link to="/bills" className="small">
+          Se alle
+        </Link>
+      </div>
+      <div className="small muted">
+        {kr(data.monthlyTotal)} i måneden · {kr(data.monthlyTotal * 12)} i året
+        {ofIncome !== null && <> · {ofIncome} % av forventet inntekt</>}
+      </div>
+
+      <div className="fc-month">
+        <div className="fc-split">
+          <span>
+            <small>Betalt i {monthLabel(month).split(' ')[0].toLowerCase()}</small>
+            <strong className="num good-text">{kr(paidSum)}</strong>
+            <small>{paid.length} av {thisMonth.length} regninger</small>
+          </span>
+          <span style={{ textAlign: 'right' }}>
+            <small>Igjen</small>
+            <strong className="num">{kr(leftSum)}</strong>
+            <small>{left.length} regninger</small>
+          </span>
         </div>
-        <div>
-          <span>Per år</span>
-          <strong>{kr(data.monthlyTotal * 12)}</strong>
-          <small>årlige regnet inn</small>
-        </div>
-        <div>
-          <span>Abonnementer</span>
-          <strong>{kr(subsYear)}</strong>
-          <small>{subs.length ? `i året, ${subs.length} stk.` : 'ingen funnet'}</small>
+        <div className="fc-bar" aria-hidden="true">
+          <span style={{ width: `${share * 100}%` }} />
         </div>
       </div>
+
       {next.length > 0 && (
-        <div className="list compact">
-          {next.map((b) => (
-            <Link key={b.id} to="/bills" className="list-item" style={{ color: 'inherit', textDecoration: 'none' }}>
-              <span className="grow ellipsis">
-                <strong style={{ fontWeight: 550 }}>{b.name}</strong>
-                <span className="small muted"> · {relativeDay(b.due).toLowerCase() === dayLabel(b.due).toLowerCase() ? dayLabel(b.due) : relativeDay(b.due)}</span>
-              </span>
-              <span className="num">{kr(b.amount)}</span>
-            </Link>
-          ))}
+        <div className="fc-next">
+          <div className="fc-label">Neste betalinger</div>
+          {next.map((b) => {
+            const d = new Date(`${b.due}T12:00:00`);
+            const w = when(b.due);
+            return (
+              <Link key={b.id} to="/bills" className="fc-item">
+                <span className="fc-date" aria-hidden="true">
+                  <small>{d.toLocaleDateString('nb-NO', { month: 'short' }).replace('.', '')}</small>
+                  <strong>{d.getDate()}</strong>
+                </span>
+                <span className="grow" style={{ minWidth: 0 }}>
+                  <span className="ellipsis" style={{ display: 'block', fontWeight: 550 }}>
+                    {b.name}
+                  </span>
+                  <span className="small muted ellipsis" style={{ display: 'block' }}>
+                    {b.category_name ?? 'Uten kategori'}
+                  </span>
+                </span>
+                <span className="fc-amount">
+                  <strong className="num">{kr(b.amount)}</strong>
+                  <small className={w.tone === 'bad' ? 'bad-text' : w.tone === 'warn' ? 'warn-text' : 'muted'}>{w.text}</small>
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="fc-cats">
+        <div className="fc-label">Hva de går til, per måned</div>
+        {cats.map(([name, v]) => (
+          <div key={name} className="fc-cat">
+            <span className="ellipsis">{name}</span>
+            <span className="fc-cat-track" aria-hidden="true">
+              <span style={{ width: `${(v / catMax) * 100}%` }} />
+            </span>
+            <span className="num">{kr(v)}</span>
+          </div>
+        ))}
+      </div>
+
+      {subs.length > 0 && (
+        <div className="fc-subs small">
+          <Icon name="sparkle" size={14} /> Abonnementer: <strong>{kr(subsYear)}</strong> i året ({subs.length} stk.)
         </div>
       )}
     </div>

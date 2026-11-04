@@ -176,6 +176,18 @@ CREATE INDEX IF NOT EXISTS attachments_tx ON attachments(transaction_id);
 
 -- Kredittkort: the bill as the bank states it (amount to pay, due date, statement date), and optionally the
 -- balance right now. The newest one is the card's starting point: it wins over what the app worked out.
+-- Forventet inntekt: pay you expect (amount and day of the month), so the month can be divided up before the
+-- money is there. Seen as received when a matching payment comes in.
+CREATE TABLE IF NOT EXISTS incomes (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  amount INTEGER NOT NULL,                     -- øre, what you expect to get
+  day INTEGER NOT NULL,                        -- day of the month it usually comes
+  match TEXT NOT NULL DEFAULT '',              -- text in the bank's description, e.g. the employer
+  sort INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS card_statements (
   id INTEGER PRIMARY KEY,
   account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,

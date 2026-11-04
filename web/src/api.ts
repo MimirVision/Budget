@@ -74,6 +74,27 @@ export interface BudgetMonth {
   unreviewed: number;
   pace: number;
   groups: Array<{ id: number; name: string; hidden: number; categories: CategoryRow[] }>;
+  /** Forventet inntekt: the pay expected this month, what has come, and what's still to come up to this month. */
+  expected?: IncomeOutlook;
+}
+
+export interface IncomeStatus {
+  id: number;
+  name: string;
+  amount: number;
+  day: number;
+  match: string;
+  expected: string;
+  received: { id: number; date: string; amount: number } | null;
+  status: 'received' | 'waiting' | 'late';
+}
+
+export interface IncomeOutlook {
+  items: IncomeStatus[];
+  expected: number;
+  received: number;
+  pending: number;
+  next: { name: string; date: string; amount: number } | null;
 }
 
 export interface Split {
