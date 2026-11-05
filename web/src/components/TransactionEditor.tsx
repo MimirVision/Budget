@@ -118,6 +118,28 @@ export function TransactionEditor({
     });
   };
 
+  // The automatic adjustment that keeps a card's balance equal to the bank's: nothing to edit, it follows the bank.
+  if (txn?.source === 'cardsync')
+    return (
+      <Modal
+        title="Saldojustering"
+        onClose={onClose}
+        footer={
+          <button className="btn primary" onClick={onClose}>
+            OK
+          </button>
+        }
+      >
+        <p style={{ margin: 0 }}>
+          Appen legger denne inn selv, så saldoen på {txn.account_name} blir lik den banken oppgir. Den teller ikke som forbruk.
+        </p>
+        <p className="muted small" style={{ margin: 0 }}>
+          Den forsvinner av seg selv når banken og appen er enige igjen, for eksempel når et kjøp appen mangler kommer inn. Under
+          Kredittkort ser du hva banken sier og hva appen har.
+        </p>
+      </Modal>
+    );
+
   return (
     <Modal
       title={isNew ? 'Ny transaksjon' : 'Endre transaksjon'}

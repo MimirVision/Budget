@@ -389,4 +389,27 @@ describe('Kredittkort', () => {
     syncCardBalances(db, '2026-11-04');
     expect(all(db, "SELECT amount FROM transactions WHERE source = 'cardsync'")).toEqual([]);
   });
+
+  it('does not adjust when the bank balance is just a few days behind', () => {
+    const { db, card, tx } = setup();
+    run(db, "INSERT INTO settings(key, value) VALUES ('budget_start', '2026-11-01')");
+    run(db, "INSERT INTO transactions(account_id, date, amount, payee, reviewed, source) VALUES (?, '2026-11-01', -3338700, 'Startsaldo', 1, 'manual')", card);
+    tx('2026-11-01', -59700, 'Klarna');
+    tx('2026-11-02', -100000, 'Overføring: Revolut');
+    tx('2026-11-02', 402800, 'Overføring: Regninger');
+    tx('2026-11-02', -4700, 'Søstrene Grene');
+    tx('2026-11-02', -18100, 'Tesla');
+    tx('2026-11-02', 1400, 'Rabatt varekjøp ladestasjon');
+    run(db, "INSERT INTO transactions(account_id, date, amount, payee, reviewed, source) VALUES (?, '2026-11-04', -300000, 'Overføring: Revolut', 1, 'transfer')", card);
+    tx('2026-11-05', 50000, 'fra drangedal');
+    tx('2026-11-05', -22200, 'Tesla Inc.');
+    // The bank's balance, fetched today, is still from before the rabatt, the transfer and today's two.
+    run(db, "UPDATE accounts SET bank_balance = -3118400, bank_balance_at = '2026-11-05 10:00:00' WHERE id = ?", card);
+    syncCardBalances(db, '2026-11-05');
+    expect(all(db, "SELECT amount FROM transactions WHERE source = 'cardsync'")).toEqual([]);
+    // Something the bank has and the app really doesn't is still adjusted for.
+    run(db, "UPDATE accounts SET bank_balance = -3399000, bank_balance_at = '2026-11-06 10:00:00' WHERE id = ?", card);
+    syncCardBalances(db, '2026-11-06');
+    expect(all(db, "SELECT amount FROM transactions WHERE source = 'cardsync'")).toEqual([{ amount: -9800 }]);
+  });
 });
