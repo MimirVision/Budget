@@ -283,13 +283,16 @@ export function syncCardBalances(db: DB, today = todayISO()) {
         )!.s
       : 0;
     const appOwed = -(get<{ s: number }>(db, 'SELECT COALESCE(SUM(amount), 0) AS s FROM transactions WHERE account_id = ? AND date >= ? AND date <= ?', card.id, start, today)!.s);
-    // Banks differ in whether the balance they report already has transactions that aren't booked yet, so both
-    // readings are tried, and the one that needs the smallest adjustment wins. A transfer you just marked then
-    // never causes one, whichever kind of balance the bank sends. (diff > 0: the app thinks more is owed.)
     const now = auto?.amount ?? 0;
-    const amount = [appOwed - owed, appOwed + waiting - owed]
-      .map((diff) => now + diff)
-      .reduce((best, a) => (Math.abs(a) < Math.abs(best) ? a : best));
+    // What the app thinks is owed beyond the bank, leaving the adjustment itself out (> 0: the app thinks more).
+    const gap = appOwed + now - owed;
+    // The bank's balance often lags: it can be a day or more old, or leave out what isn't booked yet. If the gap
+    // is exactly some of the last days' transactions, that's all it is, and they'll be in the bank's next
+    // balance. Only a gap nothing explains is something the app is really missing.
+    const lagging = check ? explainedByRecent(db, card.id, gap, addDays(check.date, -NOT_BOOKED_DAYS), check.date, start) : gap === 0;
+    // Otherwise: banks differ in whether their balance has the transactions that aren't booked yet, so both
+    // readings are tried and the one that needs the smallest adjustment wins.
+    const amount = lagging ? 0 : [gap, gap + waiting].reduce((best, a) => (Math.abs(a) < Math.abs(best) ? a : best));
     if (Math.abs(amount - now) < 1) continue;
     const date = today < start ? start : today;
     if (auto && amount === 0) run(db, 'DELETE FROM transactions WHERE id = ?', auto.id);
@@ -304,6 +307,33 @@ export function syncCardBalances(db: DB, today = todayISO()) {
         amount,
       );
   }
+}
+
+/**
+ * Whether `gap` (øre owed) is exactly what some of the card's transactions between `from` (exclusive) and `to`
+ * add up to: the ones the bank hasn't counted in its balance yet. Looks at the newest few only, so it stays quick.
+ */
+function explainedByRecent(db: DB, accountId: number, gap: number, from: string, to: string, start: string): boolean {
+  if (gap === 0) return true;
+  const recent = all<{ amount: number }>(
+    db,
+    `SELECT amount FROM transactions
+      WHERE account_id = ? AND source != 'cardsync' AND payee NOT IN ('Startsaldo', 'Saldojustering')
+        AND date > ? AND date <= ? AND date >= ?
+      ORDER BY date DESC, id DESC LIMIT 12`,
+    accountId,
+    from,
+    to,
+    start,
+  );
+  let sums = new Set([0]);
+  for (const r of recent) {
+    const next = new Set(sums);
+    for (const x of sums) next.add(x - r.amount); // a purchase (negative) is owed (positive)
+    sums = next;
+    if (sums.has(gap)) return true;
+  }
+  return false;
 }
 
 /** "Juster Kontoer" on the card page: the same as the automatic sync, on demand. Returns the change. */
