@@ -398,7 +398,8 @@ function Hero({ budget, onAuto }: { budget: BudgetMonth; onAuto: () => void }) {
   const state = planned ? 'planned' : rta > 0 ? 'positive' : rta < 0 ? 'negative' : 'zero';
   const spent = -budget.activity;
   const share = budget.assigned > 0 ? Math.max(0, spent / budget.assigned) : 0;
-  const pace = budget.pace > 0 ? budget.pace : 1;
+  // 0 for a coming month: it hasn't started.
+  const pace = budget.pace;
   return (
     <div className={`hero ${state}`}>
       {prefs.budgetRings && (
@@ -441,10 +442,11 @@ function Hero({ budget, onAuto }: { budget: BudgetMonth; onAuto: () => void }) {
           {!planned && rta > 0 && 'Gi pengene en jobb: trykk på en kategori, eller la autofordeling gjøre det.'}
           {!planned && rta < 0 && pending === 0 && 'Ta tilbake penger fra en kategori til dette blir 0.'}
           {!planned && rta === 0 && pending === 0 && 'Bra jobbet! Neste lønn dukker opp her.'}
+          {(budget.assignedLater ?? 0) > 0 && ` ${kr(budget.assignedLater!)} er fordelt i kommende måneder og regnes der.`}
           {prefs.budgetRings && (
             <span className="hero-rings-key">
               {' '}
-              Ytre ring: brukt av fordelt. Indre: dag {Math.max(1, Math.round(pace * daysIn(budget.month)))} av {daysIn(budget.month)}.
+              Ytre ring: brukt av fordelt. Indre: {pace > 0 ? `dag ${Math.max(1, Math.round(pace * daysIn(budget.month)))} av ${daysIn(budget.month)}` : 'måneden har ikke startet'}.
             </span>
           )}
         </div>

@@ -36,6 +36,8 @@ export interface CategoryRow {
 export interface BudgetMonth {
   month: string;
   readyToAssign: number;
+  /** Assigned in coming months: planned ahead, not taken from this month. */
+  assignedLater: number;
   income: number; // income received this month
   assigned: number;
   activity: number;
@@ -201,9 +203,10 @@ function walkReset(byMonth: Map<string, number> | undefined, untilMonth: string)
 }
 
 /** Overspending from finished months in 'reset' mode: it has been taken out of "Klar til fordeling". */
-function writtenOffOverspending(db: DB): number {
+function writtenOffOverspending(db: DB, month: string): number {
   if (overspendMode(db) !== 'reset') return 0;
-  const lastFinished = addMonths(currentMonth(), -1);
+  // Overspending in a finished month comes out of what's left to assign from the month after it.
+  const lastFinished = [addMonths(currentMonth(), -1), addMonths(month, -1)].sort()[0];
   const spendingCats = new Set(
     all<{ id: number }>(db, 'SELECT c.id FROM categories c JOIN category_groups g ON g.id = c.group_id WHERE g.is_income = 0').map((c) => c.id),
   );
@@ -216,28 +219,46 @@ function writtenOffOverspending(db: DB): number {
   return total;
 }
 
-export function readyToAssign(db: DB): number {
+/**
+ * Klar til fordeling as seen from `month`: the income up to the end of that month, less what's assigned up to and
+ * including it. Planning a coming month (December) doesn't take from this month (November); the coming month
+ * sees this month's leftover, and the pay it expects, instead.
+ */
+export function readyToAssign(db: DB, month = currentMonth()): number {
   const income = get<{ total: number }>(
     db,
     `SELECT COALESCE(SUM(amount), 0) AS total FROM (
        SELECT t.amount FROM transactions t JOIN accounts a ON a.id = t.account_id
          JOIN categories c ON c.id = t.category_id JOIN category_groups g ON g.id = c.group_id
-        WHERE a.on_budget = 1 AND g.is_income = 1 AND t.date >= ? AND NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id)
+        WHERE a.on_budget = 1 AND g.is_income = 1 AND t.date >= ? AND t.date <= ? AND NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id)
        UNION ALL
        SELECT s.amount FROM splits s JOIN transactions t ON t.id = s.transaction_id JOIN accounts a ON a.id = t.account_id
          JOIN categories c ON c.id = s.category_id JOIN category_groups g ON g.id = c.group_id
-        WHERE a.on_budget = 1 AND g.is_income = 1 AND t.date >= ?
+        WHERE a.on_budget = 1 AND g.is_income = 1 AND t.date >= ? AND t.date <= ?
      )`,
     budgetStart(db),
+    `${month}-31`,
     budgetStart(db),
+    `${month}-31`,
   )!.total;
   const assigned = get<{ total: number }>(
     db,
     `SELECT COALESCE(SUM(a.amount), 0) AS total FROM assignments a
-       JOIN categories c ON c.id = a.category_id JOIN category_groups g ON g.id = c.group_id WHERE g.is_income = 0 AND a.month >= ?`,
+       JOIN categories c ON c.id = a.category_id JOIN category_groups g ON g.id = c.group_id WHERE g.is_income = 0 AND a.month >= ? AND a.month <= ?`,
     budgetStart(db).slice(0, 7),
+    month,
   )!.total;
-  return income - assigned - writtenOffOverspending(db);
+  return income - assigned - writtenOffOverspending(db, month);
+}
+
+/** What's already assigned in the months after `month` (planned ahead). */
+export function assignedLater(db: DB, month: string): number {
+  return get<{ total: number }>(
+    db,
+    `SELECT COALESCE(SUM(a.amount), 0) AS total FROM assignments a
+       JOIN categories c ON c.id = a.category_id JOIN category_groups g ON g.id = c.group_id WHERE g.is_income = 0 AND a.month > ?`,
+    month,
+  )!.total;
 }
 
 export function computeNeeded(
@@ -375,7 +396,8 @@ export function getBudget(db: DB, month: string): BudgetMonth {
 
   return {
     month,
-    readyToAssign: readyToAssign(db),
+    readyToAssign: readyToAssign(db, month),
+    assignedLater: assignedLater(db, month),
     income,
     assigned: totalAssigned,
     activity: totalActivity,

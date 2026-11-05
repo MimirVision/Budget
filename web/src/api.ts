@@ -67,6 +67,8 @@ export interface CategoryRow {
 export interface BudgetMonth {
   month: string;
   readyToAssign: number;
+  /** Assigned in coming months: planned ahead, counted there and not here. */
+  assignedLater?: number;
   income: number;
   assigned: number;
   activity: number;

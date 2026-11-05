@@ -99,6 +99,21 @@ describe('budget', () => {
     expect(readyToAssign(db)).toBe(0);
   });
 
+  it('keeps each month separate: planning a coming month does not take from this one', () => {
+    const sb1 = account('SpareBank 1');
+    addTx(sb1, '2026-10-01', 500_000, 'Lønn');
+    setAssigned(db, '2026-10', cat('Dagligvarer'), 300_000);
+    setAssigned(db, '2026-11', cat('Dagligvarer'), 400_000); // planning November ahead
+    expect(readyToAssign(db, '2026-10')).toBe(200_000);
+    expect(getBudget(db, '2026-10')).toMatchObject({ readyToAssign: 200_000, assignedLater: 400_000 });
+    // November sees October's leftover and its own plan.
+    expect(getBudget(db, '2026-11')).toMatchObject({ readyToAssign: -200_000, assignedLater: 0 });
+    // Pay that arrives in November counts from November, not before.
+    addTx(sb1, '2026-11-20', 450_000, 'Lønn');
+    expect(readyToAssign(db, '2026-10')).toBe(200_000);
+    expect(readyToAssign(db, '2026-11')).toBe(250_000);
+  });
+
   it('auto-assign can plan with pay that has not come yet', () => {
     const sb1 = account('SpareBank 1');
     addTx(sb1, '2026-10-01', 100_000, 'Lønn');
