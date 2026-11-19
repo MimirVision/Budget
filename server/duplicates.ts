@@ -91,7 +91,10 @@ export function findDuplicates(db: DB, days = 400): { groups: DuplicateGroup[]; 
   let cluster: DuplicateRow[] = [];
   const flush = () => {
     const real = cluster;
-    if (real.length > 1 && !real.every((r) => r.source === 'manual')) {
+    // Each one a confirmed transfer with its own other half (5 000 kr from Nikita on the 17th, and again on the
+    // 18th): two transfers, not one registered twice. Calling them copies made merging undo a transfer.
+    const separateTransfers = real.every((r) => r.transfer_id) && new Set(real.map((r) => r.transfer_id)).size === real.length;
+    if (real.length > 1 && !separateTransfers && !real.every((r) => r.source === 'manual')) {
       const key = real.map((r) => r.id).join(',');
       if (!skip.has(key)) groups.push({ key, ...reasonFor(real), keep: pickKeep(real), rows: real });
     }
@@ -169,7 +172,11 @@ export function mergeDuplicates(db: DB, keepId: number, removeIds: number[]) {
           run(db, 'UPDATE transactions SET transfer_id = ? WHERE id = ?', keepId, r.transfer_id);
           keep.transfer_id = r.transfer_id;
         } else {
-          run(db, 'UPDATE transactions SET transfer_id = NULL, reviewed = 0 WHERE id = ? AND transfer_id = ?', r.transfer_id, id);
+          // The removed copy's other half: one the app made itself has no reason to exist; a real one from the bank
+          // goes back to Gjennomgå so you can see what it is.
+          const half = get<{ source: string }>(db, 'SELECT source FROM transactions WHERE id = ? AND transfer_id = ?', r.transfer_id, id);
+          if (half?.source === 'transfer') run(db, 'DELETE FROM transactions WHERE id = ?', r.transfer_id);
+          else if (half) run(db, 'UPDATE transactions SET transfer_id = NULL, reviewed = 0 WHERE id = ?', r.transfer_id);
         }
       }
       run(db, 'UPDATE transactions SET suggested_transfer_id = NULL WHERE suggested_transfer_id = ?', id);

@@ -232,6 +232,8 @@ const MIGRATIONS = [
   'ALTER TABLE categories ADD COLUMN icon TEXT',
   // Approved by the app on its own (it was sure of the category), so it can be shown and undone.
   'ALTER TABLE transactions ADD COLUMN auto_approved INTEGER NOT NULL DEFAULT 0',
+  // You said "Nei, ikke en overføring": never guess it as one again.
+  'ALTER TABLE transactions ADD COLUMN not_transfer INTEGER NOT NULL DEFAULT 0',
 ];
 
 export function initSchema(db: DB) {
