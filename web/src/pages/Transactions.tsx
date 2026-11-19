@@ -99,12 +99,7 @@ export default function TransactionsPage() {
             {acc ? (
               <>
                 Saldo <Money value={acc.balance} />
-                {acc.bank_balance !== null && acc.bank_balance !== acc.balance && (
-                  <span style={{ color: 'var(--warn)' }}>
-                    {' '}
-                    · banken sier <Money value={acc.bank_balance} />
-                  </span>
-                )}
+                {acc.balance_from_bank && <span className="faint"> · fra banken</span>}
               </>
             ) : (
               `${total} ${total === 1 ? 'transaksjon' : 'transaksjoner'}`
@@ -247,6 +242,11 @@ export default function TransactionsPage() {
                     <div className="ellipsis" style={{ fontWeight: 500 }}>
                       {t.payee || t.raw_description}
                       {!t.reviewed && <span className="chip brand" style={{ marginLeft: 6 }}>ny</span>}
+                      {!!t.auto_approved && (
+                        <span className="txn-flags" style={{ marginLeft: 6 }} title="Fikk kategori automatisk">
+                          <Icon name="sparkle" size={13} />
+                        </span>
+                      )}
                       {!!t.attachment_count && (
                         <span className="txn-flags" style={{ marginLeft: 6 }} title={`${t.attachment_count} vedlegg`}>
                           <Icon name="clip" size={14} />

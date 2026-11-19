@@ -4,7 +4,7 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { api } from './api';
+import { api, syncMessage } from './api';
 import { useStore } from './store';
 import { Icon, haptic, useToast } from './components/ui';
 
@@ -103,12 +103,8 @@ export function PullToRefresh() {
       setPull(THRESHOLD);
       try {
         if (hasBank) {
-          const r = await api.post<Array<{ name: string; added?: number; error?: string }>>('/connections/sync-all');
-          const added = r.reduce((s, x) => s + (x.added ?? 0), 0);
-          const failed = r.filter((x) => x.error);
-          toast(failed.length ? failed.map((f) => `${f.name}: ${f.error}`).join('; ') : added ? `${added} nye transaksjoner` : 'Alt er oppdatert', {
-            error: failed.length > 0,
-          });
+          const m = syncMessage(await api.post<Parameters<typeof syncMessage>[0]>('/connections/sync-all'));
+          toast(m.text, { error: m.error });
         }
         changed();
       } catch (err: any) {

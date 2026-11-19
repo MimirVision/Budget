@@ -3,7 +3,7 @@ import { all, get, run } from './db.ts';
 import { overview } from './overview.ts';
 import { getBudget } from './budget.ts';
 import { openDb } from './db-node.ts';
-import { cardAlerts, cardOverview, matchBalance, saveStatement, syncCardBalances } from './cards.ts';
+import { cardAlerts, cardOverview, saveStatement, syncCardBalances } from './cards.ts';
 
 function setup(terms: Record<string, number | null> = {}) {
   const db = openDb(':memory:');
@@ -162,11 +162,6 @@ describe('Kredittkort', () => {
       ['Rema', 20000, '2026-12-20', 48, 'purchase'],
     ]);
 
-    // Kontoer can be made to match; the card page stays the same.
-    expect(matchBalance(db, card, '2026-11-02')).toBe(50200);
-    [c] = cardOverview(db, '2026-11-02');
-    expect(c.bank.appOwed).toBe(500000);
-    expect(c.owed).toBe(500000);
   });
 
   it('shows the purchases the app has on the entered bill, and the rest as one line', () => {
@@ -237,12 +232,6 @@ describe('Kredittkort', () => {
     expect(c.bank.balance).toEqual({ owed: 170000, date: '2026-11-04', source: 'csv' });
     expect(c.breakdown).toMatchObject({ nextBill: 150000, unbilled: 20000 });
     expect(c.purchases.find((p) => p.id === -2)).toMatchObject({ amount: 50000, due: '2026-11-20' });
-
-    // Kontoer can be matched without a bill, and nothing is counted twice afterwards.
-    expect(matchBalance(db, card, '2026-11-05')).toBe(-50000);
-    [c] = cardOverview(db, '2026-11-05');
-    expect(c.owed).toBe(170000);
-    expect(c.bank.appOwed).toBe(170000);
 
     // With a bill, a newer bank balance fills in after it; an older one is left out.
     saveStatement(db, card, { closed: '2026-10-31', due: '2026-11-20', amount: 160000 }, '2026-11-05');
@@ -317,99 +306,17 @@ describe('Kredittkort', () => {
     expect(by.Kiwi.cashLike).toBe(false);
   });
 
-  it('keeps the app balance equal to the bank\'s with one automatic adjustment that is never spending', () => {
+  it('leaves the balance to the bank: no Saldojustering is made, and old ones are cleared away', () => {
     const { db, tx, card } = setup();
-    run(db, 'UPDATE accounts SET on_budget = 1 WHERE id = ?', card);
     run(db, "INSERT INTO settings(key, value) VALUES ('budget_start', '2026-11-01')");
-    const cat = get<{ id: number }>(db, "SELECT id FROM categories WHERE name = 'Dagligvarer'")!.id;
-    run(db, "INSERT INTO transactions(account_id, date, amount, payee, category_id, reviewed, source) VALUES (?, '2026-11-02', -136700, 'Kiwi', ?, 1, 'enablebanking')", card, cat);
-    // The bank says 5 684 kr is owed; the app only knows 1 367 kr of it.
-    saveStatement(db, card, { closed: '2026-10-31', due: '2026-11-20', amount: 0, balance: 568400, balance_date: '2026-11-04' }, '2026-11-04');
-    const appOwed = () => -get<{ s: number }>(db, "SELECT SUM(amount) AS s FROM transactions WHERE account_id = ? AND date >= '2026-11-01'", card)!.s;
-    syncCardBalances(db, '2026-11-04');
-    expect(appOwed()).toBe(568400);
-    expect(cardOverview(db, '2026-11-04')[0].owed).toBe(568400); // the card page is unchanged
-    const auto = () => all<{ amount: number; reviewed: number; category_id: number | null }>(db, "SELECT amount, reviewed, category_id FROM transactions WHERE source = 'cardsync'");
-    expect(auto()).toEqual([{ amount: -431700, reviewed: 1, category_id: null }]);
-    // Not spending: Oversikt counts only Kiwi, and nothing is left uncategorised in the budget.
-    expect(overview(db, '2026-11', 1).spending).toBe(136700);
-    expect(getBudget(db, '2026-11').uncategorized.count).toBe(0);
-
-    // The missing purchases arrive: the same adjustment shrinks instead of a new one being added.
-    tx('2026-11-03', -431700, 'Elkjøp');
-    syncCardBalances(db, '2026-11-04');
-    expect(auto()).toEqual([]);
-    expect(appOwed()).toBe(568400);
-    syncCardBalances(db, '2026-11-04');
-    expect(all(db, "SELECT id FROM transactions WHERE source = 'cardsync'")).toEqual([]);
-  });
-
-  it('does not adjust for a transfer the bank has not booked yet', () => {
-    const { db, card, tx } = setup();
-    run(db, "INSERT INTO settings(key, value) VALUES ('budget_start', '2026-11-01')");
-    tx('2026-11-02', -50000, 'Kiwi');
-    // You moved 3 000 kr from the card to Revolut today and marked it; the app made the card's half itself.
-    run(db, "INSERT INTO transactions(account_id, date, amount, payee, reviewed, source) VALUES (?, '2026-11-04', -300000, 'Overføring: Revolut', 1, 'transfer')", card);
-    // The bank's balance (synced today) doesn't have the transfer yet.
-    run(db, "UPDATE accounts SET bank_balance = -50000, bank_balance_at = '2026-11-04T08:00:00Z' WHERE id = ?", card);
-    syncCardBalances(db, '2026-11-04');
-    expect(all(db, "SELECT amount FROM transactions WHERE source = 'cardsync'")).toEqual([]);
-
-    // The bank books it: its row takes over the app's, and the balance includes it. Still nothing to adjust.
-    run(db, "UPDATE transactions SET source = 'enablebanking', external_id = 'x1' WHERE source = 'transfer'");
-    run(db, "UPDATE accounts SET bank_balance = -350000, bank_balance_at = '2026-11-05T08:00:00Z' WHERE id = ?", card);
-    syncCardBalances(db, '2026-11-05');
-    expect(all(db, "SELECT amount FROM transactions WHERE source = 'cardsync'")).toEqual([]);
-
-    // A purchase the bank really has and the app doesn't is still adjusted for.
-    run(db, "UPDATE accounts SET bank_balance = -370000, bank_balance_at = '2026-11-06T08:00:00Z' WHERE id = ?", card);
-    syncCardBalances(db, '2026-11-06');
-    expect(all(db, "SELECT amount FROM transactions WHERE source = 'cardsync'")).toEqual([{ amount: -20000 }]);
-  });
-
-  it('does not adjust for a transfer when the bank balance already has it, before it is booked', () => {
-    const { db, card, tx } = setup();
-    run(db, "INSERT INTO settings(key, value) VALUES ('budget_start', '2026-11-01')");
-    tx('2026-11-02', -50000, 'Kiwi');
-    run(db, "INSERT INTO transactions(account_id, date, amount, payee, reviewed, source) VALUES (?, '2026-11-04', -300000, 'Overføring: Revolut', 1, 'transfer')", card);
-    // This bank's balance counts transactions that are still pending.
-    run(db, "UPDATE accounts SET bank_balance = -350000, bank_balance_at = '2026-11-04T08:00:00Z' WHERE id = ?", card);
-    syncCardBalances(db, '2026-11-04');
-    expect(all(db, "SELECT amount FROM transactions WHERE source = 'cardsync'")).toEqual([]);
-  });
-
-  it('removes an old adjustment that a not-yet-booked transfer caused', () => {
-    const { db, card, tx } = setup();
-    run(db, "INSERT INTO settings(key, value) VALUES ('budget_start', '2026-11-01')");
-    tx('2026-11-02', -50000, 'Kiwi');
-    run(db, "INSERT INTO transactions(account_id, date, amount, payee, reviewed, source) VALUES (?, '2026-11-04', -300000, 'Overføring: Revolut', 1, 'transfer')", card);
-    // What the earlier version left behind.
+    tx('2026-11-02', -136700, 'Kiwi');
     run(db, "INSERT INTO transactions(account_id, date, amount, payee, reviewed, source) VALUES (?, '2026-11-04', 300000, 'Saldojustering', 1, 'cardsync')", card);
-    run(db, "UPDATE accounts SET bank_balance = -50000, bank_balance_at = '2026-11-04T08:00:00Z' WHERE id = ?", card);
-    syncCardBalances(db, '2026-11-04');
-    expect(all(db, "SELECT amount FROM transactions WHERE source = 'cardsync'")).toEqual([]);
-  });
-
-  it('does not adjust when the bank balance is just a few days behind', () => {
-    const { db, card, tx } = setup();
-    run(db, "INSERT INTO settings(key, value) VALUES ('budget_start', '2026-11-01')");
-    run(db, "INSERT INTO transactions(account_id, date, amount, payee, reviewed, source) VALUES (?, '2026-11-01', -3338700, 'Startsaldo', 1, 'manual')", card);
-    tx('2026-11-01', -59700, 'Klarna');
-    tx('2026-11-02', -100000, 'Overføring: Revolut');
-    tx('2026-11-02', 402800, 'Overføring: Regninger');
-    tx('2026-11-02', -4700, 'Søstrene Grene');
-    tx('2026-11-02', -18100, 'Tesla');
-    tx('2026-11-02', 1400, 'Rabatt varekjøp ladestasjon');
-    run(db, "INSERT INTO transactions(account_id, date, amount, payee, reviewed, source) VALUES (?, '2026-11-04', -300000, 'Overføring: Revolut', 1, 'transfer')", card);
-    tx('2026-11-05', 50000, 'fra drangedal');
-    tx('2026-11-05', -22200, 'Tesla Inc.');
-    // The bank's balance, fetched today, is still from before the rabatt, the transfer and today's two.
-    run(db, "UPDATE accounts SET bank_balance = -3118400, bank_balance_at = '2026-11-05 10:00:00' WHERE id = ?", card);
-    syncCardBalances(db, '2026-11-05');
-    expect(all(db, "SELECT amount FROM transactions WHERE source = 'cardsync'")).toEqual([]);
-    // Something the bank has and the app really doesn't is still adjusted for.
-    run(db, "UPDATE accounts SET bank_balance = -3399000, bank_balance_at = '2026-11-06 10:00:00' WHERE id = ?", card);
-    syncCardBalances(db, '2026-11-06');
-    expect(all(db, "SELECT amount FROM transactions WHERE source = 'cardsync'")).toEqual([{ amount: -9800 }]);
+    run(db, "UPDATE accounts SET bank_balance = -568400, bank_balance_at = '2026-11-04 08:00:00' WHERE id = ?", card);
+    syncCardBalances(db);
+    expect(all(db, "SELECT id FROM transactions WHERE source = 'cardsync'")).toEqual([]);
+    // The card page still uses the bank's number.
+    expect(cardOverview(db, '2026-11-04')[0].owed).toBe(568400);
+    syncCardBalances(db);
+    expect(all(db, "SELECT id FROM transactions WHERE source = 'cardsync'")).toEqual([]);
   });
 });
