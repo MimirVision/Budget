@@ -145,15 +145,17 @@ const TRANSFER_WORDS =
 /** Finds the other half of a transfer between your own accounts (same amount, opposite sign, a few days apart). */
 export function findTransferCandidate(db: DB, txnId: number): number | undefined {
   const t = get<any>(db, 'SELECT * FROM transactions WHERE id = ?', txnId);
-  if (!t || t.transfer_id) return undefined;
+  if (!t || t.transfer_id || t.not_transfer) return undefined;
   const candidates = all<any>(
     db,
     `SELECT * FROM transactions
-      WHERE account_id != ? AND amount = ? AND transfer_id IS NULL
+      WHERE account_id != ? AND amount = ? AND transfer_id IS NULL AND not_transfer = 0
+        AND (suggested_transfer_id IS NULL OR suggested_transfer_id = ?)
         AND date BETWEEN ? AND ? AND (reviewed = 0 OR category_id IS NULL) AND source NOT IN ('freshstart', 'cardsync')
       ORDER BY abs(julianday(date) - julianday(?)) LIMIT 3`,
     t.account_id,
     -t.amount,
+    t.id,
     addDays(t.date, -5),
     addDays(t.date, 5),
     t.date,
@@ -171,6 +173,16 @@ export function linkTransfer(db: DB, aId: number, bId: number) {
   if (!a || !b) throw new Error('Fant ikke transaksjonen');
   if (a.account_id === b.account_id) throw new Error('En overføring trenger to forskjellige kontoer');
   tx(db, () => {
+    // Either side already the half of another transfer: that link goes, so no transaction is left pointing at a
+    // half that has moved on (which brought it back to Gjennomgå again and again).
+    for (const self of [a, b]) {
+      const was = self.transfer_id;
+      if (!was || was === a.id || was === b.id) continue;
+      const old = get<any>(db, 'SELECT id, source FROM transactions WHERE id = ?', was);
+      if (old?.source === 'transfer') run(db, 'DELETE FROM transactions WHERE id = ?', old.id);
+      else if (old) run(db, 'UPDATE transactions SET transfer_id = NULL, reviewed = 0 WHERE id = ? AND transfer_id = ?', old.id, self.id);
+    }
+    run(db, 'UPDATE transactions SET suggested_transfer_id = NULL WHERE suggested_transfer_id IN (?, ?) AND id NOT IN (?, ?)', a.id, b.id, a.id, b.id);
     for (const [self, other] of [
       [a, b],
       [b, a],
@@ -212,8 +224,10 @@ export function unlinkTransfer(db: DB, id: number, restoreSuggestion = false) {
 /** "Nei, ikke en overføring": forget the guess on both sides so it doesn't come back. */
 export function rejectTransferSuggestion(db: DB, id: number) {
   const t = get<any>(db, 'SELECT suggested_transfer_id FROM transactions WHERE id = ?', id);
-  run(db, 'UPDATE transactions SET suggested_transfer_id = NULL WHERE id = ? OR suggested_transfer_id = ?', id, id);
-  if (t?.suggested_transfer_id) run(db, 'UPDATE transactions SET suggested_transfer_id = NULL WHERE id = ?', t.suggested_transfer_id);
+  // Remembered on both, so a sync or a new transfer of the same amount doesn't bring the guess back.
+  run(db, 'UPDATE transactions SET suggested_transfer_id = NULL, not_transfer = 1 WHERE id = ?', id);
+  run(db, 'UPDATE transactions SET suggested_transfer_id = NULL WHERE suggested_transfer_id = ?', id);
+  if (t?.suggested_transfer_id) run(db, 'UPDATE transactions SET suggested_transfer_id = NULL, not_transfer = 1 WHERE id = ?', t.suggested_transfer_id);
 }
 
 /** Marks a transaction as a transfer to an account where the other half hasn't shown up yet. */
@@ -425,7 +439,8 @@ export function ingest(db: DB, accountId: number, incoming: IncomingTxn[], sourc
       const pool = all<{ id: number; amount: number; date: string; raw_description: string; suggested_transfer_id: number | null }>(
         db,
         `SELECT id, amount, date, raw_description, suggested_transfer_id FROM transactions
-          WHERE account_id != ? AND transfer_id IS NULL AND (reviewed = 0 OR category_id IS NULL) AND source NOT IN ('freshstart', 'cardsync') AND date BETWEEN ? AND ?`,
+          WHERE account_id != ? AND transfer_id IS NULL AND not_transfer = 0 AND (reviewed = 0 OR category_id IS NULL)
+            AND source NOT IN ('freshstart', 'cardsync') AND date BETWEEN ? AND ?`,
         accountId,
         addDays(from, -5),
         addDays(to, 5),
@@ -433,7 +448,7 @@ export function ingest(db: DB, accountId: number, incoming: IncomingTxn[], sourc
       const claimed = new Set<number>();
       for (const t of inserted) {
         const candidates = pool
-          .filter((c) => !claimed.has(c.id) && c.amount === -t.amount && Math.abs(dayDiff(c.date, t.date)) <= 5)
+          .filter((c) => !claimed.has(c.id) && !c.suggested_transfer_id && c.amount === -t.amount && Math.abs(dayDiff(c.date, t.date)) <= 5)
           .sort((a, b) => Math.abs(dayDiff(a.date, t.date)) - Math.abs(dayDiff(b.date, t.date)))
           .slice(0, 3);
         let other = candidates.length === 1 ? candidates[0] : undefined;
@@ -443,8 +458,9 @@ export function ingest(db: DB, accountId: number, incoming: IncomingTxn[], sourc
         }
         if (!other) continue;
         claimed.add(other.id);
+        // Always both ways, so the guess is the same from either side.
         run(db, 'UPDATE transactions SET suggested_transfer_id = ? WHERE id = ?', other.id, t.id);
-        if (!other.suggested_transfer_id) run(db, 'UPDATE transactions SET suggested_transfer_id = ? WHERE id = ?', t.id, other.id);
+        run(db, 'UPDATE transactions SET suggested_transfer_id = ? WHERE id = ?', t.id, other.id);
         result.transfers++;
       }
     }
