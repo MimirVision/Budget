@@ -5,7 +5,12 @@ export interface Account {
   institution: string | null;
   on_budget: number;
   closed: number;
+  /** The bank's balance for a synced account (the bank is the truth), else the transactions added up. */
   balance: number;
+  /** True when `balance` is the bank's own number. */
+  balance_from_bank?: boolean;
+  /** The transactions added up, whatever `balance` shows. */
+  app_balance?: number;
   bank_balance: number | null;
   unreviewed: number;
   last_date: string | null;
@@ -28,6 +33,8 @@ export interface CategoryOption {
 
 export interface Summary {
   readyToAssign: number;
+  /** Approve the transactions the app is sure about without asking (Innstillinger). */
+  autoApprove?: boolean;
   /** First day of the budget after "Start på nytt", or null. */
   budgetStart: string | null;
   /** Banks that have gone quiet, or whose automatic sync hasn't run. */
@@ -134,6 +141,8 @@ export interface Transaction {
   source: string;
   splits: Split[];
   attachment_count?: number;
+  /** Categorised and approved by the app on its own. */
+  auto_approved?: number;
 }
 
 export interface Recurring {
@@ -150,6 +159,7 @@ export interface Recurring {
 
 export interface IngestResult {
   added: number;
+  autoApproved?: number;
   duplicates: number;
   matched: number;
   categorized: number;
@@ -230,4 +240,16 @@ export interface PayeeApplied {
 export async function undoPayeeCategory(payee: string, applied: PayeeApplied) {
   for (let i = 0; i < applied.before.length; i += 90) await api.post('/transactions/bulk-restore', { items: applied.before.slice(i, i + 90) });
   await api.post('/payees/category', { payee, category_id: applied.previous, only_rule: true });
+}
+
+/** The message after syncing the banks: what came in, and how much the app handled on its own. */
+export function syncMessage(r: Array<{ name: string; added?: number; autoApproved?: number; error?: string }>) {
+  const failed = r.filter((x) => x.error);
+  if (failed.length) return { text: failed.map((f) => `${f.name}: ${f.error}`).join('; '), error: true };
+  const added = r.reduce((s, x) => s + (x.added ?? 0), 0);
+  const auto = r.reduce((s, x) => s + (x.autoApproved ?? 0), 0);
+  if (!added && !auto) return { text: 'Alt er oppdatert', error: false };
+  const parts = [`${added} ${added === 1 ? 'ny transaksjon' : 'nye transaksjoner'}`];
+  if (auto) parts.push(`${auto} fikk kategori automatisk`);
+  return { text: parts.join(', '), error: false };
 }

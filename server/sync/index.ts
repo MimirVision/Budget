@@ -1,6 +1,6 @@
 import { all, get, getSetting, run, tx, type DB } from '../db.ts';
 import { addFreshStartOpening, followBankAfterFreshStart } from '../freshstart.ts';
-import { ingest, type IngestResult } from '../ingest.ts';
+import { autoApprove, ingest, type IngestResult } from '../ingest.ts';
 import { cleanPayee } from '../payees.ts';
 import { addDays, todayISO } from '../../shared/months.ts';
 import { enableBanking } from './enablebanking.ts';
@@ -151,7 +151,7 @@ export async function syncConnection(
   const conn = get<any>(db, 'SELECT * FROM connections WHERE id = ?', connectionId);
   if (!conn) throw new Error('Fant ikke bankkoblingen');
   const provider = getProvider(conn.provider);
-  const total: IngestResult & { errors: string[] } = { added: 0, duplicates: 0, matched: 0, categorized: 0, transfers: 0, ids: [], errors: [] };
+  const total: IngestResult & { errors: string[] } = { added: 0, autoApproved: 0, duplicates: 0, matched: 0, categorized: 0, transfers: 0, ids: [], errors: [] };
   let data = JSON.parse(conn.data);
   const links = all<any>(db, 'SELECT * FROM connection_accounts WHERE connection_id = ? AND account_id IS NOT NULL', connectionId).filter(
     (l) => !onlyRemoteId || l.remote_id === onlyRemoteId,
@@ -174,7 +174,7 @@ export async function syncConnection(
       }
       const r = ingest(db, link.account_id, result.transactions, conn.provider, { since });
       if (result.pending) replacePending(db, link.account_id, result.pending);
-      for (const k of ['added', 'duplicates', 'matched', 'categorized', 'transfers'] as const) total[k] += r[k];
+      for (const k of ['added', 'autoApproved', 'duplicates', 'matched', 'categorized', 'transfers'] as const) total[k] += r[k];
       total.ids.push(...r.ids);
       if (result.balance !== undefined) {
         run(db, "UPDATE accounts SET bank_balance = ?, bank_balance_at = datetime('now') WHERE id = ?", result.balance, link.account_id);
@@ -189,6 +189,8 @@ export async function syncConnection(
       total.errors.push(`${link.remote_name}: ${e.message}`);
     }
   }
+  // Older ones still waiting that the app has become sure about since (e.g. you categorised one from the payee).
+  total.autoApproved += tx(db, () => autoApprove(db));
   if (provider.id === 'sparebank1' && data.refresh_expires_at) {
     run(db, 'UPDATE connections SET expires_at = ? WHERE id = ?', data.refresh_expires_at, connectionId);
   }
@@ -251,11 +253,11 @@ export function replacePending(db: DB, accountId: number, pending: Array<{ date:
 /** Syncs every bank. Without `psu` it's a background sync (the scheduled one). */
 export async function syncAll(db: DB, psu?: PsuContext) {
   const conns = all<{ id: number; name: string }>(db, "SELECT id, name FROM connections WHERE status IN ('active', 'error')");
-  const results: Array<{ id: number; name: string; added?: number; error?: string }> = [];
+  const results: Array<{ id: number; name: string; added?: number; autoApproved?: number; error?: string }> = [];
   for (const c of conns) {
     try {
       const r = await syncConnection(db, c.id, undefined, psu);
-      results.push({ id: c.id, name: c.name, added: r.added });
+      results.push({ id: c.id, name: c.name, added: r.added, autoApproved: r.autoApproved });
     } catch (e: any) {
       if (!(e instanceof ReauthRequired)) run(db, "UPDATE connections SET status = 'error', last_error = ? WHERE id = ?", e.message, c.id);
       results.push({ id: c.id, name: c.name, error: e.message });

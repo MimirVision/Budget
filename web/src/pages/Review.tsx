@@ -43,6 +43,19 @@ export default function ReviewPage() {
   useEffect(() => {
     load();
   }, [load, version]);
+  // Opening Gjennomgå first clears out what the app has become sure about since the last sync.
+  useEffect(() => {
+    api
+      .post<{ approved: number }>('/review/auto')
+      .then((r) => {
+        if (!r.approved) return;
+        toast(`${r.approved} ${r.approved === 1 ? 'transaksjon' : 'transaksjoner'} fikk kategori automatisk`);
+        after();
+      })
+      .catch(() => {});
+    // Once per visit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const after = async () => {
     await Promise.all([load(), refresh()]);
@@ -60,7 +73,7 @@ export default function ReviewPage() {
     // Optimistically hide it so the list feels instant.
     setItems((list) => list?.filter((x) => x.id !== t.id) ?? null);
     haptic();
-    const r = await api.patch<{ appliedToOthers: PayeeApplied | null }>(`/transactions/${t.id}`, categoryId ? { category_id: categoryId, remember } : { reviewed: true });
+    const r = await api.patch<{ appliedToOthers: PayeeApplied | null; alsoApproved?: number }>(`/transactions/${t.id}`, categoryId ? { category_id: categoryId, remember } : { reviewed: true });
     const cat = summary?.categories.find((c) => c.id === categoryId);
     const applied = r.appliedToOthers;
     if (cat && applied?.changed)
@@ -74,6 +87,8 @@ export default function ReviewPage() {
           },
         },
       });
+    else if (cat && r.alsoApproved)
+      toast(`${t.payee} → ${cat.name}, og ${r.alsoApproved} ${r.alsoApproved === 1 ? 'annen' : 'andre'} fra dem som ventet`, { action: undo(t.id) });
     else toast(cat ? `${t.payee} → ${cat.name}${remember ? ' (huskes)' : ''}` : `${t.payee} godkjent`, { action: undo(t.id) });
     await after();
   };

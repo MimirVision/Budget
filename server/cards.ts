@@ -241,108 +241,11 @@ export function saveStatement(db: DB, accountId: number, input: StatementInput, 
 }
 
 /**
- * Keeps each card's balance in the app (Kontoer, the sidebar, the budget) equal to what the card page says is
- * owed, when the bank's own number is known (an entered bill, a CSV with a balance, or a sync). The difference is
- * one automatic "Saldojustering" per card, updated in place. It has no category, so it's never spending: Oversikt,
- * the budget and the reviews leave it out. The card page doesn't change either, since adjustments are left out of
- * its ledger.
+ * The bank's balance is the truth: Kontoer and the sidebar show it as it is for a synced account, so the app no
+ * longer makes "Saldojustering" rows to match it. This only clears away the ones earlier versions made.
  */
-/** How long the bank can take to book a transfer or a purchase typed in by hand. */
-const NOT_BOOKED_DAYS = 10;
-
-export function syncCardBalances(db: DB, today = todayISO()) {
-  const start = budgetStart(db);
-  const cards = all<CardTerms & { id: number }>(
-    db,
-    `SELECT id, statement_day, due_day, interest_rate, credit_limit, free_days, min_pay_pct, min_pay_kr
-       FROM accounts WHERE kind = 'credit' AND closed = 0`,
-  );
-  for (const card of cards) {
-    const bank = latestStatement(db, card.id);
-    const check = balanceCheck(db, card.id, bank);
-    const auto = get<{ id: number; amount: number }>(db, "SELECT id, amount FROM transactions WHERE account_id = ? AND source = 'cardsync'", card.id);
-    if (!bank && !check) {
-      // Nothing from the bank any more: the app's own transactions are all there is.
-      if (auto) run(db, 'DELETE FROM transactions WHERE id = ?', auto.id);
-      continue;
-    }
-    const owed = ledger(db, effectiveTerms(card, bank), start, today, bank, check).owed;
-    // What the app made itself that the bank may not have booked yet: the other half of a transfer you marked, or
-    // something typed in by hand, from the last few days before the bank's balance. When the bank's own row
-    // arrives it takes this one over.
-    const waiting = check
-      ? get<{ s: number }>(
-          db,
-          `SELECT COALESCE(SUM(amount), 0) AS s FROM transactions
-            WHERE account_id = ? AND source IN ('manual', 'transfer') AND external_id IS NULL AND import_hash IS NULL
-              AND payee NOT IN ('Startsaldo', 'Saldojustering') AND date > ? AND date <= ? AND date >= ?`,
-          card.id,
-          addDays(check.date, -NOT_BOOKED_DAYS),
-          check.date,
-          start,
-        )!.s
-      : 0;
-    const appOwed = -(get<{ s: number }>(db, 'SELECT COALESCE(SUM(amount), 0) AS s FROM transactions WHERE account_id = ? AND date >= ? AND date <= ?', card.id, start, today)!.s);
-    const now = auto?.amount ?? 0;
-    // What the app thinks is owed beyond the bank, leaving the adjustment itself out (> 0: the app thinks more).
-    const gap = appOwed + now - owed;
-    // The bank's balance often lags: it can be a day or more old, or leave out what isn't booked yet. If the gap
-    // is exactly some of the last days' transactions, that's all it is, and they'll be in the bank's next
-    // balance. Only a gap nothing explains is something the app is really missing.
-    const lagging = check ? explainedByRecent(db, card.id, gap, addDays(check.date, -NOT_BOOKED_DAYS), check.date, start) : gap === 0;
-    // Otherwise: banks differ in whether their balance has the transactions that aren't booked yet, so both
-    // readings are tried and the one that needs the smallest adjustment wins.
-    const amount = lagging ? 0 : [gap, gap + waiting].reduce((best, a) => (Math.abs(a) < Math.abs(best) ? a : best));
-    if (Math.abs(amount - now) < 1) continue;
-    const date = today < start ? start : today;
-    if (auto && amount === 0) run(db, 'DELETE FROM transactions WHERE id = ?', auto.id);
-    else if (auto) run(db, 'UPDATE transactions SET amount = ?, date = ? WHERE id = ?', amount, date, auto.id);
-    else
-      run(
-        db,
-        `INSERT INTO transactions(account_id, date, amount, payee, raw_description, category_id, reviewed, source)
-         VALUES (?, ?, ?, 'Saldojustering', 'Automatisk: saldoen fra banken', NULL, 1, 'cardsync')`,
-        card.id,
-        date,
-        amount,
-      );
-  }
-}
-
-/**
- * Whether `gap` (øre owed) is exactly what some of the card's transactions between `from` (exclusive) and `to`
- * add up to: the ones the bank hasn't counted in its balance yet. Looks at the newest few only, so it stays quick.
- */
-function explainedByRecent(db: DB, accountId: number, gap: number, from: string, to: string, start: string): boolean {
-  if (gap === 0) return true;
-  const recent = all<{ amount: number }>(
-    db,
-    `SELECT amount FROM transactions
-      WHERE account_id = ? AND source != 'cardsync' AND payee NOT IN ('Startsaldo', 'Saldojustering')
-        AND date > ? AND date <= ? AND date >= ?
-      ORDER BY date DESC, id DESC LIMIT 12`,
-    accountId,
-    from,
-    to,
-    start,
-  );
-  let sums = new Set([0]);
-  for (const r of recent) {
-    const next = new Set(sums);
-    for (const x of sums) next.add(x - r.amount); // a purchase (negative) is owed (positive)
-    sums = next;
-    if (sums.has(gap)) return true;
-  }
-  return false;
-}
-
-/** "Juster Kontoer" on the card page: the same as the automatic sync, on demand. Returns the change. */
-export function matchBalance(db: DB, accountId: number, today = todayISO()): number {
-  const c = cardOverview(db, today).find((x) => x.id === accountId);
-  if (!c || (!c.bank.statement && !c.bank.balance)) throw new Error('Legg inn regningen eller saldoen fra banken først');
-  const diff = c.bank.appOwed - c.owed;
-  syncCardBalances(db, today);
-  return diff;
+export function syncCardBalances(db: DB) {
+  if (get(db, "SELECT 1 FROM transactions WHERE source = 'cardsync' LIMIT 1")) run(db, "DELETE FROM transactions WHERE source = 'cardsync'");
 }
 
 export function deleteStatement(db: DB, accountId: number, id: number) {

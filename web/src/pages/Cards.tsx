@@ -485,16 +485,6 @@ function Answer({ c, onEdit }: { c: Card; onEdit: () => void }) {
 function Notes({ c, onBill, onEdit, onChanged }: { c: Card; onBill: () => void; onEdit: () => void; onChanged: () => void }) {
   const toast = useToast();
   const exact = !!c.bank.statement || !!c.bank.balance;
-  const diff = c.bank.appOwed - c.owed;
-  const match = async () => {
-    try {
-      await api.post(`/cards/${c.id}/match-balance`);
-      toast('Saldoen i Kontoer er justert. Gi justeringen en kategori i Gjennomgå.');
-      onChanged();
-    } catch (e: any) {
-      toast(e.message, { error: true });
-    }
-  };
   const notes: Array<{ key: string; text: string; action: string; run: () => void; warn?: boolean }> = [];
   if (!exact)
     notes.push({
@@ -507,8 +497,6 @@ function Notes({ c, onBill, onEdit, onChanged }: { c: Card; onBill: () => void; 
     notes.push({ key: 'newer', text: `Ny regning ble laget ${dayLabel(c.statement.closed)}.`, action: 'Legg den inn', run: onBill, warn: true });
   if (!c.interest_rate)
     notes.push({ key: 'terms', text: 'Legg inn renten, så ser du hva det koster å betale for sent.', action: 'Vilkår', run: onEdit });
-  if (exact && Math.abs(diff) >= 100)
-    notes.push({ key: 'match', text: `Kontoer viser ${kr(c.bank.appOwed)} skyldig, banken ${kr(c.owed)}.`, action: 'Juster Kontoer', run: match });
   if (!notes.length) return null;
   return (
     <div className="cc-notes small">

@@ -3,7 +3,7 @@
  * Every transaction goes through the same pipeline: dedupe → match with manual entries → clean payee →
  * suggest category (rules, your history, known merchants) → detect transfers between your own accounts.
  */
-import { all, get, run, tx, type DB } from './db.ts';
+import { all, get, getSetting, run, tx, type DB } from './db.ts';
 import { cleanPayee, matchMerchant } from './payees.ts';
 import { addDays, dayDiff } from '../shared/months.ts';
 import { matchRefunds } from './refunds.ts';
@@ -19,6 +19,8 @@ export interface IncomingTxn {
 
 export interface IngestResult {
   added: number;
+  /** Categorised and approved on their own, because the app was sure (see Suggester.sure). */
+  autoApproved: number;
   duplicates: number;
   matched: number; // merged into a transaction you had already typed in manually
   categorized: number;
@@ -61,14 +63,16 @@ export function findRule(db: DB, payee: string, raw: string, accountId: number):
 export class Suggester {
   private rules: Rule[];
   private history = new Map<string, number>();
+  /** Per payee and direction: how many you've gone through, how many got the usual category, and the largest. */
+  private stats = new Map<string, { total: number; usual: number; largest: number }>();
   private categories = new Map<string, number>();
 
   constructor(db: DB) {
     // Most specific wins: an exact name (a payee's own category) first, then the longest pattern.
     this.rules = all<Rule>(db, "SELECT * FROM rules ORDER BY match_type = 'equals' DESC, length(pattern) DESC, id DESC");
-    const hist = all<{ payee: string; outflow: number; category_id: number; n: number; last: string }>(
+    const hist = all<{ payee: string; outflow: number; category_id: number; n: number; last: string; largest: number }>(
       db,
-      `SELECT lower(t.payee) AS payee, t.amount < 0 AS outflow, t.category_id, COUNT(*) AS n, MAX(t.date) AS last
+      `SELECT lower(t.payee) AS payee, t.amount < 0 AS outflow, t.category_id, COUNT(*) AS n, MAX(t.date) AS last, MAX(abs(t.amount)) AS largest
          FROM transactions t JOIN categories c ON c.id = t.category_id
         WHERE t.reviewed = 1 AND c.hidden = 0 AND t.payee != ''
         GROUP BY lower(t.payee), t.amount < 0, t.category_id
@@ -78,10 +82,33 @@ export class Suggester {
     for (const h of hist) {
       const key = `${h.payee}|${h.outflow ? 1 : 0}`;
       if (!this.history.has(key)) this.history.set(key, h.category_id);
+      const st = this.stats.get(key) ?? { total: 0, usual: h.n, largest: 0 };
+      st.total += h.n;
+      st.largest = Math.max(st.largest, h.largest);
+      this.stats.set(key, st);
     }
     for (const c of all<{ id: number; name: string }>(db, 'SELECT id, name FROM categories WHERE hidden = 0')) {
       this.categories.set(c.name.toLowerCase(), c.id);
     }
+  }
+
+  /**
+   * Whether a suggestion is safe to use without asking: a rule you made (a payee's fixed category), or what you
+   * have always (or nearly always) picked for this payee, for an amount like the ones before. The first purchase
+   * from a new payee, a payee you've put in different categories, and an amount far above the usual are left for
+   * you to look at.
+   */
+  sure(payee: string, amount: number, source: string | null, categoryId: number | null): boolean {
+    if (!categoryId) return false;
+    if (source === 'rule') return true;
+    if (source !== 'history') return false;
+    const key = `${payee.toLowerCase()}|${amount < 0 ? 1 : 0}`;
+    const st = this.stats.get(key);
+    if (!st || this.history.get(key) !== categoryId) return false;
+    if (st.usual / st.total < 0.8) return false;
+    // Much more than ever before from them (e.g. 4 000 kr at a café): worth a look.
+    if (Math.abs(amount) > Math.max(st.largest * 3, st.largest + 50_000)) return false;
+    return true;
   }
 
   rule(payee: string, raw: string, accountId: number): Rule | undefined {
@@ -242,7 +269,7 @@ export function forgetImport(db: DB, id: number) {
  * from the same source in that window that the bank no longer lists has had its id changed (see below).
  */
 export function ingest(db: DB, accountId: number, incoming: IncomingTxn[], source: string, complete?: { since: string }): IngestResult {
-  const result: IngestResult = { added: 0, duplicates: 0, matched: 0, categorized: 0, transfers: 0, ids: [] };
+  const result: IngestResult = { added: 0, autoApproved: 0, duplicates: 0, matched: 0, categorized: 0, transfers: 0, ids: [] };
   if (incoming.length === 0) return result;
 
   // Load everything the checks below need up front: on Cloudflare's free plan each request gets ~10 ms of CPU,
@@ -421,8 +448,59 @@ export function ingest(db: DB, accountId: number, incoming: IncomingTxn[], sourc
         result.transfers++;
       }
     }
+
+    // The ones the app is sure about don't need you: they get their category straight away.
+    if (result.ids.length) result.autoApproved = autoApprove(db, { ids: result.ids, suggester });
   });
   return result;
+}
+
+/** On unless turned off under Innstillinger. */
+export function autoApproveOn(db: DB): boolean {
+  return getSetting(db, 'auto_approve') !== 'off';
+}
+
+/**
+ * Gives transactions waiting in Gjennomgå their suggested category and approves them, when the app is sure (see
+ * Suggester.sure). Not transfers or possible transfers, split ones, or anything before the budget start. Limit it to
+ * some `ids`, or to one `payee` (after you've categorised one of theirs). Returns how many.
+ */
+export function autoApprove(db: DB, opts: { ids?: number[]; payee?: string; suggester?: Suggester } = {}): number {
+  if (!autoApproveOn(db)) return 0;
+  const where = [
+    't.reviewed = 0',
+    't.category_id IS NULL',
+    't.suggested_category_id IS NOT NULL',
+    't.transfer_id IS NULL',
+    't.suggested_transfer_id IS NULL',
+    "t.source NOT IN ('freshstart', 'cardsync')",
+    't.date >= ?',
+    'NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id)',
+  ];
+  const params: unknown[] = [getSetting(db, 'budget_start') ?? '0000-01-01'];
+  if (opts.payee !== undefined) {
+    where.push('lower(t.payee) = lower(?)');
+    params.push(opts.payee);
+  }
+  type Row = { id: number; payee: string; amount: number; suggested_category_id: number; suggestion_source: string | null };
+  const select = `SELECT t.id, t.payee, t.amount, t.suggested_category_id, t.suggestion_source FROM transactions t WHERE ${where.join(' AND ')}`;
+  let rows: Row[] = [];
+  if (opts.ids) {
+    // Cloudflare's SQLite takes at most 100 parameters per query.
+    for (let i = 0; i < opts.ids.length; i += 90) {
+      const chunk = opts.ids.slice(i, i + 90);
+      rows.push(...all<Row>(db, `${select} AND t.id IN (${chunk.map(() => '?').join(',')})`, ...params, ...chunk));
+    }
+  } else rows = all<Row>(db, `${select} ORDER BY t.date DESC LIMIT 500`, ...params);
+  if (!rows.length) return 0;
+  const s = opts.suggester ?? new Suggester(db);
+  let n = 0;
+  for (const r of rows) {
+    if (!s.sure(r.payee, r.amount, r.suggestion_source, r.suggested_category_id)) continue;
+    run(db, 'UPDATE transactions SET category_id = suggested_category_id, reviewed = 1, auto_approved = 1 WHERE id = ?', r.id);
+    n++;
+  }
+  return n;
 }
 
 /** Stable fingerprint for CSV rows. The occurrence index keeps two identical coffees on the same day apart. */

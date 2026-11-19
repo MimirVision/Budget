@@ -230,6 +230,8 @@ const MIGRATIONS = [
   'ALTER TABLE accounts ADD COLUMN min_pay_kr INTEGER',
   // The category's own icon on Budsjett: an emoji, or empty for the first letter of its name.
   'ALTER TABLE categories ADD COLUMN icon TEXT',
+  // Approved by the app on its own (it was sure of the category), so it can be shown and undone.
+  'ALTER TABLE transactions ADD COLUMN auto_approved INTEGER NOT NULL DEFAULT 0',
 ];
 
 export function initSchema(db: DB) {

@@ -807,9 +807,38 @@ function FreshStart() {
     toast(mode === 'reset' ? 'Overforbruk trekkes nå fra neste måneds Klar til fordeling' : 'Overforbruk følger nå med til neste måned');
   };
   const mode = summary?.overspending ?? 'carry';
+  const autoOn = summary?.autoApprove ?? true;
+  const setAuto = async (on: boolean) => {
+    await api.put('/settings', { auto_approve: on ? null : 'off' });
+    if (on) {
+      const r = await api.post<{ approved: number }>('/review/auto');
+      toast(r.approved ? `Slått på. ${r.approved} i Gjennomgå fikk kategori med en gang.` : 'Slått på');
+    } else toast('Slått av: alt nytt venter i Gjennomgå');
+    changed();
+  };
 
   return (
     <div className="stack">
+      <div className="card card-pad stack">
+        <div>
+          <h3 style={{ marginBottom: 4 }}>Gjennomgå</h3>
+          <p className="small muted" style={{ margin: 0 }}>Hvilke nye transaksjoner skal du se på selv?</p>
+        </div>
+        <div className="option-grid">
+          <button className={`option ${autoOn ? 'on' : ''}`} onClick={() => setAuto(true)} aria-pressed={autoOn}>
+            <strong>Bare de appen er usikker på</strong>
+            <span className="small muted">
+              Kjøp fra en mottaker med fast kategori, eller som alltid har fått samme kategori, godkjennes av seg selv. Du ser den første fra en ny mottaker,
+              mulige overføringer, mottakere med flere kategorier og beløp langt over det vanlige.
+            </span>
+          </button>
+          <button className={`option ${!autoOn ? 'on' : ''}`} onClick={() => setAuto(false)} aria-pressed={!autoOn}>
+            <strong>Alle</strong>
+            <span className="small muted">Hver nye transaksjon venter i Gjennomgå, med forslag til kategori.</span>
+          </button>
+        </div>
+      </div>
+
       <div className="card card-pad stack">
         <div>
           <h3 style={{ marginBottom: 4 }}>Overforbruk</h3>

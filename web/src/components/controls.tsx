@@ -1,6 +1,6 @@
 /** Small controls shared by the shell and pages: theme switching and "sync now". */
 import { useState } from 'react';
-import { api } from '../api';
+import { api, syncMessage } from '../api';
 import { timeAgo } from '../format';
 import { usePrefs, type Theme } from '../prefs';
 import { useStore } from '../store';
@@ -44,11 +44,9 @@ export function SyncNow({ compact }: { compact?: boolean }) {
   const run = async () => {
     setBusy(true);
     try {
-      const r = await api.post<Array<{ name: string; added?: number; error?: string }>>('/connections/sync-all');
-      const added = r.reduce((s, x) => s + (x.added ?? 0), 0);
-      const failed = r.filter((x) => x.error);
+      const m = syncMessage(await api.post<Parameters<typeof syncMessage>[0]>('/connections/sync-all'));
       haptic();
-      toast(failed.length ? failed.map((f) => `${f.name}: ${f.error}`).join('; ') : added ? `${added} nye transaksjoner` : 'Alt er oppdatert', { error: failed.length > 0 });
+      toast(m.text, { error: m.error });
       changed();
     } catch (e: any) {
       toast(e.message, { error: true });

@@ -2,7 +2,7 @@ import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import './styles.css';
-import { api } from './api';
+import { api, syncMessage } from './api';
 import { StoreProvider, useStore } from './store';
 import { AnimatedMoney, Icon, Modal, Money, ToastProvider, haptic, useToast } from './components/ui';
 import { PrefsProvider, usePrefs } from './prefs';
@@ -135,8 +135,8 @@ function Layout() {
         onAdd={() => setAdding(true)}
         onSync={async () => {
           try {
-            const r = await api.post<Array<{ added?: number; error?: string }>>('/connections/sync-all');
-            toast(`${r.reduce((n, x) => n + (x.added ?? 0), 0)} nye transaksjoner`);
+            const m = syncMessage(await api.post<Parameters<typeof syncMessage>[0]>('/connections/sync-all'));
+            toast(m.text, { error: m.error });
             changed();
           } catch (e: any) {
             toast(e.message, { error: true });

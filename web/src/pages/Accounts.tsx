@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { api, type Account, type IngestResult } from '../api';
+import { api, syncMessage, type Account, type IngestResult } from '../api';
 import { dayLabel, kr, timeAgo } from '../format';
 import { useStore } from '../store';
 import { Icon, Modal, Money, MoneyInput, useToast } from '../components/ui';
@@ -31,6 +31,7 @@ const KIND_LABEL: Record<string, string> = {
 function describeResult(r: IngestResult) {
   const parts = [`${r.added} nye`];
   if (r.duplicates) parts.push(`${r.duplicates} fantes fra før`);
+  if (r.autoApproved) parts.push(`${r.autoApproved} fikk kategori automatisk`);
   if (r.matched) parts.push(`${r.matched} koblet til manuelle føringer`);
   if (r.transfers) parts.push(`${r.transfers} ${r.transfers === 1 ? 'overføring' : 'overføringer'} funnet`);
   return parts.join(' · ');
@@ -73,12 +74,8 @@ export default function AccountsPage() {
     setSyncing(id);
     try {
       if (id === 'all') {
-        const r = await api.post<Array<{ name: string; added?: number; error?: string }>>('/connections/sync-all');
-        const added = r.reduce((s, x) => s + (x.added ?? 0), 0);
-        const failed = r.filter((x) => x.error);
-        toast(failed.length ? `${failed.map((f) => `${f.name}: ${f.error}`).join('; ')}` : `Synkronisert. ${added} ${added === 1 ? 'ny transaksjon' : 'nye transaksjoner'}.`, {
-          error: failed.length > 0,
-        });
+        const m = syncMessage(await api.post<Parameters<typeof syncMessage>[0]>('/connections/sync-all'));
+        toast(m.error ? m.text : `Synkronisert: ${m.text}`, { error: m.error });
       } else {
         const r = await api.post<IngestResult>(`/connections/${id}/sync`);
         toast(`Synkronisert: ${describeResult(r)}`, r.errors?.length ? { error: true } : undefined);
@@ -1147,14 +1144,20 @@ function EditAccount({ account, onClose, onSaved }: { account: Account; onClose:
           </label>
         </>
       )}
-      <label className="field">
-        Rett saldo
-        <span className="help">
-          Saldoen her er {kr(account.balance)}
-          {account.bank_balance !== null ? `, banken sier ${kr(account.bank_balance)}` : ''}. Skriv inn riktig saldo for å legge til en justering.
-        </span>
-        <MoneyInput value={reconcile ?? account.bank_balance ?? account.balance} onCommit={setReconcile} />
-      </label>
+      {account.balance_from_bank ? (
+        <p className="small muted" style={{ margin: 0 }}>
+          Saldoen ({kr(account.balance)}) kommer rett fra banken ved hver synk, så den trenger aldri å rettes her.
+        </p>
+      ) : (
+        <label className="field">
+          Rett saldo
+          <span className="help">
+            Saldoen her er {kr(account.balance)}
+            {account.bank_balance !== null ? `, banken sier ${kr(account.bank_balance)}` : ''}. Skriv inn riktig saldo for å legge til en justering.
+          </span>
+          <MoneyInput value={reconcile ?? account.bank_balance ?? account.balance} onCommit={setReconcile} />
+        </label>
+      )}
     </Modal>
   );
 }

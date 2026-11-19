@@ -2,13 +2,13 @@ import { Hono } from 'hono';
 import { all, get, getSetting, run, setSetting, tx, type DB } from './db.ts';
 import { autoAssign, budgetStart, overspendMode, getBudget, moveMoney, readyToAssign, setAssigned, type AutoAssignMode } from './budget.ts';
 import { applyFreshStart, followBankBalance, incomeCategory, openingCategory, previewFreshStart, undoFreshStart } from './freshstart.ts';
-import { forgetImport, ingest, linkTransfer, rejectTransferSuggestion, ruleMatches, transferToAccount, unlinkTransfer, withImportHashes } from './ingest.ts';
+import { autoApprove, autoApproveOn, forgetImport, ingest, linkTransfer, rejectTransferSuggestion, ruleMatches, transferToAccount, unlinkTransfer, withImportHashes } from './ingest.ts';
 import { previewCsv, type CsvMapping } from './import/csv.ts';
 import { overview } from './overview.ts';
 import { payday, syncHealth, tips } from './insights.ts';
 import { listPayees, renamePayee, setPayeeCategory } from './payeeAdmin.ts';
 import { addIncome, deleteIncome, incomeOutlook, updateIncome } from './incomes.ts';
-import { cardAlerts, cardOverview, deleteStatement, matchBalance, saveStatement, syncCardBalances, type StatementInput } from './cards.ts';
+import { cardAlerts, cardOverview, deleteStatement, saveStatement, syncCardBalances, type StatementInput } from './cards.ts';
 import { expectRefund, listRefunds } from './refunds.ts';
 import { addBill, deleteBill, listBills, syncBillTargets, updateBill, type BillInput } from './bills.ts';
 import { dismissDuplicates, findDuplicates, mergeDuplicates } from './duplicates.ts';
@@ -183,11 +183,11 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
 
   // ---------- Overview ----------
   api.get('/summary', (c) => {
-    // Card balances follow the bank's numbers (see syncCardBalances) before they're shown anywhere.
+    // Clears away balance adjustments earlier versions made (the bank's balance is shown as it is now).
     syncCardBalances(db);
     const accounts = all<any>(
       db,
-      `SELECT a.*, COALESCE((SELECT SUM(amount) FROM transactions t WHERE t.account_id = a.id AND t.date >= ?), 0) AS balance,
+      `SELECT a.*, COALESCE((SELECT SUM(amount) FROM transactions t WHERE t.account_id = a.id AND t.date >= ?), 0) AS app_balance,
               (SELECT COUNT(*) FROM transactions t WHERE t.account_id = a.id AND t.reviewed = 0 AND t.date >= ?) AS unreviewed,
               (SELECT MAX(date) FROM transactions t WHERE t.account_id = a.id) AS last_date,
               (SELECT co.id FROM connection_accounts ca JOIN connections co ON co.id = ca.connection_id WHERE ca.account_id = a.id LIMIT 1) AS connection_id,
@@ -213,7 +213,13 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
       lateRefunds: listRefunds(db)
         .filter((r) => !r.resolved_transaction_id && r.days > 14)
         .map((r) => ({ id: r.id, payee: r.payee, amount: r.amount, days: r.days })),
-      accounts,
+      // A synced account shows the bank's own balance: the bank is the truth. Others add up their transactions.
+      accounts: accounts.map((a) => ({
+        ...a,
+        balance: a.connection_id && a.bank_balance !== null ? a.bank_balance : a.app_balance,
+        balance_from_bank: !!(a.connection_id && a.bank_balance !== null),
+      })),
+      autoApprove: autoApproveOn(db),
       attention,
       categories: all<any>(
         db,
@@ -533,6 +539,9 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
     return c.json({ ok: true });
   });
 
+  /** Clears what the app is sure about out of Gjennomgå (also runs after each sync and import). */
+  api.post('/review/auto', (c) => c.json({ approved: tx(db, () => autoApprove(db)) }));
+
   // ---------- Transactions ----------
   api.get('/transactions', (c) => {
     const q = c.req.query();
@@ -601,6 +610,7 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
     const before = get<any>(db, 'SELECT * FROM transactions WHERE id = ?', id);
     if (!before) badRequest('Fant ikke transaksjonen');
     let appliedToOthers: ReturnType<typeof setPayeeCategory> | null = null;
+    let alsoApproved = 0;
     tx(db, () => {
       for (const f of ['date', 'amount', 'payee', 'memo', 'account_id'] as const) {
         if (b[f] !== undefined) run(db, `UPDATE transactions SET ${f} = ? WHERE id = ?`, b[f], id);
@@ -612,6 +622,8 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
           const payee = b.payee ?? before.payee;
           propagate(db, payee, b.category_id, before.amount);
           if (b.remember) appliedToOthers = setPayeeCategory(db, payee, b.category_id);
+          // You've shown what they are: the others from them waiting in Gjennomgå follow, if the app is now sure.
+          else alsoApproved = autoApprove(db, { payee });
         }
       }
       if (Array.isArray(b.splits)) {
@@ -635,7 +647,7 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
       transferToAccount(db, id, b.transfer_account_id);
     }
     if (b.transfer_id) linkTransfer(db, id, b.transfer_id);
-    return c.json({ ...shapeTxn(get(db, transactionQuery('t.id = ?'), id)), appliedToOthers });
+    return c.json({ ...shapeTxn(get(db, transactionQuery('t.id = ?'), id)), appliedToOthers, alsoApproved });
   });
 
   // ---------- Mottakere ----------
@@ -720,13 +732,6 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
     }
   });
 
-  api.post('/cards/:id/match-balance', (c) => {
-    try {
-      return c.json({ diff: matchBalance(db, Number(c.req.param('id'))) });
-    } catch (e: any) {
-      return badRequest(e.message);
-    }
-  });
 
   api.delete('/cards/:id/statement/:sid', (c) => {
     deleteStatement(db, Number(c.req.param('id')), Number(c.req.param('sid')));
@@ -1094,7 +1099,7 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
 
   api.put('/settings', async (c) => {
     const body = await c.req.json<Record<string, string | null>>();
-    const allowed = new Set([...Object.values(providers).flatMap((p) => p.settings.map((s) => s.key)), 'overspending']);
+    const allowed = new Set([...Object.values(providers).flatMap((p) => p.settings.map((s) => s.key)), 'overspending', 'auto_approve']);
     for (const [k, v] of Object.entries(body)) {
       if (!allowed.has(k)) continue;
       setSetting(db, k, typeof v === 'string' ? v.trim() : null);
