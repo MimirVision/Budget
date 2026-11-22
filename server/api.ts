@@ -561,6 +561,7 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
       where.push('lower(t.payee) = lower(?)');
       params.push(q.payee);
     }
+    if (q.auto === '1') where.push('t.auto_approved = 1');
     if (q.month && MONTH.test(q.month)) {
       where.push('t.date BETWEEN ? AND ?');
       params.push(`${q.month}-01`, `${q.month}-31`);
@@ -616,7 +617,8 @@ export function createApi(db: DB, appConfig: AppConfig = {}) {
         if (b[f] !== undefined) run(db, `UPDATE transactions SET ${f} = ? WHERE id = ?`, b[f], id);
       }
       if (b.category_id !== undefined) {
-        run(db, 'UPDATE transactions SET category_id = ?, reviewed = 1 WHERE id = ?', b.category_id, id);
+        // Your own choice now, not the app's.
+        run(db, 'UPDATE transactions SET category_id = ?, reviewed = 1, auto_approved = 0 WHERE id = ?', b.category_id, id);
         run(db, 'DELETE FROM splits WHERE transaction_id = ?', id);
         if (b.category_id) {
           const payee = b.payee ?? before.payee;

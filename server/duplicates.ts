@@ -53,7 +53,8 @@ function reasonFor(rows: DuplicateRow[]): { reason: DuplicateReason; confidence:
     // Two copies from the same bank on the same day with the same text can be two real purchases (two coffees).
     const sameDay = new Set(rows.map((r) => r.date)).size === 1;
     const sameText = new Set(rows.map((r) => norm(r.raw_description))).size === 1;
-    if (sameDay && sameText) return { reason: 'same_day_same_text', confidence: 'maybe' };
+    // Three or more of exactly the same is the bank repeating itself, not three coffees.
+    if (sameDay && sameText) return { reason: 'same_day_same_text', confidence: rows.length >= 3 ? 'sure' : 'maybe' };
     return { reason: 'bank_changed_id', confidence: 'sure' };
   }
   if (sources.size === 1 && sources.has('csv')) return { reason: 'same_day_same_text', confidence: 'maybe' };

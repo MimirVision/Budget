@@ -72,4 +72,11 @@ describe('Godkjenn automatisk', () => {
     expect(row(add('2026-11-06', -31000, 'Bunnpris Gulset').ids[0]).reviewed).toBe(0);
     expect(all(db, 'SELECT id FROM transactions WHERE reviewed = 0').length).toBe(1);
   });
+
+  it('asks about a payment that names one of your own accounts, since it is most likely a transfer', () => {
+    const { db, cat, add, row, approve } = setup();
+    run(db, "INSERT INTO accounts(name, kind, on_budget) VALUES ('DNB MC', 'credit', 1)");
+    approve(add('2026-10-14', -3000000, 'DNB MC').ids[0], cat('Dagligvarer'));
+    expect(row(add('2026-11-14', -3546300, 'DNB MC').ids[0]).reviewed).toBe(0);
+  });
 });

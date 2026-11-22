@@ -35,6 +35,7 @@ export default function TransactionsPage() {
   const month = params.get('month') ?? '';
   const q = params.get('q') ?? '';
   const payee = params.get('payee') ?? '';
+  const auto = params.get('auto') ?? '';
 
   const setFilter = (key: string, value: string) => {
     const next = new URLSearchParams(params);
@@ -51,15 +52,16 @@ export default function TransactionsPage() {
       if (month) qs.set('month', month);
       if (q) qs.set('q', q);
       if (payee) qs.set('payee', payee);
+      if (auto) qs.set('auto', auto);
       const r = await api.get<{ transactions: Transaction[]; total: number }>(`/transactions?${qs}`);
       setRows((prev) => (offset ? [...prev, ...r.transactions] : r.transactions));
       setTotal(r.total);
       if (!offset) {
         // Reserved purchases only make sense in the plain list, not when filtering by category, month or text.
-        setPending(category || month || q || payee ? [] : await api.get<Pending[]>(`/pending${account ? `?account=${account}` : ''}`));
+        setPending(category || month || q || payee || auto ? [] : await api.get<Pending[]>(`/pending${account ? `?account=${account}` : ''}`));
       }
     },
-    [account, category, month, q, payee],
+    [account, category, month, q, payee, auto],
   );
   useEffect(() => {
     load();
@@ -88,7 +90,7 @@ export default function TransactionsPage() {
   if (!summary) return null;
   const acc = summary.accounts.find((a) => String(a.id) === account);
   const cat = summary.categories.find((c) => String(c.id) === category);
-  const filtered = !!(account || category || month || q || payee);
+  const filtered = !!(account || category || month || q || payee || auto);
 
   return (
     <>
@@ -170,6 +172,17 @@ export default function TransactionsPage() {
           </button>
         )}
       </div>
+      {auto && (
+        <div className="payee-filter">
+          <span className="chip">
+            <Icon name="sparkle" size={12} /> Fikk kategori automatisk
+            <button onClick={() => setFilter('auto', '')} aria-label="Fjern filteret">
+              <Icon name="close" size={12} />
+            </button>
+          </span>
+          <span className="small muted">Trykk på en for å endre kategorien. Da lærer appen det til neste gang.</span>
+        </div>
+      )}
       {payee && (
         <div className="payee-filter">
           <span className="chip">
