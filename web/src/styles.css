@@ -3609,6 +3609,14 @@ label.field .help {
     flex: 1 1 0;
     min-width: 0;
   }
+  /* A transfer guess: the explanation on its own line, "Ja" and "Nei" side by side under it. */
+  .review-card .actions > .callout {
+    flex: 1 1 100% !important;
+  }
+  .review-card .actions > .callout ~ .btn {
+    flex: 1 1 0;
+    justify-content: center;
+  }
   .review-card .rv-approve {
     width: 46px;
     height: 46px;
@@ -5890,4 +5898,10 @@ kbd {
   max-width: 120px;
   font-size: 18px;
   text-align: center;
+}
+
+/* Gjennomgå: copies of the same payment, offered to clean up first */
+.review-copies {
+  align-items: center;
+  margin-bottom: 12px;
 }

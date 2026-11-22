@@ -360,20 +360,28 @@ export function ingest(db: DB, accountId: number, incoming: IncomingTxn[], sourc
       }
 
       // The same purchase with a new id from the same bank. Some banks change the id (or the date and text the
-      // fallback id is built from) when a purchase goes from reserved to booked. The old copy is no longer in the
-      // bank's list, so it's updated in place instead of a second copy being added.
+      // fallback id is built from) when a purchase goes from reserved to booked, and some send a new id now and
+      // then for the same payment. The old copy is no longer in the bank's list, so it's updated in place instead
+      // of a second copy being added. Inside the window the bank surely sent, the date may have moved a few days;
+      // at its edge (where the bank may not send everything) only the very same day counts.
       const renamed =
         staleFrom &&
         closest(
           existing.filter(
             (e) =>
-              !touched.has(e.id) && e.source === source && e.amount === t.amount && !!e.external_id &&
-              !batchIds.has(e.external_id) && e.date >= staleFrom && Math.abs(dayDiff(e.date, t.date)) <= 4,
+              !touched.has(e.id) && e.source === source && e.amount === t.amount && !!e.external_id && !batchIds.has(e.external_id) &&
+              (e.date >= staleFrom ? Math.abs(dayDiff(e.date, t.date)) <= 4 : e.date === t.date),
           ),
           t.date,
         );
       if (renamed) {
         run(db, 'UPDATE transactions SET external_id = ?, date = ?, raw_description = ? WHERE id = ?', t.externalId ?? null, t.date, t.description, renamed.id);
+        // Keep the old id too: if the bank switches back to it, it's known and not added again.
+        const old = existing.find((e) => e.id === renamed.id)?.external_id;
+        if (old) {
+          run(db, 'INSERT INTO forgotten_imports(account_id, external_id) VALUES (?, ?)', accountId, old);
+          externalIds.add(old);
+        }
         if (t.externalId) externalIds.add(t.externalId);
         touched.add(renamed.id);
         result.matched++;
@@ -498,8 +506,8 @@ export function autoApprove(db: DB, opts: { ids?: number[]; payee?: string; sugg
     where.push('lower(t.payee) = lower(?)');
     params.push(opts.payee);
   }
-  type Row = { id: number; payee: string; amount: number; suggested_category_id: number; suggestion_source: string | null };
-  const select = `SELECT t.id, t.payee, t.amount, t.suggested_category_id, t.suggestion_source FROM transactions t WHERE ${where.join(' AND ')}`;
+  type Row = { id: number; account_id: number; payee: string; raw_description: string; amount: number; suggested_category_id: number; suggestion_source: string | null };
+  const select = `SELECT t.id, t.account_id, t.payee, t.raw_description, t.amount, t.suggested_category_id, t.suggestion_source FROM transactions t WHERE ${where.join(' AND ')}`;
   let rows: Row[] = [];
   if (opts.ids) {
     // Cloudflare's SQLite takes at most 100 parameters per query.
@@ -510,9 +518,18 @@ export function autoApprove(db: DB, opts: { ids?: number[]; payee?: string; sugg
   } else rows = all<Row>(db, `${select} ORDER BY t.date DESC LIMIT 500`, ...params);
   if (!rows.length) return 0;
   const s = opts.suggester ?? new Suggester(db);
+  // A payment that names one of your own accounts ("DNB MC", "Til Sparekonto") is most likely a transfer: ask.
+  const norm = (x: string) => ` ${x.toLowerCase().replace(/[^a-zæøå0-9]+/g, ' ').trim()} `;
+  const own = all<{ id: number; name: string }>(db, 'SELECT id, name FROM accounts WHERE closed = 0')
+    .map((a) => ({ id: a.id, name: norm(a.name) }))
+    .filter((a) => a.name.trim().length >= 3);
+  const namesOwnAccount = (r: Row) => {
+    const text = norm(`${r.payee ?? ''} ${r.raw_description ?? ''}`);
+    return own.some((a) => a.id !== r.account_id && text.includes(a.name));
+  };
   let n = 0;
   for (const r of rows) {
-    if (!s.sure(r.payee, r.amount, r.suggestion_source, r.suggested_category_id)) continue;
+    if (!s.sure(r.payee, r.amount, r.suggestion_source, r.suggested_category_id) || namesOwnAccount(r)) continue;
     run(db, 'UPDATE transactions SET category_id = suggested_category_id, reviewed = 1, auto_approved = 1 WHERE id = ?', r.id);
     n++;
   }

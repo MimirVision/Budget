@@ -143,6 +143,8 @@ export interface Transaction {
   attachment_count?: number;
   /** Categorised and approved by the app on its own. */
   auto_approved?: number;
+  /** You said it isn't a transfer: no transfer guesses for it. */
+  not_transfer?: number;
 }
 
 export interface Recurring {
@@ -252,4 +254,17 @@ export function syncMessage(r: Array<{ name: string; added?: number; autoApprove
   const parts = [`${added} ${added === 1 ? 'ny transaksjon' : 'nye transaksjoner'}`];
   if (auto) parts.push(`${auto} fikk kategori automatisk`);
   return { text: parts.join(', '), error: false };
+}
+
+/**
+ * One of your own accounts that a transaction's text names ("DNB MC", "Til Sparekonto"): a payment to or from it is
+ * most likely a transfer, even before the other half has come from the bank.
+ */
+export function ownAccountIn(t: Pick<Transaction, 'account_id' | 'payee' | 'raw_description'>, accounts: Account[]): Account | null {
+  const norm = (s: string) => ` ${s.toLowerCase().replace(/[^a-zæøå0-9]+/g, ' ').trim()} `;
+  const text = norm(`${t.payee ?? ''} ${t.raw_description ?? ''}`);
+  const hits = accounts.filter((a) => !a.closed && a.id !== t.account_id && norm(a.name).trim().length >= 3 && text.includes(norm(a.name)));
+  // Only when it's clear which account: the longest name wins ("DNB MC" over "DNB").
+  hits.sort((a, b) => b.name.length - a.name.length);
+  return hits[0] ?? null;
 }

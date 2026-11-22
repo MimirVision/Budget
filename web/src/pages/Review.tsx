@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, undoPayeeCategory, type PayeeApplied, type Transaction } from '../api';
+import { api, ownAccountIn, undoPayeeCategory, type Account, type PayeeApplied, type Transaction } from '../api';
 import { dayLabel, kr } from '../format';
 import { useStore } from '../store';
 import { CategorySelect, Icon, Money, Skeleton, haptic, useToast } from '../components/ui';
@@ -13,6 +13,13 @@ const SOURCE_LABEL: Record<string, string> = {
   history: 'som sist',
   merchant: 'kjent mottaker',
 };
+
+interface DupGroup {
+  key: string;
+  confidence: 'sure' | 'maybe';
+  keep: number;
+  rows: Array<{ id: number; reviewed: number; payee: string; amount: number; date: string }>;
+}
 
 /** The inbox: every new transaction, from any source, shows up here once with a suggested category. */
 export default function ReviewPage() {
@@ -35,7 +42,13 @@ export default function ReviewPage() {
   // PC: the card you're on, moved with ↑/↓ (or J/K); the card itself handles Enter, E and 1–5.
   const [focus, setFocus] = useState(0);
 
+  // Copies waiting here (the same payment several times): offered to clean up before you go through them.
+  const [copies, setCopies] = useState<DupGroup[]>([]);
   const load = useCallback(async () => {
+    api
+      .get<{ groups: DupGroup[] }>('/duplicates')
+      .then((d) => setCopies(d.groups.filter((g) => g.rows.some((r) => !r.reviewed))))
+      .catch(() => setCopies([]));
     const r = await api.get<{ transactions: Transaction[] }>('/transactions?review=1&limit=500');
     setItems(r.transactions);
     setStartCount((n) => (n === null ? r.transactions.length : Math.max(n, r.transactions.length)));
@@ -93,11 +106,13 @@ export default function ReviewPage() {
     await after();
   };
 
-  const confirmTransfer = async (t: Transaction) => {
+  const confirmTransfer = async (t: Transaction, to?: Account) => {
     setItems((list) => list?.filter((x) => x.id !== t.id && x.id !== t.suggested_transfer_id) ?? null);
     haptic();
-    await api.patch(`/transactions/${t.id}`, { transfer_id: t.suggested_transfer_id });
-    toast(`Markert som overføring ${t.amount < 0 ? 'til' : 'fra'} ${t.suggested_transfer_account_name}`, {
+    // The other half already came from the bank, or (from the payee) we know which of your accounts it went to.
+    if (t.suggested_transfer_id) await api.patch(`/transactions/${t.id}`, { transfer_id: t.suggested_transfer_id });
+    else if (to) await api.patch(`/transactions/${t.id}`, { transfer_account_id: to.id });
+    toast(`Markert som overføring ${t.amount < 0 ? 'til' : 'fra'} ${t.suggested_transfer_account_name ?? to?.name}`, {
       action: {
         label: 'Angre',
         run: async () => {
@@ -111,7 +126,7 @@ export default function ReviewPage() {
 
   const rejectTransfer = async (t: Transaction) => {
     // Forget the transfer guess (on the server too, so it doesn't come back) and fall back to categorising.
-    setItems((list) => list?.map((x) => (x.id === t.id ? { ...x, suggested_transfer_id: null, suggested_transfer_account_name: null } : x)) ?? null);
+    setItems((list) => list?.map((x) => (x.id === t.id ? { ...x, suggested_transfer_id: null, suggested_transfer_account_name: null, not_transfer: 1 } : x)) ?? null);
     await api.patch(`/transactions/${t.id}`, { reject_transfer: true });
   };
 
@@ -187,11 +202,49 @@ export default function ReviewPage() {
         </>
       )}
 
+      {copies.map((g) => (
+        <div key={g.key} className="callout warn small review-copies">
+          <Icon name="alert" size={18} />
+          <div style={{ flex: 1 }}>
+            <strong>
+              {g.rows.length} like: {g.rows[0].payee || 'Ukjent'} {kr(g.rows[0].amount)} {dayLabel(g.rows[0].date)}
+            </strong>
+            <div>
+              {g.confidence === 'sure'
+                ? 'Ser ut som samme transaksjon kom flere ganger fra banken.'
+                : 'Kan være samme transaksjon flere ganger, eller flere like kjøp samme dag.'}
+            </div>
+          </div>
+          {g.confidence === 'sure' ? (
+            <button
+              className="btn sm"
+              onClick={async () => {
+                await api.post('/duplicates/merge', { keep: g.keep, remove: g.rows.map((r) => r.id).filter((id) => id !== g.keep) });
+                haptic();
+                toast(`Slo sammen ${g.rows.length} til én`);
+                await after();
+              }}
+            >
+              Behold én
+            </button>
+          ) : (
+            <Link to="/duplicates" className="btn sm">
+              Se på dem
+            </Link>
+          )}
+        </div>
+      ))}
+
       {items.length === 0 ? (
         <div className="card empty">
           <div className="emoji celebrate">🎉</div>
           <h2 style={{ color: 'var(--text)' }}>Alt er gjennomgått</h2>
           <p>Nye transaksjoner dukker opp her når bankene synkroniseres eller du importerer en fil.</p>
+          {summary.autoApprove !== false && (
+            <p className="small">
+              <Link to="/transactions?auto=1">Se det appen ga kategori selv →</Link>
+            </p>
+          )}
           <div className="row" style={{ justifyContent: 'center' }}>
             <Link to="/" className="btn">
               Tilbake til budsjettet
@@ -248,7 +301,7 @@ function ReviewCard({
   focused?: boolean;
   onFocusMe?: () => void;
   onApprove: (t: Transaction, categoryId: number | null, remember: boolean) => void;
-  onTransfer: (t: Transaction) => void;
+  onTransfer: (t: Transaction, to?: Account) => void;
   onRejectTransfer: (t: Transaction) => void;
   onEdit: () => void;
 }) {
@@ -256,7 +309,10 @@ function ReviewCard({
   const [categoryId, setCategoryId] = useState<number | null>(t.suggested_category_id);
   const [remember, setRemember] = useState(false);
   const changed = categoryId !== t.suggested_category_id;
-  const transferGuess = t.suggested_transfer_id && t.suggested_transfer_account_name;
+  // The other half from the bank, or else one of your own accounts named in the text (a card payment to "DNB MC").
+  const named = !t.suggested_transfer_id && !t.not_transfer && !t.suggested_category_id && !t.category_id ? ownAccountIn(t, summary?.accounts ?? []) : null;
+  const transferGuess = (t.suggested_transfer_id && t.suggested_transfer_account_name) || named;
+  const transferTo = t.suggested_transfer_account_name ?? named?.name;
   const canSwipe = swipe && (transferGuess || categoryId);
   const [dx, setDx] = useState(0);
   const [gone, setGone] = useState(false);
@@ -274,7 +330,7 @@ function ReviewCard({
       const el = e.target as HTMLElement;
       if (el.closest('input, textarea, select, .modal-back, .palette-back') || e.ctrlKey || e.metaKey || e.altKey) return;
       if (transferGuess) {
-        if (e.key === 't' || e.key === 'Enter') (e.preventDefault(), onTransfer(t));
+        if (e.key === 't' || e.key === 'Enter') (e.preventDefault(), onTransfer(t, named ?? undefined));
         if (e.key === 'n') (e.preventDefault(), onRejectTransfer(t));
       } else {
         if (e.key === 'Enter' && categoryId) (e.preventDefault(), onApprove(t, categoryId, remember));
@@ -302,7 +358,7 @@ function ReviewCard({
     startX.current = null;
     if (dx > 110) {
       setGone(true);
-      setTimeout(() => (transferGuess ? onTransfer(t) : onApprove(t, categoryId, remember)), 180);
+      setTimeout(() => (transferGuess ? onTransfer(t, named ?? undefined) : onApprove(t, categoryId, remember)), 180);
     } else setDx(0);
   };
 
@@ -343,11 +399,11 @@ function ReviewCard({
           <div className="callout info small" style={{ flex: 1, padding: '8px 12px' }}>
             <Icon name="swap" size={18} />
             <div>
-              Ser ut som {kr(Math.abs(t.amount))} ble flyttet {t.amount < 0 ? 'til' : 'fra'} <strong>{t.suggested_transfer_account_name}</strong>
+              Ser ut som {kr(Math.abs(t.amount))} ble flyttet {t.amount < 0 ? 'til' : 'fra'} <strong>{transferTo}</strong>
               {t.suggested_transfer_date ? ` (${dayLabel(t.suggested_transfer_date)})` : ''}. Overføringer er ikke forbruk.
             </div>
           </div>
-          <button className="btn primary" onClick={() => onTransfer(t)}>
+          <button className="btn primary" onClick={() => onTransfer(t, named ?? undefined)}>
             Ja, overføring
           </button>
           <button className="btn ghost" onClick={() => onRejectTransfer(t)}>
