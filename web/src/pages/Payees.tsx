@@ -117,7 +117,7 @@ export default function PayeesPage() {
           {rows.length === 0 ? 'Ingen mottakere ennå. De dukker opp her når transaksjonene kommer inn.' : 'Ingen mottakere passer med søket.'}
         </div>
       ) : (
-        <div className="card payee-list">
+        <div className="card payee-list rise">
           {visible.slice(0, shown).map((p) => (
             <div key={p.payee} className={`payee-row ${busy === p.payee ? 'busy' : ''}`}>
               <Tile color={nameTint(p.payee)} letter={p.payee} size={34} />

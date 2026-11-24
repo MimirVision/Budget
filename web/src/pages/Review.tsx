@@ -11,7 +11,7 @@ import { TransactionEditor } from '../components/TransactionEditor';
 const SOURCE_LABEL: Record<string, string> = {
   rule: 'din regel',
   history: 'som sist',
-  merchant: 'kjent mottaker',
+  merchant: 'gjetning: kjent butikk',
 };
 
 interface DupGroup {
@@ -82,9 +82,20 @@ export default function ReviewPage() {
     },
   });
 
+  // Cards on their way out: they slide away before the list closes up.
+  const [leaving, setLeaving] = useState<number[]>([]);
+  const leave = (...ids: Array<number | null | undefined>) => {
+    const gone = ids.filter((x): x is number => !!x);
+    setLeaving((l) => [...l, ...gone]);
+    setTimeout(() => {
+      setItems((list) => list?.filter((x) => !gone.includes(x.id)) ?? null);
+      setLeaving((l) => l.filter((x) => !gone.includes(x)));
+    }, 200);
+  };
+
   const approve = async (t: Transaction, categoryId: number | null, remember: boolean) => {
     // Optimistically hide it so the list feels instant.
-    setItems((list) => list?.filter((x) => x.id !== t.id) ?? null);
+    leave(t.id);
     haptic();
     const r = await api.patch<{ appliedToOthers: PayeeApplied | null; alsoApproved?: number }>(`/transactions/${t.id}`, categoryId ? { category_id: categoryId, remember } : { reviewed: true });
     const cat = summary?.categories.find((c) => c.id === categoryId);
@@ -107,7 +118,7 @@ export default function ReviewPage() {
   };
 
   const confirmTransfer = async (t: Transaction, to?: Account) => {
-    setItems((list) => list?.filter((x) => x.id !== t.id && x.id !== t.suggested_transfer_id) ?? null);
+    leave(t.id, t.suggested_transfer_id);
     haptic();
     // The other half already came from the bank, or (from the payee) we know which of your accounts it went to.
     if (t.suggested_transfer_id) await api.patch(`/transactions/${t.id}`, { transfer_id: t.suggested_transfer_id });
@@ -255,7 +266,7 @@ export default function ReviewPage() {
           </div>
         </div>
       ) : (
-        <div className="stack" style={{ gap: 10 }}>
+        <div className="stack rise" style={{ gap: 10 }}>
           {items.map((t, i) => (
             <ReviewCard
               key={t.id}
@@ -267,6 +278,7 @@ export default function ReviewPage() {
               onRejectTransfer={rejectTransfer}
               onEdit={() => setEditing(t)}
               swipe={mobile}
+              leaving={leaving.includes(t.id)}
             />
           ))}
         </div>
@@ -295,9 +307,11 @@ function ReviewCard({
   swipe,
   focused,
   onFocusMe,
+  leaving,
 }: {
   t: Transaction;
   swipe?: boolean;
+  leaving?: boolean;
   focused?: boolean;
   onFocusMe?: () => void;
   onApprove: (t: Transaction, categoryId: number | null, remember: boolean) => void;
@@ -365,7 +379,7 @@ function ReviewCard({
   const card = (
     <div
       ref={ref}
-      className={`card review-card ${canSwipe ? 'swipe-card' : ''} ${startX.current !== null ? 'dragging' : ''} ${gone ? 'gone' : ''} ${focused ? 'kb-focus' : ''}`}
+      className={`card review-card ${canSwipe ? 'swipe-card' : ''} ${startX.current !== null ? 'dragging' : ''} ${gone ? 'gone' : leaving ? 'leaving' : ''} ${focused ? 'kb-focus' : ''}`}
       onMouseDown={onFocusMe}
       style={canSwipe ? { transform: `translateX(${dx}px)` } : undefined}
       onPointerDown={onDown}
@@ -375,13 +389,12 @@ function ReviewCard({
     >
       <div style={{ minWidth: 0 }}>
         <div className="payee ellipsis">{t.payee || t.raw_description || 'Ukjent'}</div>
-        <div className="small muted">
-          {dayLabel(t.date)} · {t.account_name}
+        <div className="small muted rv-meta">
+          <span>
+            {dayLabel(t.date)} · {t.account_name}
+          </span>
           {t.suggested_category_name && !changed && (
-            <>
-              {' · '}
-              <span className="chip brand">✨ {t.suggestion_source === 'merchant' && t.amount > 0 ? 'ser ut som lønn' : SOURCE_LABEL[t.suggestion_source ?? ''] ?? 'forslag'}</span>
-            </>
+            <span className="chip brand">✨ {t.suggestion_source === 'merchant' && t.amount > 0 ? 'ser ut som lønn' : SOURCE_LABEL[t.suggestion_source ?? ''] ?? 'forslag'}</span>
           )}
         </div>
         {t.raw_description && t.raw_description !== t.payee && (

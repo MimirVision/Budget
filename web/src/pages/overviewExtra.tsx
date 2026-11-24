@@ -12,6 +12,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { dayLabel, kr, monthLabel, relativeDay } from '../format';
 import { useStore } from '../store';
+import { todayISO } from '../../../shared/months';
 import { CashflowChart, ChartCard, SimpleTable, type FlowRow } from '../components/charts';
 import { Tile, groupTint } from '../components/apple';
 import { Icon } from '../components/ui';
@@ -178,7 +179,7 @@ export function RecurringCard() {
         </div>
       </div>
     );
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO(); // Oslo's date: just after midnight it's already the new day here
   const month = today.slice(0, 7);
   const thisMonth = data.bills.filter((b) => b.due.slice(0, 7) === month || b.paid?.date.slice(0, 7) === month);
   const paid = thisMonth.filter((b) => b.paid);

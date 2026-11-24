@@ -128,7 +128,7 @@ export default function TransactionsPage() {
 
       <div className="row" style={{ marginBottom: 14 }}>
         <div style={{ position: 'relative', flex: '1 1 220px' }}>
-          <input className="input" placeholder="Søk i mottaker, tekst eller beløp" value={search} onChange={(e) => setSearch(e.target.value)} style={{ paddingLeft: 34 }} />
+          <input className="input" placeholder={mobile ? 'Søk' : 'Søk i mottaker, tekst eller beløp'} value={search} onChange={(e) => setSearch(e.target.value)} style={{ paddingLeft: 34 }} />
           <span style={{ position: 'absolute', left: 10, top: 9, color: 'var(--faint)' }}>
             <Icon name="search" size={18} />
           </span>

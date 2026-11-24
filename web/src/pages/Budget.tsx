@@ -222,12 +222,13 @@ export default function BudgetPage() {
           </button>
         </div>
       )}
+      {/* The one number that matters first, with the month's totals; notices and tips after them. */}
+      <Hero budget={budget} onAuto={() => setAutoOpen(true)} />
+      <Stats budget={budget} />
       {!wide && <WrapUp month={month} startMonth={startMonth} onChanged={() => { load(); refresh(); }} />}
       <Payday budget={budget} month={month} onChanged={() => { load(); refresh(); }} />
       {!wide && <Tips month={month} onChanged={() => { load(); refresh(); }} />}
       <Attention budget={budget} />
-      <Hero budget={budget} onAuto={() => setAutoOpen(true)} />
-      <Stats budget={budget} />
 
       {mobile ? (
         <>
@@ -237,7 +238,7 @@ export default function BudgetPage() {
             </div>
           )}
           {filters}
-          <div className="stack" style={{ gap: 12 }}>
+          <div className="stack rise" style={{ gap: 12 }}>
             {groups.map((g) => {
               const open = !collapsed.includes(g.id) || filter !== 'all';
               const available = g.shown.reduce((s, c) => s + c.available, 0);
@@ -452,13 +453,13 @@ function Hero({ budget, onAuto }: { budget: BudgetMonth; onAuto: () => void }) {
         </div>
       </div>
       {rta > 0 && !planned && (
-        <button className="btn hero-btn" onClick={onAuto}>
-          <Icon name="magic" size={16} /> Autofordel
+        <button className="btn hero-btn" onClick={onAuto} aria-label="Autofordel">
+          <Icon name="magic" size={16} /> <span className="hero-btn-text">Autofordel</span>
         </button>
       )}
       {(rta <= 0 || planned) && (
-        <button className="btn ghost hero-btn" onClick={onAuto}>
-          <Icon name="magic" size={16} /> Autofordel
+        <button className="btn ghost hero-btn" onClick={onAuto} aria-label="Autofordel">
+          <Icon name="magic" size={16} /> <span className="hero-btn-text">Autofordel</span>
         </button>
       )}
     </div>
@@ -489,7 +490,7 @@ function Stats({ budget }: { budget: BudgetMonth }) {
     { label: 'Tilgjengelig', value: budget.available },
   ];
   return (
-    <div className="stats">
+    <div className="stats rise">
       {items.map((i) => (
         <div key={i.label} className="stat-mini">
           <span>{i.label}</span>
