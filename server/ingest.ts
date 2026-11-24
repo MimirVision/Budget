@@ -494,7 +494,6 @@ export function autoApprove(db: DB, opts: { ids?: number[]; payee?: string; sugg
   const where = [
     't.reviewed = 0',
     't.category_id IS NULL',
-    't.suggested_category_id IS NOT NULL',
     't.transfer_id IS NULL',
     't.suggested_transfer_id IS NULL',
     "t.source NOT IN ('freshstart', 'cardsync')",
@@ -529,8 +528,25 @@ export function autoApprove(db: DB, opts: { ids?: number[]; payee?: string; sugg
   };
   let n = 0;
   for (const r of rows) {
-    if (!s.sure(r.payee, r.amount, r.suggestion_source, r.suggested_category_id) || namesOwnAccount(r)) continue;
-    run(db, 'UPDATE transactions SET category_id = suggested_category_id, reviewed = 1, auto_approved = 1 WHERE id = ?', r.id);
+    if (namesOwnAccount(r)) continue;
+    // What the app would suggest now, not when it came in: a payee you've categorised since (or given a fixed
+    // category) counts, even if the transaction was stored with an older guess or none.
+    const now = s.suggest(r.payee ?? '', r.raw_description ?? '', r.amount, r.account_id);
+    const pick =
+      now && s.sure(r.payee, r.amount, now.source, now.categoryId)
+        ? now
+        : s.sure(r.payee, r.amount, r.suggestion_source, r.suggested_category_id)
+          ? { categoryId: r.suggested_category_id, source: r.suggestion_source }
+          : null;
+    if (!pick) continue;
+    run(
+      db,
+      'UPDATE transactions SET category_id = ?, suggested_category_id = ?, suggestion_source = ?, reviewed = 1, auto_approved = 1 WHERE id = ?',
+      pick.categoryId,
+      pick.categoryId,
+      pick.source,
+      r.id,
+    );
     n++;
   }
   return n;

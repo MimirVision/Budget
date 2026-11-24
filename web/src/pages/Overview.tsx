@@ -757,7 +757,7 @@ function Calendar({ data, month }: { data: OverviewData; month: string }) {
       sub="Hverdagsforbruk per dag, uten faste regninger. Mørkere betyr mer."
       table={<SimpleTable head={['Dag', 'Brukt']} rows={days.map((d) => [dayLabel(d.date), kr(d.spent)])} />}
     >
-      <div className="kpis">
+      <div className="kpis rise">
         <div>
           <span>Snitt per dag</span>
           <strong>{compactKr(data.stats.avgPerDay)} kr</strong>

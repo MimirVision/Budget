@@ -79,4 +79,17 @@ describe('Godkjenn automatisk', () => {
     approve(add('2026-10-14', -3000000, 'DNB MC').ids[0], cat('Dagligvarer'));
     expect(row(add('2026-11-14', -3546300, 'DNB MC').ids[0]).reviewed).toBe(0);
   });
+
+  it('uses what you have taught it since, not the guess stored when the transaction came in', () => {
+    const { db, cat, add, row, approve } = setup();
+    // Came in before you had categorised the payee: stored with a shop guess (or nothing).
+    const old = add('2026-11-01', -34000, 'Foodora').ids[0];
+    run(db, "UPDATE transactions SET suggested_category_id = ?, suggestion_source = 'merchant' WHERE id = ?", cat('Dagligvarer'), old);
+    expect(row(old).reviewed).toBe(0);
+    // Then you put two Foodora orders in Spise ute.
+    approve(add('2026-11-02', -30000, 'Foodora').ids[0], cat('Spise ute'));
+    approve(add('2026-11-03', -32000, 'Foodora').ids[0], cat('Spise ute'));
+    expect(autoApprove(db)).toBe(1);
+    expect(row(old)).toMatchObject({ category_id: cat('Spise ute'), reviewed: 1, auto_approved: 1 });
+  });
 });
